@@ -1,0 +1,51 @@
+sudo apt update
+sudo apt upgrade
+
+# create virtual environment.
+virtualenv venv
+source venv/bin/activate
+
+# install dependencies.
+pip install --upgrade pip
+pip install torch==2.4.0 --index-url https://download.pytorch.org/whl/cu121
+pip install isaacsim-rl isaacsim-replicator isaacsim-extscache-physics isaacsim-extscache-kit-sdk isaacsim-extscache-kit isaacsim-app --extra-index-url https://pypi.nvidia.com
+mkdir venv/COLCON_IGNORE
+touch ~/.ros/fastdds.xml
+echo '<?xml version="1.0" encoding="UTF-8" ?>
+
+<license>Copyright (c) 2022-2024, NVIDIA CORPORATION.  All rights reserved.
+NVIDIA CORPORATION and its licensors retain all intellectual property
+and proprietary rights in and to this software, related documentation
+and any modifications thereto.  Any use, reproduction, disclosure or
+distribution of this software and related documentation without an express
+license agreement from NVIDIA CORPORATION is strictly prohibited.</license>
+
+
+<profiles xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles" >
+    <transport_descriptors>
+        <transport_descriptor>
+            <transport_id>UdpTransport</transport_id>
+            <type>UDPv4</type>
+        </transport_descriptor>
+    </transport_descriptors>
+
+    <participant profile_name="udp_transport_profile" is_default_profile="true">
+        <rtps>
+            <userTransports>
+                <transport_id>UdpTransport</transport_id>
+            </userTransports>
+            <useBuiltinTransports>false</useBuiltinTransports>
+        </rtps>
+    </participant>
+</profiles>' > ~/.ros/fastdds.xml
+
+# install isaac lab.
+git clone https://github.com/isaac-sim/IsaacLab.git
+cd IsaacLab
+mkdir COLCON_IGNORE
+sudo apt install cmake build-essential
+./isaaclab.sh -i
+cd ..
+cp venv/.gitignore IsaacLab/
+cp ~/Arena4-IsaacSim/setup.bash ~/.local/share/ov/pkg/isaac-sim-4.2.0/setup.bash
+rm setup.bash

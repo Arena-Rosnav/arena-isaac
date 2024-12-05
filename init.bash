@@ -1,0 +1,5 @@
+source ~/.local/share/ov/pkg/isaac-sim-4.2.0/setup.bash 
+export FASTRTPS_DEFAULT_PROFILES_FILE=~/.ros/fastdds.xml
+export ROS_DOMAIN_ID=1
+export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/opt/ros/humble/lib/

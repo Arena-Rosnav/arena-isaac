@@ -1,0 +1,6 @@
+string name
+string urdf_path
+string prim_path
+bool control
+---
+string usd_path

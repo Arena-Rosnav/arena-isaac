@@ -1,0 +1,4 @@
+string name
+string urdf_path
+---
+string usd_path
