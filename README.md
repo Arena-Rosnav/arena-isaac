@@ -26,8 +26,8 @@ https://docs.ros.org/en/humble/index.html
 ```
 clone the project.
 ```
-git clone https://github.com/Bigkatoan/Arena4-IsaacSim.git
-cd Arena4-IsaacSim
+https://github.com/Arena-Rosnav/arena-isaac.git
+cd arena-isaac
 ```
 
 create the environment and install dependencies.
