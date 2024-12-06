@@ -10,7 +10,7 @@ Working on:
  - [ ] Publish robot sensors. (current: lidar, camera rgb, camera depth: Kien)
  - [ ] Convert all urdf robot files to usd files. (on working: Kien)
  - [x] Update model states. (Duc Anh)
- - [x] Connect velocity commands from navigation stack to control commands. (An)
+ - [x] Connect velocity commands from navigation stack to control commands. (An) #pending!!!
  - [ ] Service update model states. (Duc Anh)
  - [x] Service spawn with file content. (Kien)
  - [ ] Robot state: parse urdf, recognize sensors (maybe change to usd files: Kien)
