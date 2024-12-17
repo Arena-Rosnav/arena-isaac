@@ -1,8 +1,14 @@
+#autopep8: off
+#import order untouched
+
 # Use the isaacsim to import SimulationApp
 from isaacsim import SimulationApp
 
 # Setting the config for simulation and make an simulation.
-CONFIG = {"renderer": "RayTracedLighting", "headless": False}
+CONFIG = {
+    "renderer": "RayTracedLighting",
+    "headless": False
+}
 simulation_app = SimulationApp(CONFIG)
 
 # Import dependencies.
@@ -36,6 +42,7 @@ from rclpy.node import Node
 from isaacsim_msgs.msg import Euler, Quat, Env, Values
 from isaacsim_msgs.srv import ImportUsd, ImportUrdf, UrdfToUsd, DeletePrim, GetPrimAttributes, MovePrim, ImportYaml, ScalePrim, SpawnWall, SdfToUsd
 from sensor_msgs.msg import JointState
+
 
 #======================================Base======================================
 # Setting up world and enable ros2_bridge extentions.
@@ -81,7 +88,7 @@ def yaml_importer(request, response):
     # Read configuration from YAML file
     yaml_path = request.yaml_path
     config = read_yaml_config(yaml_path)
-    
+
     # Extract parameters
     name = config['robot']['name']
     usd_path = config['robot']['usd_path']
@@ -100,7 +107,7 @@ def yaml_importer(request, response):
     yaml_request.orientation = np.array(orientation,dtype=np.float32)
 
     usd_response = usd_importer(yaml_request, response)
-    
+
     # Pass the response back (optional, depending on how you want to structure your service)
     response.ret = usd_response.ret
     return response
@@ -112,7 +119,7 @@ def urdf_to_usd(request, response):
     name = request.name
     urdf_path = request.urdf_path
     usd_path = f"/home/ubuntu/arena4_ws/src/arena/isaac/robot_models/{request.name}.usd"
-    
+
     status, stage_path = omni.kit.commands.execute(
         "URDFParseAndImportFile",
         urdf_path=urdf_path,
@@ -120,10 +127,10 @@ def urdf_to_usd(request, response):
         import_config=import_config,
         get_articulation_root=False,
     )
-    
+
     response.usd_path = usd_path
     return response
-    
+
 # Urdf importer service callback.
 def convert_urdf_to_usd(controller):
     service = controller.create_service(srv_type=UrdfToUsd, 
@@ -137,7 +144,7 @@ def sdf_to_usd(request, response):
     name = request.name
     sdf_path = request.sdf_path
     usd_path = f"/home/ubuntu/arena4_ws/src/arena/isaac/robot_models/{request.name}.usd"
-    
+
     status, stage_path = omni.kit.commands.execute(
         "SDFParseAndImportFile",
         sdf_path=sdf_path,
@@ -145,10 +152,10 @@ def sdf_to_usd(request, response):
         import_config=import_config,
         get_articulation_root=False,
     )
-    
+
     response.usd_path = usd_path
     return response
-    
+
 # Urdf importer service callback.
 def convert_sdf_to_usd(controller):
     service = controller.create_service(srv_type=SdfToUsd, 
@@ -276,7 +283,7 @@ def wall_spawner(request,response):
     center = (start_vec + end_vec)/2
     length = np.linalg.norm(start[:2] - end[:2])
     angle = math.atan2(vector_ab[1], vector_ab[0])
-    
+
     #create wall
     stage = omni.usd.get_context().get_stage()
     wall = UsdGeom.Cube.Define(stage, f"{world_path}/{name}")
@@ -353,7 +360,7 @@ def usd_importer(request, response):
                 ("ArticulationController.inputs:targetPrim", [prim_path]),
                 ("ArticulationController.inputs:robotPath", prim_path),
                 ("SubcribeJoinState.inputs:topicName", f"{name}_command"),
-                
+
                 ("PublishJointState.inputs:topicName", f"{name}_states"),
             ]
         }
@@ -502,7 +509,7 @@ def import_yaml(controller):
     service = controller.create_service(srv_type=ImportYaml, 
                         srv_name='isaac/import_yaml', 
                         callback=yaml_importer)
-    
+
 def import_usd(controller):
     service = controller.create_service(srv_type=ImportUsd, 
                         srv_name='isaac/import_usd', 
