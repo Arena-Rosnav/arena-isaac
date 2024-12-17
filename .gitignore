@@ -3,3 +3,4 @@ log
 install
 build
 IsaacLab
+*.pyc
