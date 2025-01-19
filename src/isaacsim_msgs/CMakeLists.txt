@@ -28,7 +28,6 @@ set(srv_files
   "srv/ImportYaml.srv"
   "srv/ScalePrim.srv"
   "srv/SpawnWall.srv"
-  "srv/SdfToUsd.srv"
   )
 
 rosidl_generate_interfaces(${PROJECT_NAME}

@@ -3,12 +3,13 @@ from isaacsim import SimulationApp
 
 # Setting the config for simulation and make an simulation.
 CONFIG = {"renderer": "RayTracedLighting", "headless": False}
+simulation_app = SimulationApp(CONFIG)
+
 #import parent directory
 from pathlib import Path
 import sys
-simulation_app = SimulationApp(CONFIG)
 parent_dir = Path(__file__).resolve().parent.parent
-sys.path.insert(0,str(parent_dir))
+sys.path.append(str(parent_dir))
 
 # Import dependencies.
 import omni
@@ -30,13 +31,14 @@ import numpy as np
 import rclpy
 from isaacsim_msgs.srv import ImportUsd, ImportYaml
 
-from utils.services.SpawnWall import spawn_wall
-from utils.services.MovePrim import move_prim
-from utils.services.GetPrimAttributes import get_prim_attr
-from utils.services.DeletePrim import _delete_prim
-from utils.services.UrdfToUsd import convert_urdf_to_usd
+import isaac_utils
+from isaac_utils.services.SpawnWall import spawn_wall
+from isaac_utils.services.MovePrim import move_prim
+from isaac_utils.services.GetPrimAttributes import get_prim_attr
+from isaac_utils.services.DeletePrim import _delete_prim
+from isaac_utils.services.UrdfToUsd import convert_urdf_to_usd
 
-from utils.sensors import imu_setup,publish_imu, contact_sensor_setup, publish_contact_sensor_info, camera_set_up,publish_camera_tf,publish_depth,publish_camera_info,publish_pointcloud_from_depth,publish_rgb, lidar_setup,publish_lidar 
+from isaac_utils.sensors import imu_setup,publish_imu, contact_sensor_setup, publish_contact_sensor_info, camera_set_up,publish_camera_tf,publish_depth,publish_camera_info,publish_pointcloud_from_depth,publish_rgb, lidar_setup,publish_lidar 
 
 #======================================Base======================================
 # Setting up world and enable ros2_bridge extentions.

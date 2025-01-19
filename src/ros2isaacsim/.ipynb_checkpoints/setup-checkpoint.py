@@ -7,7 +7,7 @@ package_name = 'ros2isaacsim'
 setup(
     name=package_name,
     version='0.0.0',
-    packages=find_packages(exclude=['test']),
+    packages=[package_name, 'utils'],
     data_files=[
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
@@ -16,8 +16,8 @@ setup(
     ],
     install_requires=['setuptools'],
     zip_safe=True,
-    maintainer='brainfucker',
-    maintainer_email='bigkatoan6969@gmail.com',
+    maintainer='shibuina',
+    maintainer_email='anhddhe180559@fpt.edu.vn',
     description='TODO: Package description',
     license='TODO: License declaration',
     tests_require=['pytest'],
@@ -25,7 +25,8 @@ setup(
         'console_scripts': [
             "run_isaacsim=ros2isaacsim.run_isaacsim:main",
             "convert_urdf_usd=ros2isaacsim.convert_urdf_usd:main",
-            "control=ros2isaacsim.control:main",
-        ],
+            'navigation_controller = ros2isaacsim.navigation_controller:main',
+            'sdf_to_urdf=ros2isaacsim.SdftoUrdf:main',
+            ],
     },
 )

@@ -5,35 +5,59 @@ from isaacsim import SimulationApp
 CONFIG = {"renderer": "RayTracedLighting", "headless": False}
 simulation_app = SimulationApp(CONFIG)
 
+#import parent directory
+from pathlib import Path
+import sys
+parent_dir = Path(__file__).resolve().parent.parent
+print(parent_dir)
+sys.path.append(str(parent_dir))
+
 # Import dependencies.
-import carb
 import omni
 import omni.graph.core as og
-import usdrt.Sdf
+import numpy as np
+import yaml
+import os
 from omni.isaac.core import SimulationContext
 from omni.isaac.core.utils import extensions, stage
+import omni.isaac.nucleus as nucleus
 from omni.isaac.nucleus import get_assets_root_path
-from omni.kit.viewport.utility import get_active_viewport
-from omni.isaac.core.utils.extensions import get_extension_path_from_name
+from omni.isaac.core.utils.prims import set_prim_attribute_value
 from omni.isaac.core.world import World
 from omni.importer.urdf import _urdf
-from pxr import Gf, Usd, UsdGeom
+import omni.replicator.core as rep
+import omni.syntheticdata._syntheticdata as sd
+import omni.kit.commands as commands
+import numpy as np
 import rclpy
-from rclpy.node import Node
-from isaacsim_msgs.msg import Euler, Quat, Env
-from isaacsim_msgs.srv import ImportUsd, ImportUrdf, UrdfToUsd
-from sensor_msgs.msg import JointState
+from isaacsim_msgs.srv import ImportUsd, ImportYaml
+
+# from utils import services
+from utils.services.SpawnWall import spawn_wall
+from utils.services.MovePrim import move_prim
+from utils.services.GetPrimAttributes import get_prim_attr
+from utils.services.DeletePrim import _delete_prim
+from utils.services.UrdfToUsd import convert_urdf_to_usd
+
+from utils.sensors import imu_setup,publish_imu, contact_sensor_setup, publish_contact_sensor_info, camera_set_up,publish_camera_tf,publish_depth,publish_camera_info,publish_pointcloud_from_depth,publish_rgb, lidar_setup,publish_lidar 
 
 #======================================Base======================================
 # Setting up world and enable ros2_bridge extentions.
+# BACKGROUND_STAGE_PATH = "/background"
+# BACKGROUND_USD_PATH = "/Isaac/Environments/Simple_Warehouse/warehouse_with_forklifts.usd"
+
 world = World()
 extensions.enable_extension("omni.isaac.ros2_bridge")
 simulation_app.update() #update the simulation once for update ros2_bridge.
 simulation_context = SimulationContext(stage_units_in_meters=1.0) #currently we use 1m for simulation.
 
+assets_root_path = get_assets_root_path()
+print(assets_root_path)
+# stage.add_reference_to_stage(assets_root_path, BACKGROUND_STAGE_PATH + BACKGROUND_USD_PATH)
+
 # Setting up URDF importer.
-status, import_config = omni.kit.commands.execute("URDFCreateImportConfig")
-import_config.merge_fixed_joints = True
+status, import_config = commands.execute("URDFCreateImportConfig")
+import_config.merge_fixed_joints = False
 import_config.convex_decomp = False
 import_config.import_inertia_tensor = False
 import_config.self_collision = False
@@ -47,120 +71,267 @@ extension_path = _urdf.ImportConfig()
 robots = []
 environments = []
 robot_positions = []
-robot_rotations = []
+robot_orientation = []
 environment_positions = []
-environment_rotations = []
+environment_orientation = []
 
 #================================================================================
-#============================urdf converter service===============================
-# URDF convert to usd (service) -> usd_path.
-def urdf_to_usd(request, response):
-    name = request.name
-    urdf_path = request.urdf_path
-    usd_path = f"robot_models/Arena_rosnav/User/{request.name}.usd"
+#============================read yaml file===============================
+def read_yaml_config(yaml_path):
+    with open(yaml_path, 'r') as file:
+        config = yaml.safe_load(file)
+    return config
+
+def yaml_importer(request, response):
+    # Read configuration from YAML file
+    yaml_path = request.yaml_path
+    config = read_yaml_config(yaml_path)
     
-    status, stage_path = omni.kit.commands.execute(
-        "URDFParseAndImportFile",
-        urdf_path=urdf_path,
-        dest_path=usd_path,
-        import_config=import_config,
-        get_articulation_root=False,
-    )
+    # Extract parameters
+    name = config['robot']['name']
+    usd_path = config['robot']['usd_path']
+    prim_path = config['robot']['prim_path']
+    control = config['robot']['control']
+    position = config['robot']['position']
+    orientation = config['robot']['orientation']
+
+    # Prepare the request for ImportUsd service
+    yaml_request = ImportUsd.Request()
+    yaml_request.name = name
+    yaml_request.usd_path = usd_path
+    yaml_request.prim_path = prim_path
+    yaml_request.control = control
+    yaml_request.position = np.array(position,dtype=np.float32)
+    yaml_request.orientation = np.array(orientation,dtype=np.float32)
+
+    usd_response = usd_importer(yaml_request, response)
     
-    response.usd_path = usd_path
+    # Pass the response back (optional, depending on how you want to structure your service)
+    response.ret = usd_response.ret
     return response
-    
-# Urdf importer service callback.
-def convert_urdf_to_usd(controller):
-    service = controller.create_service(srv_type=UrdfToUsd, 
-                        srv_name='urdf_to_usd', 
-                        callback=urdf_to_usd)
-    return service
-#================================================================================
-#========================publish environment information=========================
-def publish_environemnt_information(node):
-    msg = Env()
-    msg.robots = robots
-    msg.environments = environments
-    msg.robot_positions = robot_positions
-    msg.robot_rotations = robot_rotations
-    msg.environment_positions = environment_positions
-    msg.environment_rotations = environment_rotations
-    node.publish(msg)
 
-def create_publish_environment_information(controller):
-    
-#================================================================================
-#=========================multiple usd importer service==========================
-## pass
-#================================================================================
 #============================usd importer service================================
 # Usd importer (service) -> bool.
 def usd_importer(request, response):
     name = request.name
     usd_path = request.usd_path
     prim_path = request.prim_path + "/" + name
+    position = request.position
+    orientation = request.orientation
     stage.add_reference_to_stage(usd_path, prim_path)
-
+    set_prim_attribute_value(prim_path, attribute_name="xformOp:translate", value=np.array(position))
+    set_prim_attribute_value(prim_path, attribute_name="xformOp:orient", value=np.array(orientation))
     response.ret = True
     if not request.control:
         environments.append(prim_path)
         return response 
+    camera_prim_path = prim_path + "/" + "Camera"
+
+    camera = camera_set_up(camera_prim_path)
+    camera.initialize()
+    publish_camera_info(name, camera, 20)
+    publish_depth(name, camera, 20)
+    publish_rgb(name, camera, 20)
+    publish_pointcloud_from_depth(name, camera, 20)
+    publish_camera_tf(name,camera)
+
+    lidar_prim_path = prim_path + "/" + "Lidar"
+    lidar = lidar_setup(lidar_prim_path)
+    publish_lidar(name, lidar)
+
+    links = ["wheel_left_link","wheel_right_link"]
+    for link in links:
+        imu_prim_path = prim_path + "/" + link + "/" + "IMU"
+        contact_prim_path = prim_path + "/" + link + "/" + "ContactSensor"
+        imu = imu_setup(imu_prim_path)
+        contact_sensor = contact_sensor_setup(contact_prim_path)
+        publish_contact_sensor_info(name,prim_path,link,contact_sensor)
+        publish_imu(name,prim_path,link,imu)
+
     robots.append(prim_path)
     # create default graph.
     og.Controller.edit(
         # default graph name for robots.
-        {"graph_path": f"/{name}"},
+        {"graph_path": f"{prim_path}/controller"},
         {
-            # create default nodes.
+            #Create nodes for the OmniGraph
             og.Controller.Keys.CREATE_NODES: [
-                ("OnPlaybackTick", "omni.graph.action.OnPlaybackTick"),
-                ("ROS2Context", "omni.isaac.ros2_bridge.ROS2Context"),
+                ("OnPlaybackTick",        "omni.graph.action.OnPlaybackTick"),
+                ("ROS2Context",           "omni.isaac.ros2_bridge.ROS2Context"),
+                ("ROS2SubscribeTwist",    "omni.isaac.ros2_bridge.ROS2SubscribeTwist"),
+                ("ScaleStageUnits",       "omni.isaac.core_nodes.OgnIsaacScaleToFromStageUnit"),       
+                ("Break3Vector_Linear",   "omni.graph.nodes.BreakVector3"),
+                ("Break3Vector_Angular",  "omni.graph.nodes.BreakVector3"),
+                ("DifferentialController","omni.isaac.wheeled_robots.DifferentialController"),
+                ("ConstantToken0",        "omni.graph.nodes.ConstantToken"),
+                ("ConstantToken1",        "omni.graph.nodes.ConstantToken"),
+                ("MakeArray",             "omni.graph.nodes.ConstructArray"),
                 ("PublishJointState", "omni.isaac.ros2_bridge.ROS2PublishJointState"),
-                ("SubcribeJoinState", "omni.isaac.ros2_bridge.ROS2SubscribeJointState"),
-                ("ArticulationController", "omni.isaac.core_nodes.IsaacArticulationController"),
+                ("SubscribeJointState", "omni.isaac.ros2_bridge.ROS2SubscribeJointState"),
+                ("ArticulationController","omni.isaac.core_nodes.IsaacArticulationController"),
+                # ("ReadSimTime", "omni.isaac.core_nodes.IsaacReadSimulationTime"),
+
             ],
-            # connect node inputs and outputs.
-            og.Controller.Keys.CONNECT: [
-                ("OnPlaybackTick.outputs:tick", "PublishJointState.inputs:execIn"),
-                ("OnPlaybackTick.outputs:tick", "SubcribeJoinState.inputs:execIn"),
-                ("SubcribeJoinState.outputs:execOut", "ArticulationController.inputs:execIn"),
-                ("ROS2Context.outputs:context", "PublishJointState.inputs:context"),
-                ("ROS2Context.outputs:context", "SubcribeJoinState.inputs:context"),
-                ("SubcribeJoinState.outputs:effortCommand", "ArticulationController.inputs:effortCommand"), #config publisher and subcriber.
-                ("SubcribeJoinState.outputs:jointNames", "ArticulationController.inputs:jointNames"),
-                ("SubcribeJoinState.outputs:positionCommand", "ArticulationController.inputs:positionCommand"),
-                ("SubcribeJoinState.outputs:velocityCommand", "ArticulationController.inputs:velocityCommand"),
-            ],
-            # set default values for nodes.
+            
             og.Controller.Keys.SET_VALUES: [
-                ("ROS2Context.inputs:domain_id", 1),
-                ("PublishJointState.inputs:targetPrim", [prim_path + "/base_footprint"]),
-                ("ArticulationController.inputs:targetPrim", [prim_path]),
-                ("ArticulationController.inputs:robotPath", prim_path),
-                ("SubcribeJoinState.inputs:topicName", f"{name}_command"),
-                ("PublishJointState.inputs:topicName", f"{name}_states"),
-            ]
+                #ROS2 domain ID
+                ("ROS2Context.inputs:domain_id", 30),
+
+                #MakeArray size
+                ("MakeArray.inputs:arraySize",2),
+                
+                #ROS2 Subscriber for controlling
+                ("ROS2SubscribeTwist.inputs:topicName", "/cmd_vel"),
+
+                #DifferentialController
+                ("DifferentialController.inputs:wheelDistance",   0.16),
+                ("DifferentialController.inputs:wheelRadius",     0.033),
+                ("DifferentialController.inputs:maxWheelSpeed",   10.0),
+                ("DifferentialController.inputs:maxLinearSpeed",  2.0),
+                ("DifferentialController.inputs:maxAngularSpeed", 2.0),
+                ("DifferentialController.inputs:maxAcceleration", 0.0),     
+                ("DifferentialController.inputs:maxDeceleration", 0.0),
+                ("DifferentialController.inputs:maxAngularAcceleration", 0.0),
+                
+                
+                #SubscribeJointState
+                ("PublishJointState.inputs:targetPrim",f"{prim_path}/base_footprint"),
+                
+                # ArticulationController
+                ("ArticulationController.inputs:targetPrim", prim_path),
+                ("ConstantToken0.inputs:value",'wheel_left_joint'),
+                ("ConstantToken1.inputs:value",'wheel_right_joint'),
+
+            ],
+            
+            og.Controller.Keys.CREATE_ATTRIBUTES: [
+                ("MakeArray.inputs:input1", "token"),
+            ],
+            # 3) Connect each node's pins
+            og.Controller.Keys.CONNECT: [
+                # -- Execution flow
+                ("OnPlaybackTick.outputs:tick",            "ROS2SubscribeTwist.inputs:execIn"),
+                ("OnPlaybackTick.outputs:tick",            "ArticulationController.inputs:execIn"),
+                ("OnPlaybackTick.outputs:tick", "PublishJointState.inputs:execIn"),
+                ("OnPlaybackTick.outputs:tick", "SubscribeJointState.inputs:execIn"),
+                ("ROS2SubscribeTwist.outputs:execOut",      "DifferentialController.inputs:execIn"),
+
+                # -- ROS context to the subscriber
+                ("ROS2Context.outputs:context", "ROS2SubscribeTwist.inputs:context"),
+                ("ROS2Context.outputs:context", "PublishJointState.inputs:context"),
+                
+                # -- Scale the linear velocity before splitting it
+                ("ROS2SubscribeTwist.outputs:linearVelocity", "ScaleStageUnits.inputs:value"),
+                ("ScaleStageUnits.outputs:result",           "Break3Vector_Linear.inputs:tuple"),
+
+                # -- Break the scaled linear velocity into x,y,z
+                ("Break3Vector_Linear.outputs:x", "DifferentialController.inputs:linearVelocity"),
+
+                # -- Break the angular velocity into x,y,z (only z used typically)
+                ("ROS2SubscribeTwist.outputs:angularVelocity", "Break3Vector_Angular.inputs:tuple"),
+                ("Break3Vector_Angular.outputs:z",             "DifferentialController.inputs:angularVelocity"),
+
+                # -- Constant tokens to MakeArray for joint indices
+                ("ConstantToken0.inputs:value", "MakeArray.inputs:input0"),
+                ("ConstantToken1.inputs:value", "MakeArray.inputs:input1"),
+                ("MakeArray.outputs:array",      "ArticulationController.inputs:jointNames"),
+
+                # -- DifferentialController outputs to ArticulationController
+                ("DifferentialController.outputs:velocityCommand", "ArticulationController.inputs:velocityCommand"),
+            ],
         }
     )
+    og.Controller.edit(
+        {"graph_path": f"{prim_path}/Odom_Publisher", "evaluator_name": "execution"},
+        {
+            og.Controller.Keys.CREATE_NODES: [
+                ("onPlaybackTick", "omni.graph.action.OnPlaybackTick"),
+                ("context", "omni.isaac.ros2_bridge.ROS2Context"),
+                ("readSimTime", "omni.isaac.core_nodes.IsaacReadSimulationTime"),
+                ("computeOdom", "omni.isaac.core_nodes.IsaacComputeOdometry"),
+                ("publishOdom", "omni.isaac.ros2_bridge.ROS2PublishOdometry"),
+                ("publishRawTF", "omni.isaac.ros2_bridge.ROS2PublishRawTransformTree"),
+                ("publishRawTF2", "omni.isaac.ros2_bridge.ROS2PublishRawTransformTree"),
+                ("publishTF", "omni.isaac.ros2_bridge.ROS2PublishTransformTree"),
+                
+            ],
+            og.Controller.Keys.SET_VALUES: [
+                ("context.inputs:domain_id", 30),
+                
+                ("computeOdom.inputs:chassisPrim", prim_path + '/base_link'),
+                
+                ("publishRawTF.inputs:childFrameId",'base_link'),
+                # ("publishRawTF.inputs:topicName","/tf"),
+                ("publishRawTF.inputs:parentFrameId", 'odom'),
+            
+                ("publishOdom.inputs:odomFrameId", 'odom'),
+                ("publishOdom.inputs:chassisFrameId","base_link"),
+                
+                ("publishTF.inputs:targetPrims", prim_path + '/base_link'),
+                ("publishTF.inputs:parentPrim", prim_path + '/base_link'),
+                # ("publishTF.inputs:topicName","/tf"),
+                
+                ("publishRawTF2.inputs:childFrameId",'odom'),
+                # ("publishRawTF2.inputs:topicName","/tf"),
+                ("publishRawTF2.inputs:parentFrameId", 'world'),
+            ],
+            og.Controller.Keys.CONNECT: [
+                ("onPlaybackTick.outputs:tick", "computeOdom.inputs:execIn"),
+                ("onPlaybackTick.outputs:tick", "publishOdom.inputs:execIn"),
+                ("onPlaybackTick.outputs:tick", "publishRawTF.inputs:execIn"),
+                ("onPlaybackTick.outputs:tick", "publishRawTF2.inputs:execIn"),
+                ("onPlaybackTick.outputs:tick", "publishTF.inputs:execIn"),
+                
+                ("readSimTime.outputs:simulationTime", "publishOdom.inputs:timeStamp"),
+                ("readSimTime.outputs:simulationTime", "publishRawTF.inputs:timeStamp"),
+                ("readSimTime.outputs:simulationTime", "publishRawTF2.inputs:timeStamp"),
+                ("readSimTime.outputs:simulationTime", "publishTF.inputs:timeStamp"),
+                
+                ("context.outputs:context", "publishOdom.inputs:context"),
+                ("context.outputs:context", "publishRawTF.inputs:context"),
+                ("context.outputs:context", "publishRawTF2.inputs:context"),
+                ("context.outputs:context", "publishTF.inputs:context"),
+                
+                ("computeOdom.outputs:angularVelocity", "publishOdom.inputs:angularVelocity"),
+                ("computeOdom.outputs:linearVelocity", "publishOdom.inputs:linearVelocity"),
+                ("computeOdom.outputs:orientation", "publishOdom.inputs:orientation"),
+                ("computeOdom.outputs:position", "publishOdom.inputs:position"),
+                ("computeOdom.outputs:orientation", "publishRawTF.inputs:rotation"),
+                ("computeOdom.outputs:position", "publishRawTF.inputs:translation"),
+                
+            ],
+        }
+    )
+    world.stop()
     return response
 
 # Usd importer service callback.
+def import_yaml(controller):
+    service = controller.create_service(srv_type=ImportYaml, 
+                        srv_name='isaac/import_yaml', 
+                        callback=yaml_importer)
+    
 def import_usd(controller):
     service = controller.create_service(srv_type=ImportUsd, 
-                        srv_name='import_usd', 
+                        srv_name='isaac/import_usd', 
                         callback=usd_importer)
     return service
 #=================================================================================
+
 #===================================controller====================================
 # create controller node for isaacsim.
 def create_controller(time=120):
     # init controller.
     controller = rclpy.create_node('controller')
+    controller.create_publisher
     # init services.
     import_usd_service = import_usd(controller)
     urdf_to_usd_service = convert_urdf_to_usd(controller)
-    ##
+    get_prim_attribute_service = get_prim_attr(controller)
+    move_prim_service = move_prim(controller)
+    delete_prim_service = _delete_prim(controller)
+    wall_spawn_service = spawn_wall(controller)
+    import_yaml_service = import_yaml(controller)
     return controller
 
 # update the simulation.
@@ -168,6 +339,7 @@ def run():
     simulation_app.update()
     simulation_context.play()
 #=================================================================================
+
 #======================================main=======================================
 def main(arg=None):
     rclpy.init()
@@ -176,6 +348,7 @@ def main(arg=None):
     while True:
         run()
         rclpy.spin_once(controller, timeout_sec=0.0)
+
     controller.destroy_node()
     rclpy.shutdown()
     return
