@@ -12,7 +12,7 @@ ros2 service call isaac/move_prim isaacsim_msgs/srv/MovePrim "{name: 'waffle', p
 
 ros2 service call isaac/scale_prim isaacsim_msgs/srv/ScalePrim "{name: 'waffle', prim_path: '/World/waffle', values: [{values: [2.0, 2.0, 2.0]}]}"
 
-ros2 service call isaac/spawn_wall isaacsim_msgs/srv/SpawnWall "{name: 'wall_1', world_path: '/World',start:[1.0,1.0], end:[-5.0,1.0], height: 2.0}"
+ros2 service call isaac/spawn_wall isaacsim_msgs/srv/SpawnWall "{name: 'wall_1', world_path: '/World',start:[1.0,1.0], end:[4.0,1.0], height: 2.0}"
 
 ros2 topic pub --once waffle/cmd_vel geometry_msgs/Twist "{'linear': {'x': -0.2, 'y': 0.0, 'z': 0.0}, 'angular': {'x': 0.0, 'y': 0.0, 'z': 0.0}}"
 

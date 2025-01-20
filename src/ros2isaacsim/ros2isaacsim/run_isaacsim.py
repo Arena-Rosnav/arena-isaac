@@ -52,8 +52,9 @@ from isaac_utils.sensors import imu_setup,publish_imu, contact_sensor_setup, pub
 
 #======================================Base======================================
 # Setting up world and enable ros2_bridge extentions.
-# BACKGROUND_STAGE_PATH = "/background"
-# BACKGROUND_USD_PATH = "/Isaac/Environments/Simple_Warehouse/warehouse_with_forklifts.usd"
+
+BACKGROUND_STAGE_PATH = "/background"
+BACKGROUND_USD_PATH = "/Isaac/Environments/Simple_Warehouse/warehouse_with_forklifts.usd"
 
 world = World()
 extensions.enable_extension("omni.isaac.ros2_bridge")
@@ -61,8 +62,8 @@ simulation_app.update() #update the simulation once for update ros2_bridge.
 simulation_context = SimulationContext(stage_units_in_meters=1.0) #currently we use 1m for simulation.
 
 assets_root_path = get_assets_root_path()
-print(assets_root_path)
-# stage.add_reference_to_stage(assets_root_path, BACKGROUND_USD_PATH)
+
+stage.add_reference_to_stage(assets_root_path + BACKGROUND_USD_PATH, BACKGROUND_STAGE_PATH)
 
 # Setting up URDF importer.
 status, import_config = commands.execute("URDFCreateImportConfig")
@@ -144,7 +145,7 @@ def usd_importer(request, response):
     if not request.control:
         environments.append(prim_path)
         return response 
-    camera_prim_path = prim_path + "/" + "Camera"
+    camera_prim_path = prim_path + "/camera_link/" + "Camera"
 
     camera = camera_set_up(camera_prim_path)
     camera.initialize()
@@ -154,7 +155,7 @@ def usd_importer(request, response):
     publish_pointcloud_from_depth(name, camera, 20)
     publish_camera_tf(name,prim_path,camera)
 
-    lidar_prim_path = prim_path + "/" + "Lidar"
+    lidar_prim_path = prim_path + "/base_link/" + "Lidar"
     lidar = lidar_setup(lidar_prim_path)
     publish_lidar(name, lidar)
 

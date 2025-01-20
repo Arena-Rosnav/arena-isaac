@@ -27,7 +27,7 @@ class CmdVelPublisher(Node):
         publish_frequency = self.get_parameter('publish_frequency').get_parameter_value().double_value
 
         # Create a publisher to /cmd_vel topic with a queue size of 10
-        self.publisher_ = self.create_publisher(Twist, '/cmd_vel', 10)
+        self.publisher_ = self.create_publisher(Twist, 'waffle/cmd_vel', 10)
 
         # Timer to control the publishing rate
         timer_period = 1.0 / publish_frequency  # seconds
