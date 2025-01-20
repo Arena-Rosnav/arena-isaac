@@ -96,7 +96,7 @@ def yaml_importer(request, response):
     # Read configuration from YAML file
     yaml_path = request.yaml_path
     config = read_yaml_config(yaml_path)
-    
+    usd_response = ImportUsd.Response()
     # Extract parameters
     name = config['robot']['name']
     model = config['robot']['model']
@@ -105,21 +105,24 @@ def yaml_importer(request, response):
     control = config['robot']['control']
     position = config['robot']['position']
     orientation = config['robot']['orientation']
-
+    robot_numbers = config['robot']['robot_numbers']
+    response.ret = True
     # Prepare the request for ImportUsd service
-    yaml_request = ImportUsd.Request()
-    yaml_request.name = name
-    yaml_request.model = model
-    yaml_request.usd_path = usd_path
-    yaml_request.prim_path = prim_path
-    yaml_request.control = control
-    yaml_request.position = np.array(position,dtype=np.float32)
-    yaml_request.orientation = np.array(orientation,dtype=np.float32)
+    for i in range(robot_numbers):
+        yaml_request = ImportUsd.Request()
+        yaml_request.name = name + f"_{i+1}"
+        yaml_request.model = model
+        yaml_request.usd_path = usd_path
+        yaml_request.prim_path = prim_path
+        yaml_request.control = control
+        yaml_request.position = np.array(position[i] ,dtype=np.float32)
+        yaml_request.orientation = np.array(orientation[i] ,dtype=np.float32)
+        print(yaml_request)
+        usd_response = usd_importer(yaml_request, usd_response)
+        if usd_response.ret is False:
+            response.ret = False
 
-    usd_response = usd_importer(yaml_request, response)
-    
     # Pass the response back (optional, depending on how you want to structure your service)
-    response.ret = usd_response.ret
     return response
 
 #============================usd importer service================================
@@ -140,6 +143,7 @@ def usd_importer(request, response):
     semantic_label=model,
     )
     
+    # print(model_prim)
 
     response.ret = True
     if not request.control:
@@ -170,13 +174,11 @@ def usd_importer(request, response):
 
     robots.append(prim_path)
     
-    
     model = assign_robot_model(name,prim_path,model)
     
     #publish joint_states and control
     model.control_and_publish_joint_states()
     model.publish_odom_and_tf()
-    
     world.reset()
     return response
 

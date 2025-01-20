@@ -12,13 +12,9 @@ robots:
     control: true
     position: [0, -2, 1]
     orientation: [1, 0, 0, 0]
-
-objects:
-  table:
-    usd_path: "/home/ubuntu/arena4_ws/src/arena/isaac/robot_models/table.usd"
-    class: "table"
-    number: 2
-    type: "Local"                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           
+    robot_numbers: 3
+    
+objects:                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                
   cone:
     url: "/Isaac/Environments/Simple_Warehouse/Props/S_TrafficCone.usd"
     class: "cone"
