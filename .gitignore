@@ -5,3 +5,4 @@ build
 IsaacLab
 *.gv
 *.pdf
+test.py

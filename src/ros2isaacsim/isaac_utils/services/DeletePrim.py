@@ -11,7 +11,7 @@ def prim_deleter(request,response):
     response.ret = True
     return response
 
-def _delete_prim(controller):
+def delete_prim(controller):
     service = controller.create_service(srv_type=DeletePrim, 
                         srv_name='isaac/delete_prim', 
                         callback=prim_deleter)

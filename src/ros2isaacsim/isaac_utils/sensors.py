@@ -291,7 +291,7 @@ def publish_depth(name, camera: Camera, freq):
 
     return
 
-def publish_camera_tf(name, camera: Camera):
+def publish_camera_tf(name,prim_path, camera: Camera):
     camera_prim = camera.prim_path
 
     if not is_prim_path_valid(camera_prim):
@@ -304,7 +304,7 @@ def publish_camera_tf(name, camera: Camera):
         camera_frame_id=camera_prim.split("/")[-1]
 
         # Generate an action graph associated with camera TF publishing.
-        ros_camera_graph_path = "/CameraTFActionGraph"
+        ros_camera_graph_path = f"{prim_path}/CameraTFActionGraph"
 
         # If a camera graph is not found, create a new one.
         if not is_prim_path_valid(ros_camera_graph_path):

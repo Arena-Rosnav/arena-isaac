@@ -1,0 +1,65 @@
+joint_state_controller:
+  ros__parameters:
+    publish_rate: 50
+    # The type parameter is optional in ROS2 as controller types are usually specified in the launch files
+    type: joint_state_controller/JointStateController
+    # Optionally, specify the joints to be published. If omitted, all joints are published.
+    # joint_names: ["wheel_left_joint", "wheel_right_joint", "other_joints_if_any"]
+
+diff_drive_controller:
+  ros__parameters:
+    left_wheel_names: ["wheel_left_joint"]
+    right_wheel_names: ["wheel_right_joint"]
+
+    # Physical parameters of the robot
+    wheel_radius: 0.033  # Replace with your actual wheel radius in meters
+    wheel_separation: 0.16  # Distance between the two wheels in meters
+
+    # Multipliers for wheel radius and separation (use 1.0 if no adjustment is needed)
+    wheel_radius_multiplier: 1.0
+    wheel_separation_multiplier: 1.0
+
+    # Frame configurations
+    odom_frame_id: "odom"
+    base_frame_id: "base_link"
+
+    # Covariance matrices for pose and twist
+    pose_covariance_diagonal: [0.001, 0.001, 1000000.0, 1000000.0, 1000000.0, 0.03]
+    twist_covariance_diagonal: [0.001, 0.001, 0.001, 1000000.0, 1000000.0, 0.03]
+
+    # Odometry and transform settings
+    enable_odom_tf: false
+    publish_odom: true  # Set to true to publish odometry messages
+
+    # Velocity command settings
+    cmd_vel_timeout: 0.25  # seconds
+    publish_rate: 50  # Hz
+
+    # Velocity and acceleration limits for linear and angular velocities
+    linear:
+      x:
+        has_velocity_limits: true
+        has_acceleration_limits: true
+        max_velocity: 2.0  # meters per second
+        min_velocity: -2.0  # meters per second
+        max_acceleration: 20.0  # meters per second squared
+
+    angular:
+      z:
+        has_velocity_limits: true
+        has_acceleration_limits: true
+        max_velocity: 4.0  # radians per second
+        min_velocity: -4.0  # radians per second
+        max_acceleration: 25.0  # radians per second squared
+
+    # Optional: Use stamped velocity commands
+    use_stamped_vel: false
+
+    # Optional: Enable publishing limited velocity
+    publish_limited_velocity: true
+    velocity_rolling_window_size: 10
+
+    # Covariance settings can be adjusted based on sensor accuracy and application requirements
+
+    # Controller type
+    type: "diff_drive_controller/DiffDriveController"

@@ -14,8 +14,10 @@ ros2 service call isaac/scale_prim isaacsim_msgs/srv/ScalePrim "{name: 'waffle',
 
 ros2 service call isaac/spawn_wall isaacsim_msgs/srv/SpawnWall "{name: 'wall_1', world_path: '/World',start:[1.0,1.0], end:[-5.0,1.0], height: 2.0}"
 
-ros2 topic pub --once /cmd_vel geometry_msgs/Twist "{'linear': {'x': -0.2, 'y': 0.0, 'z': 0.0}, 'angular': {'x': 0.0, 'y': 0.0, 'z': 0.0}}"
+ros2 topic pub --once waffle/cmd_vel geometry_msgs/Twist "{'linear': {'x': -0.2, 'y': 0.0, 'z': 0.0}, 'angular': {'x': 0.0, 'y': 0.0, 'z': 0.0}}"
 
-ros2 topic pub --once /cmd_vel geometry_msgs/Twist "{'linear': {'x': 0.0, 'y': 0.0, 'z': 0.0}, 'angular': {'x': 0.0, 'y': 0.0, 'z': 0.0}}"
+ros2 topic pub --once waffle/cmd_vel geometry_msgs/Twist "{'linear': {'x': 0.0, 'y': 0.0, 'z': 0.0}, 'angular': {'x': 0.0, 'y': 0.0, 'z': 0.0}}"
 
 ros2 service call isaac/import_yaml isaacsim_msgs/srv/ImportYaml '{'yaml_path': '/home/ubuntu/arena4_ws/src/arena/isaac/robot_models/demo.yaml'}'
+
+ros2 service call isaac/import_obstacle isaacsim_msgs/srv/ImportObstacles '{name: 'shelf', usd_path: '/home/ubuntu/arena4_ws/src/arena/isaac/robot_models/shelf.usd' }'

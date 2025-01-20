@@ -1,6 +1,8 @@
 robot:
   name: "waffle"
+  model: "waffle"
   usd_path: "/home/ubuntu/arena4_ws/src/arena/isaac/robot_models/turtlebot3_waffle.usd"
+  config_path: "/home/ubuntu/arena4_ws/src/arena/simulation_setup/entities/models/waffle/control.yaml"
   prim_path: "/World"
   control: true
   position: [0, -2, 1]

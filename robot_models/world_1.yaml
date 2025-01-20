@@ -1,0 +1,47 @@
+launch_config:
+  renderer: "RayTracedLighting"
+  headless: false
+
+robots:
+  waffle:
+    name: "waffle"
+    model: "waffle"
+    usd_path: "/home/ubuntu/arena4_ws/src/arena/isaac/robot_models/turtlebot3_waffle.usd"
+    config_path: "/home/ubuntu/arena4_ws/src/arena/simulation_setup/entities/models/waffle/control.yaml"
+    prim_path: "/World"
+    control: true
+    position: [0, -2, 1]
+    orientation: [1, 0, 0, 0]
+
+objects:
+  table:
+    usd_path: "/home/ubuntu/arena4_ws/src/arena/isaac/robot_models/table.usd"
+    class: "table"
+    number: 2
+    type: "Local"                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           
+  cone:
+    url: "/Isaac/Environments/Simple_Warehouse/Props/S_TrafficCone.usd"
+    class: "cone"
+    number: 3
+    type: "Isaac"
+
+bounding_walls:
+  bounding_wall_1:
+    start: [5.0, 5.0]
+    end: [-5.0, 5.0]
+    height: 2.0
+  bounding_wall_2:
+    start: [5.0, 5.0]
+    end: [5.0, -5.0]
+    height: 2.0
+  bounding_wall_3:
+    start: [5.0, -5.0]
+    end: [-5.0, -5.0]
+    height: 2.0
+  bounding_wall_4:
+    start: [-5.0, 5.0]
+    end: [-5.0, -5.0]
+    height: 2.0
+
+clear_previous_semantics: True
+close_app_after_run: False
