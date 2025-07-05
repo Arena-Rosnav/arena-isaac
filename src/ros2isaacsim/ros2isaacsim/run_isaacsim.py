@@ -89,6 +89,8 @@ from isaac_utils.services import delete_prim
 from isaac_utils.services import convert_urdf_to_usd
 from isaac_utils.services import import_obstacle
 from isaac_utils.services import spawn_ped
+from isaac_utils.services import move_ped
+from isaac_utils.services import delete_all_characters
 
 #Import sensors
 from isaac_utils.sensors import imu_setup,publish_imu, contact_sensor_setup, publish_contact_sensor_info, camera_set_up,publish_camera_tf,publish_depth,publish_camera_info,publish_pointcloud_from_depth,publish_rgb, lidar_setup,publish_lidar 
@@ -330,6 +332,9 @@ def create_controller(time=120):
     import_yaml(controller)
     import_obstacle(controller)
     spawn_ped(controller)
+    move_ped(controller)
+    delete_all_characters(controller)
+    
     return controller
 
 # update the simulation.
@@ -346,7 +351,7 @@ def run():
 def main(arg=None):
     rclpy.init()
     controller = create_controller()
-    while True:
+    while simulation_app.is_running():
         try:
             run()
             rclpy.spin_once(controller, timeout_sec=0.0)

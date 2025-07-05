@@ -211,8 +211,8 @@ class Person:
         if self._backend:
             self._backend.update(self._state, dt)
 
-        if self.character_skel_root_stage_path is not None:
-            PeopleManager.get_people_manager().add_person(self.character_skel_root_stage_path, self._state.position)
+        # if self.character_skel_root_stage_path is not None:
+        #     PeopleManager.get_people_manager().add_person(self.character_skel_root_stage_path, self)
 
     def update_target_position(self, position, walk_speed=1.0):
         """
@@ -278,7 +278,7 @@ class Person:
         self.character_skel_root_stage_path = root_path
 
         # Add the current person to the person manager
-        # PeopleManager.get_people_manager().add_person(self.character_skel_root_stage_path, self)
+        PeopleManager.get_people_manager().add_person(self.character_skel_root_stage_path, self)
 
     def add_animation_graph_to_agent(self):
 
