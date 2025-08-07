@@ -5,8 +5,8 @@ import numpy as np
 import omni.replicator.core as rep
 import omni.usd
 from omni.isaac.core import World
-from omni.isaac.core.prims.rigid_prim import RigidPrim
-from omni.isaac.core.utils import prims
+from isaacsim.core.prims.rigid_prim import RigidPrim
+from isaacsim.core.utils import prims
 from omni.isaac.core.utils.bounds import compute_combined_aabb, compute_obb, create_bbox_cache, get_obb_corners
 from omni.isaac.core.utils.rotations import euler_angles_to_quat, quat_to_euler_angles
 from omni.isaac.core.utils.semantics import remove_all_semantics
@@ -16,6 +16,8 @@ from .services.SpawnWall import wall_spawner
 import random
 
 # Add colliders to Gprim and Mesh descendants of the root prim
+
+
 def add_colliders(root_prim, approx_type="convexHull"):
     # Iterate descendant prims (including root) and add colliders to mesh or primitive types
     for desc_prim in Usd.PrimRange(root_prim):
@@ -104,7 +106,7 @@ def register_cone_placement(forklift_prim, assets_root_path, config):
             rep.modify.pose(position=rep.distribution.sequence(bottom_corners), rotation_z=obb_euler[2])
         return cones.node
     print(
-        
+
     )
     rep.randomizer.register(place_cones)
 
@@ -129,7 +131,8 @@ def register_lights_placement(forklift_prim, pallet_prim):
 
     rep.randomizer.register(randomize_lights)
 
-def register_objects_spawner(objects, assets_root_path,num_frames):
+
+def register_objects_spawner(objects, assets_root_path, num_frames):
     for object in objects.items():
         object_name = object[0]
         print(object_name)
@@ -141,31 +144,32 @@ def register_objects_spawner(objects, assets_root_path,num_frames):
 
         # Combine them into a list of [x, y, z] elements
         pos = [
-        (float(x), float(y), float(z))
-        for x, y, z in zip(x_coords, y_coords, z_coords)
+            (float(x), float(y), float(z))
+            for x, y, z in zip(x_coords, y_coords, z_coords)
         ]
-        pos_test = [(-4,0,0),(-4,0,3),(-4,0,2),(-4,0,1)]
+        pos_test = [(-4, 0, 0), (-4, 0, 3), (-4, 0, 2), (-4, 0, 1)]
         print(rep.distribution.sequence(pos_test))
+
         def spawn_objects():
             if object_params['type'] == "Isaac":
                 objs = rep.create.from_usd(
-                    assets_root_path + object_params['url'],semantics=[('class',object_params['class'])],
-                    count = object_params['number']
+                    assets_root_path + object_params['url'], semantics=[('class', object_params['class'])],
+                    count=object_params['number']
                 )
                 with objs:
                     rep.modify.pose(
-                        position = rep.distribution.choice(pos)
-                        )
+                        position=rep.distribution.choice(pos)
+                    )
                 print("created " + object_name)
             elif object_params['type'] == "Local":
                 objs = rep.create.from_usd(
-                    object_params['usd_path'],semantics=[('class',object_params['class'])],
-                    count = object_params['number']
+                    object_params['usd_path'], semantics=[('class', object_params['class'])],
+                    count=object_params['number']
                 )
                 with objs:
                     rep.modify.pose(
-                        position = rep.distribution.choice(pos)
-                        )
+                        position=rep.distribution.choice(pos)
+                    )
                 print("created " + object_name)
     rep.randomizer.register(spawn_objects)
 
@@ -175,16 +179,17 @@ def register_cube_spawner(count):
     y_coords = np.random.uniform(-4.5, 4.5, 500).astype(float)
     z_coords = np.zeros(500).astype(float)
     pos = [
-    (float(x), float(y), float(z))
-    for x, y, z in zip(x_coords, y_coords, z_coords)
+        (float(x), float(y), float(z))
+        for x, y, z in zip(x_coords, y_coords, z_coords)
     ]
+
     def spawn_cubes():
         objs = rep.create.cube(
             count=count,
-            scale=(0.8 , 0.8, 1.6)
+            scale=(0.8, 0.8, 1.6)
         )
         with objs:
             rep.modify.pose(
-                position = rep.distribution.choice(pos)
+                position=rep.distribution.choice(pos)
             )
     rep.randomizer.register(spawn_cubes)

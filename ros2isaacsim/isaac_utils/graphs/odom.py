@@ -1,11 +1,11 @@
 import os
 import omni.graph.core as og
 from isaac_utils.graphs import Graph
-from omni.isaac.core.utils import extensions
+from isaacsim.core.utils import extensions
 
 extensions.enable_extension("omni.graph.nodes")
-extensions.enable_extension("omni.isaac.core_nodes")
-extensions.enable_extension("omni.isaac.ros2_bridge")
+extensions.enable_extension("isaacsim.core.nodes")
+extensions.enable_extension("isaacsim.ros2.bridge")
 
 
 def odom(
@@ -36,12 +36,12 @@ def odom(
     graph = Graph(graph_path)
 
     on_playback_tick = graph.node('on_playback_tick', 'omni.graph.action.OnPlaybackTick')
-    read_simulation_time = graph.node('read_simulation_time', 'omni.isaac.core_nodes.IsaacReadSimulationTime')
+    read_simulation_time = graph.node('read_simulation_time', 'isaacsim.core.nodes.IsaacReadSimulationTime')
     get_transform = graph.node('get_transform', 'omni.graph.nodes.GetPrimLocalToWorldTransform')
     extract_translation = graph.node('extract_translation', 'omni.graph.nodes.GetMatrix4Translation')
     extract_rotation = graph.node('extract_rotation', 'omni.graph.nodes.GetMatrix4Quaternion')
-    publish_map = graph.node('publish_odom_static', 'omni.isaac.ros2_bridge.ROS2PublishRawTransformTree')
-    publish_odom = graph.node('publish_odom', 'omni.isaac.ros2_bridge.ROS2PublishRawTransformTree')
+    publish_map = graph.node('publish_odom_static', 'isaacsim.ros2.bridge.ROS2PublishRawTransformTree')
+    publish_odom = graph.node('publish_odom', 'isaacsim.ros2.bridge.ROS2PublishRawTransformTree')
 
     on_playback_tick.connect('tick', publish_odom, 'execIn')
     on_playback_tick.connect('tick', publish_map, 'execIn')

@@ -7,7 +7,7 @@ import omni.anim.graph.core as ag
 # High level Isaac sim APIs
 import omni.client
 from omni.anim.people import PeopleSettings
-from omni.isaac.core.utils import prims
+from isaacsim.core.utils import prims
 from isaac_utils.utils.assets import get_assets_root_path_safe
 
 from omni.usd import get_stage_next_free_path

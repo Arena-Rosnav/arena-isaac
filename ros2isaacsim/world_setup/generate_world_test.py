@@ -1,10 +1,10 @@
 from pxr import Gf
-from omni.isaac.core.world import World
+from isaacsim.core.api.world import World
 from isaac_utils.utils.assets import get_assets_root_path_safe
 from isaacsim_msgs.srv import SpawnWall
-from omni.isaac.core.utils.stage import get_current_stage, open_stage
+from isaacsim.core.utils.stage import get_current_stage, open_stage
 from omni.isaac.core.utils.rotations import euler_angles_to_quat
-from omni.isaac.core.utils import prims
+from isaacsim.core.utils import prims
 from isaac_utils.services.SpawnWall import wall_spawner
 from isaac_utils import scene_based_sdg_utils
 from isaac_utils import world_generation_utils

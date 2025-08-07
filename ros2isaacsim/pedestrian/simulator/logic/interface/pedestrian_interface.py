@@ -7,21 +7,22 @@ from threading import Lock
 # NVidia API imports
 import carb
 import omni.kit.app
-from omni.isaac.core.world import World
-from omni.isaac.core.utils.stage import clear_stage, create_new_stage_async, update_stage_async, create_new_stage
+from isaacsim.core.api.world import World
+from isaacsim.core.utils.stage import clear_stage, create_new_stage_async, update_stage_async, create_new_stage
 from omni.isaac.core.utils.viewports import set_camera_view
 import omni.isaac.nucleus as nucleus
 
 # Pedestrian Simulator internal API
 from pedestrian.simulator.params import DEFAULT_WORLD_SETTINGS, SIMULATION_ENVIRONMENTS
 
+
 class PedestrianInterface:
     _instance = None
     _is_initialized = False
-    
+
     # Lock for safe multi-threading
     _lock: Lock = Lock()
-    
+
     def __init__(self):
 
         if PedestrianInterface._is_initialized:
@@ -29,19 +30,19 @@ class PedestrianInterface:
 
         PedestrianInterface._is_initialized = True
 
-        #Initialize the world with defalut settings
+        # Initialize the world with defalut settings
         self._world_settings = DEFAULT_WORLD_SETTINGS
         self._world = None
 
     @property
     def world(self):
-        """The current omni.isaac.core.world World instance
+        """The current isaacsim.core.api.world World instance
 
         Returns:
-            omni.isaac.core.world: The world instance
+            isaacsim.core.api.world: The world instance
         """
         return self._world
-    
+
     def initialize_world(self):
         """Method that initializes the world object
         """
@@ -53,7 +54,7 @@ class PedestrianInterface:
 
         Args:
             usd_asset (str): The path where the USD file describing the world is located.
-            stage_prefix (str): The name the vehicle will present in the simulator when spawned. 
+            stage_prefix (str): The name the vehicle will present in the simulator when spawned.
         """
 
         # Try to check if there is already a prim with the same stage prefix in the stage
@@ -66,7 +67,7 @@ class PedestrianInterface:
 
         if not success:
             raise Exception("The usd asset" + usd_asset + "is not load at stage path " + stage_prefix)
-        
+
     def set_viewport_camera(self, camera_position, camera_target):
         """Sets the viewport camera to given position and makes it point to another target position.
 
@@ -76,7 +77,7 @@ class PedestrianInterface:
         """
         # Set the camera view to a fixed value
         set_camera_view(eye=camera_position, target=camera_target)
-    
+
     def set_world_settings(self, physics_dt=None, stage_units_in_meters=None, rendering_dt=None, device=None):
         """
         Set the current world settings to the pre-defined settings. TODO - finish the implementation of this method.
@@ -96,7 +97,7 @@ class PedestrianInterface:
 
         if device is not None:
             self._world_settings["device"] = device
-    
+
     def __new__(cls):
         """Allocates the memory and creates the actual PegasusInterface object is not instance exists yet. Otherwise,
         returns the existing instance of the PegasusInterface class.

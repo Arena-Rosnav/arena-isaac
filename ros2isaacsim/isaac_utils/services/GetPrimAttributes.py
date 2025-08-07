@@ -1,5 +1,5 @@
 import numpy as np
-from omni.isaac.core.utils.prims import get_prim_at_path
+from isaacsim.core.utils.prims import get_prim_at_path
 from rclpy.qos import QoSProfile
 
 from isaacsim_msgs.srv import GetPrimAttributes

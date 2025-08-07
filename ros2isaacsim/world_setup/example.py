@@ -12,9 +12,9 @@
 
 from pxr import Gf
 from isaac_utils.utils.assets import get_assets_root_path_safe
-from omni.isaac.core.utils.stage import get_current_stage, open_stage
+from isaacsim.core.utils.stage import get_current_stage, open_stage
 from omni.isaac.core.utils.rotations import euler_angles_to_quat
-from omni.isaac.core.utils import prims
+from isaacsim.core.utils import prims
 import scene_based_sdg_utils
 import omni.usd
 import omni.replicator.core as rep

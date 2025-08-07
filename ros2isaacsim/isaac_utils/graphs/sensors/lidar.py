@@ -11,13 +11,13 @@ import omni.graph.core as og
 import omni.kit.commands
 from isaac_utils.graphs import Graph
 from isaac_utils.utils.geom import Rotation, Translation
-from omni.isaac.core.utils import extensions
-from omni.isaac.core.utils.extensions import get_extension_path_from_name
+from isaacsim.core.utils import extensions
+from isaacsim.core.utils.extensions import get_extension_path_from_name
 
 from . import SensorBase
 
-extensions.enable_extension("omni.isaac.ros2_bridge")
-extensions.enable_extension("omni.isaac.core_nodes")
+extensions.enable_extension("isaacsim.ros2.bridge")
+extensions.enable_extension("isaacsim.core.nodes")
 
 
 class SensorLidar(SensorBase):
@@ -226,12 +226,12 @@ class SensorLidar(SensorBase):
 
         get_camera_prim = graph.node('get_camera_prim', 'omni.replicator.core.OgnGetPrimAtPath')
         on_playback_tick = graph.node("on_playback_tick", "omni.graph.action.OnPlaybackTick")
-        render_product = graph.node("render_product", "omni.isaac.core_nodes.IsaacCreateRenderProduct")
-        lidar_publisher = graph.node("lidar_publisher", "omni.isaac.ros2_bridge.ROS2RtxLidarHelper")
-        lidar_publisher_points = graph.node("lidar_publisher_points", "omni.isaac.ros2_bridge.ROS2RtxLidarHelper")
+        render_product = graph.node("render_product", "isaacsim.core.nodes.IsaacCreateRenderProduct")
+        lidar_publisher = graph.node("lidar_publisher", "isaacsim.ros2.bridge.ROS2RtxLidarHelper")
+        lidar_publisher_points = graph.node("lidar_publisher_points", "isaacsim.ros2.bridge.ROS2RtxLidarHelper")
 
-        # ReadSimTime = graph.node("readSimTime", "omni.isaac.core_nodes.IsaacReadSimulationTime")
-        # publishTF = graph.node("publishTF", "omni.isaac.ros2_bridge.ROS2PublishTransformTree")
+        # ReadSimTime = graph.node("readSimTime", "isaacsim.core.nodes.IsaacReadSimulationTime")
+        # publishTF = graph.node("publishTF", "isaacsim.ros2.bridge.ROS2PublishTransformTree")
 
         get_camera_prim.attribute('paths', [self.prim_path])
         get_camera_prim.connect('prims', render_product, 'cameraPrim')

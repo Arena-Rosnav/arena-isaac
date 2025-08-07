@@ -3,7 +3,7 @@ import os
 
 import numpy as np
 from isaac_utils.utils import geom
-import omni.isaac.core.utils.prims as prim_utils
+import isaacsim.core.utils.prims as prim_utils
 
 from isaacsim_msgs.srv import ImportUsd
 from rclpy.qos import QoSProfile

@@ -3,7 +3,7 @@ from isaac_utils.sensors import imu_setup, publish_imu, contact_sensor_setup, pu
 from omni.isaac.lab.assets import AssetBaseCfg  # , ArticulationCfg
 import omni.replicator.core as rep
 from isaac_utils.utils.assets import get_assets_root_path_safe
-from omni.isaac.core.utils.prims import define_prim, get_prim_at_path
+from isaacsim.core.utils.prims import define_prim, get_prim_at_path
 from omni.isaac.lab.sensors import CameraCfg, ContactSensorCfg, RayCasterCfg, patterns
 from omni.isaac.lab.utils.assets import ISAACLAB_NUCLEUS_DIR
 from omni.isaac.lab.utils import configclass

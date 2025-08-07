@@ -1,10 +1,10 @@
 import omni.graph.core as og
 from isaac_utils.graphs import Graph
 
-from omni.isaac.core.utils import extensions
+from isaacsim.core.utils import extensions
 
-extensions.enable_extension("omni.isaac.core_nodes")
-extensions.enable_extension("omni.isaac.ros2_bridge")
+extensions.enable_extension("isaacsim.core.nodes")
+extensions.enable_extension("isaacsim.ros2.bridge")
 extensions.enable_extension("omni.isaac.wheeled_robots")
 
 
@@ -35,13 +35,13 @@ def differential(
 
     # Create nodes
     on_playback_tick = graph.node('on_playback_tick', 'omni.graph.action.OnPlaybackTick')
-    ros2_subscribe_twist = graph.node('ros2_subscribe_twist', 'omni.isaac.ros2_bridge.ROS2SubscribeTwist')
-    scale_stage_units = graph.node('scale_stage_units', 'omni.isaac.core_nodes.OgnIsaacScaleToFromStageUnit')
+    ros2_subscribe_twist = graph.node('ros2_subscribe_twist', 'isaacsim.ros2.bridge.ROS2SubscribeTwist')
+    scale_stage_units = graph.node('scale_stage_units', 'isaacsim.core.nodes.OgnIsaacScaleToFromStageUnit')
     break3vector_linear = graph.node('break3vector_linear', 'omni.graph.nodes.BreakVector3')
     break3vector_angular = graph.node('break3vector_angular', 'omni.graph.nodes.BreakVector3')
     differential_controller = graph.node('differential_controller', 'omni.isaac.wheeled_robots.DifferentialController')
     make_array = graph.node('make_array', 'omni.graph.nodes.ConstructArray')
-    articulation_controller = graph.node('articulation_controller', 'omni.isaac.core_nodes.IsaacArticulationController')
+    articulation_controller = graph.node('articulation_controller', 'isaacsim.core.nodes.IsaacArticulationController')
 
     # Set values
     make_array.attribute('arraySize', len(joint_names))

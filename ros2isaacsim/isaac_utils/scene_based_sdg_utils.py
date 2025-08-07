@@ -14,8 +14,8 @@ import numpy as np
 import omni.replicator.core as rep
 import omni.usd
 from omni.isaac.core import World
-from omni.isaac.core.prims.rigid_prim import RigidPrim
-from omni.isaac.core.utils import prims
+from isaacsim.core.prims.rigid_prim import RigidPrim
+from isaacsim.core.utils import prims
 from omni.isaac.core.utils.bounds import compute_combined_aabb, compute_obb, create_bbox_cache, get_obb_corners
 from omni.isaac.core.utils.rotations import euler_angles_to_quat, quat_to_euler_angles
 from omni.isaac.core.utils.semantics import remove_all_semantics
@@ -24,6 +24,8 @@ from .yaml_utils import read_yaml_config
 from .services.SpawnWall import wall_spawner
 
 # Add colliders to Gprim and Mesh descendants of the root prim
+
+
 def add_colliders(root_prim, approx_type="convexHull"):
     # Iterate descendant prims (including root) and add colliders to mesh or primitive types
     for desc_prim in Usd.PrimRange(root_prim):
@@ -203,29 +205,29 @@ def register_lights_placement(forklift_prim, pallet_prim):
 
     rep.randomizer.register(randomize_lights)
 
+
 def register_wall_spawner(walls_config):
     """
     Registers a randomizer function that spawns walls around the forklift_prim.
     Each time `rep.randomizer.spawn_walls()` is triggered, new walls are generated.
     """
     data = read_yaml_config(walls_config)
-    
-    walls = data.get("walls",[])
-    
-    def spawn_walls():        
+
+    walls = data.get("walls", [])
+
+    def spawn_walls():
         # 2) For each wall, pick a random angle and radius, then compute start & end in the XY plane
         for wall in walls.items():
             wall_name = wall[0]
             params = wall[1]
             request = {
-            "name": wall_name,
-            "world_path": "/World/Walls",  # A parent prim path for all walls
-            "start": params["start"],
-            "end":   params["end"],
-            "height": params["height"],
+                "name": wall_name,
+                "world_path": "/World/Walls",  # A parent prim path for all walls
+                "start": params["start"],
+                "end": params["end"],
+                "height": params["height"],
             }
-            
-        
+
         return None  # we return None or the node, but randomizers typically return a node handle
 
     # Finally, register this spawn_walls function as a randomizer in Replicator

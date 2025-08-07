@@ -40,24 +40,18 @@ def urdf_to_usd(request, response):
     import_config.set_fix_base(False)
     import_config.set_default_drive_type(2)
     import_config.set_self_collision(False)
+    import_config.make_default_prim = False
 
     ensure_path(os.path.dirname(prim_path))
     status, usd_path = commands.execute(
         "URDFParseAndImportFile",
         urdf_path=urdf_path,
         import_config=import_config,
-        dest_path='',
+        dest_path=prim_path,
     )
 
     if usd_path is None:
         return response
-
-    commands.execute(
-        "MovePrim",
-        path_from=usd_path,
-        path_to=prim_path,
-        keep_world_transform=True
-    )
 
     # print(usd_path)
     if not request.no_localization:

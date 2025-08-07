@@ -3,11 +3,11 @@ import typing
 import attrs
 import geometry_msgs.msg
 import numpy as np
-from omni.isaac.core.articulations import Articulation
-from omni.isaac.core.prims import RigidPrim, XFormPrim
+from isaacsim.core.prims import Articulation
+from isaacsim.core.prims import RigidPrim, XFormPrim
 from omni.isaac.core.utils.rotations import (euler_angles_to_quat,
                                              quat_to_euler_angles)
-from omni.isaac.core.utils.stage import get_current_stage
+from isaacsim.core.utils.stage import get_current_stage
 from pxr import Gf, UsdPhysics
 
 

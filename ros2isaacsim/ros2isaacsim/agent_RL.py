@@ -1,11 +1,31 @@
 #!/usr/bin/env python3
+from isaac_utils.sensors import imu_setup, publish_imu, contact_sensor_setup, publish_contact_sensor_info, camera_set_up, publish_camera_tf, publish_depth, publish_camera_info, publish_pointcloud_from_depth, publish_rgb, lidar_setup, publish_lidar
+from sensor_msgs.msg import LaserScan, Image
+import omni.replicator.core as rep
+from pxr import UsdGeom
+from isaacsim.core.prims import XFormPrim
+from isaac_utils.robot_graphs import assign_robot_model
+from isaacsim.core.api.world import World
+from isaacsim.core.utils import extensions, stage
+from omni.isaac.core import SimulationContext
+from isaacsim.core.utils import prims
+from isaac_utils import world_generation_utils
+import omni
+from isaacsim import SimulationApp
+from cv_bridge import CvBridge, CvBridgeError
+import cv2
+import threading
+import copy
+from geometry_msgs.msg import Twist
+import numpy as np
+from tf2_msgs.msg import TFMessage
 import rclpy
 import rclpy.context
 import rclpy.executors
 from rclpy.node import Node
 import torch
 
-#import parent directory
+# import parent directory
 from pathlib import Path
 import sys
 from tf2_ros import Buffer, TransformListener, LookupException, ConnectivityException, ExtrapolationException
@@ -15,41 +35,22 @@ from tf2_ros import TransformStamped
 # from replay_buffer import ReplayMemory
 parent_dir = Path(__file__).resolve().parent.parent
 sys.path.append(str(parent_dir))
-from tf2_msgs.msg import TFMessage
-import numpy as np
-from geometry_msgs.msg import Twist
-from sensor_msgs.msg import LaserScan,Image
-import copy
-import threading
-import cv2
-from cv_bridge import CvBridge, CvBridgeError
 
-from isaacsim import SimulationApp
 
 # Setting the config for simulation and make an simulation.
 CONFIG = {"renderer": "RayTracedLighting", "headless": False}
 simulation_app = SimulationApp(CONFIG)
 
-import omni
-from isaac_utils import world_generation_utils
 
-from omni.isaac.core.utils import prims
-from omni.isaac.core import SimulationContext
-from omni.isaac.core.utils import extensions, stage
-from omni.isaac.core.world import World
-from isaac_utils.robot_graphs import assign_robot_model
-from omni.isaac.core.prims import XFormPrim
-from pxr import UsdGeom
-import omni.replicator.core as rep
-from isaac_utils.sensors import imu_setup,publish_imu, contact_sensor_setup, publish_contact_sensor_info, camera_set_up,publish_camera_tf,publish_depth,publish_camera_info,publish_pointcloud_from_depth,publish_rgb, lidar_setup,publish_lidar 
-extensions.enable_extension("omni.isaac.ros2_bridge")
+extensions.enable_extension("isaacsim.ros2.bridge")
+
 
 class NavigationController(Node):
-    def __init__(self, name,context):
-        super().__init__('navigation_controller',context=context)
+    def __init__(self, name, context):
+        super().__init__('navigation_controller', context=context)
         """
         Initialize the NavigationController with the robot's name.
-        
+
         :param name: The name of the robot (string)
         """
         self.name = name
@@ -68,57 +69,58 @@ class NavigationController(Node):
     def _publish_velocity(self, linear_x=1.0, angular_z=0.0):
         """
         Publish a Twist message with specified linear and angular velocities for a certain duration.
-        
+
         :param linear_x: Linear velocity in the x-direction (float)
         :param angular_z: Angular velocity around the z-axis (float)
         :param duration: Time in seconds to publish the velocity (float)
         """
-        
+
         self.twist.linear.x = linear_x
         self.twist.angular.z = angular_z
-        
+
         self.publisher.publish(self.twist)
         # rospy.loginfo("Movement stopped.")
 
     def turn_right(self, angular_z=0.5):
         """
         Turn the robot to the right.
-        
+
         :param angular_z: Angular velocity around the z-axis (default: 0.5)
         :param duration: Time in seconds to perform the turn (default: 1.0)
         """
 
         self.get_logger().info("turning right")
-        self._publish_velocity(linear_x= self.twist.linear.x, angular_z=angular_z)
+        self._publish_velocity(linear_x=self.twist.linear.x, angular_z=angular_z)
 
     def turn_left(self, angular_z=-0.5):
         """
         Turn the robot to the left.
-        
+
         :param angular_z: Angular velocity around the z-axis (default: -0.5)
         :param duration: Time in seconds to perform the turn (default: 1.0)
         """
         self.get_logger().info("turning left")
         self._publish_velocity(linear_x=self.twist.linear.x, angular_z=angular_z)
 
-    def go_straight(self, linear_x=0.5, angular_z = 0.0):
+    def go_straight(self, linear_x=0.5, angular_z=0.0):
         self.get_logger().info("going straight")
 
-        self._publish_velocity(linear_x=linear_x, angular_z= angular_z)
+        self._publish_velocity(linear_x=linear_x, angular_z=angular_z)
 
-    def reverse(self, linear_x=-0.5, angular_z = 0.0):
+    def reverse(self, linear_x=-0.5, angular_z=0.0):
         """
         Move the robot in reverse.
-        
+
         :param linear_x: Linear velocity in the x-direction (negative for reverse, default: -0.5)
         :param duration: Time in seconds to move in reverse (default: 2.0)
         """
         self.get_logger().info("reversing")
-        self._publish_velocity(linear_x=linear_x , angular_z = angular_z)
+        self._publish_velocity(linear_x=linear_x, angular_z=angular_z)
 
     def stop(self):
         self.get_logger().info("stopping")
-        self._publish_velocity(linear_x=0.0,angular_z=0.0)
+        self._publish_velocity(linear_x=0.0, angular_z=0.0)
+
 
 # spawn world
 world = World()
@@ -127,7 +129,7 @@ omni.usd.get_context().open_stage("/home/ubuntu/arena4_ws/src/arena/isaac/robot_
 
 # wait for things to load
 simulation_app.update()
-while omni.isaac.core.utils.stage.is_stage_loading():
+while isaacsim.core.utils.stage.is_stage_loading():
     simulation_app.update()
 
 simulation_context = omni.isaac.core.SimulationContext(stage_units_in_meters=1.0)
@@ -139,64 +141,64 @@ name = "waffle_1"
 prim_path = f"/World/{name}"
 
 model_prim = prims.create_prim(
-prim_path=f"/World/waffle_1",
-position=np.array([-4.8,4.8,0.5]),
-orientation=np.array([1.0,0.0,0.0,0.0]),
-usd_path="/home/ubuntu/arena4_ws/src/arena/isaac/robot_models/waffle.usd",
-semantic_label="waffle",
+    prim_path=f"/World/waffle_1",
+    position=np.array([-4.8, 4.8, 0.5]),
+    orientation=np.array([1.0, 0.0, 0.0, 0.0]),
+    usd_path="/home/ubuntu/arena4_ws/src/arena/isaac/robot_models/waffle.usd",
+    semantic_label="waffle",
 )
-camera_prim_path = prim_path + "/camera_link" 
+camera_prim_path = prim_path + "/camera_link"
 camera = camera_set_up(camera_prim_path, "Camera")
 camera.initialize()
 publish_camera_info(name, camera, 20)
 publish_depth(name, camera, 20)
 publish_rgb(name, camera, 20)
 publish_pointcloud_from_depth(name, camera, 20)
-publish_camera_tf(name,prim_path,camera)
+publish_camera_tf(name, prim_path, camera)
 
 lidar_prim_path = prim_path + "/base_scan"
 lidar = lidar_setup(lidar_prim_path, "Lidar")
 publish_lidar(name, prim_path, lidar)
 
-links = ["wheel_left_link","wheel_right_link"]
+links = ["wheel_left_link", "wheel_right_link"]
 for link in links:
     imu_prim_path = prim_path + "/" + link + "/" + "IMU"
     contact_prim_path = prim_path + "/" + link + "/" + "ContactSensor"
     imu = imu_setup(imu_prim_path)
     contact_sensor = contact_sensor_setup(contact_prim_path)
-    publish_contact_sensor_info(name,prim_path,link,contact_sensor)
-    publish_imu(name,prim_path,link,imu)
-    
-model = assign_robot_model(name,prim_path,"waffle")
+    publish_contact_sensor_info(name, prim_path, link, contact_sensor)
+    publish_imu(name, prim_path, link, imu)
+
+model = assign_robot_model(name, prim_path, "waffle")
 model.control_and_publish_joint_states()
 
 
-
-body_pose = np.array([0.0, 0.0, 0.0], float) # x, y, theta
+body_pose = np.array([0.0, 0.0, 0.0], float)  # x, y, theta
 lidar_data = np.zeros(20)
 image_L = 720
 H = image_L
 W = image_L
-pix2m = 0.1 
-L = 8 # length of a box
-stage_W = image_L*pix2m
-stage_H = image_L*pix2m
+pix2m = 0.1
+L = 8  # length of a box
+stage_W = image_L * pix2m
+stage_H = image_L * pix2m
 clash_sum = 0
 
 rgb_image = np.zeros((H, W, 3), np.uint8)
 image_for_clash_calc = np.zeros((H, W), np.uint8)
 # start region
-pt27 = (int((stage_W/2 - L/2 + 24)/pix2m), int((stage_H/2 + L/2 + 24)/pix2m))
-pt28 = (int((stage_W/2 + L/2 + 24)/pix2m), int((stage_H/2 - L/2 + 24)/pix2m))
+pt27 = (int((stage_W / 2 - L / 2 + 24) / pix2m), int((stage_H / 2 + L / 2 + 24) / pix2m))
+pt28 = (int((stage_W / 2 + L / 2 + 24) / pix2m), int((stage_H / 2 - L / 2 + 24) / pix2m))
 cv2.rectangle(rgb_image, pt27, pt28, (0, 0, 255), cv2.FILLED, cv2.LINE_8)
 # goal region
-pt27 = (int((stage_W/2 - L/2 - 24)/pix2m), int((stage_H/2 + L/2 - 24)/pix2m))
-pt28 = (int((stage_W/2 + L/2 - 24)/pix2m), int((stage_H/2 - L/2 - 24)/pix2m))
+pt27 = (int((stage_W / 2 - L / 2 - 24) / pix2m), int((stage_H / 2 + L / 2 - 24) / pix2m))
+pt28 = (int((stage_W / 2 + L / 2 - 24) / pix2m), int((stage_H / 2 - L / 2 - 24) / pix2m))
 cv2.rectangle(rgb_image, pt27, pt28, (255, 0, 0), cv2.FILLED, cv2.LINE_8)
 
+
 class Get_Model_State(Node):
-    def __init__(self,context):
-        super().__init__('get_modelstate',context=context)
+    def __init__(self, context):
+        super().__init__('get_modelstate', context=context)
         self.subscription = self.create_subscription(
             TFMessage,
             '/tf',
@@ -216,12 +218,13 @@ class Get_Model_State(Node):
         q1 = orientation.y
         q2 = orientation.z
         q3 = orientation.w
-        body_pose[2] = -np.atan2(2*(q0*q1 + q2*q3), (q0**2 - q1**2 - q2**2 + q3**2))
+        body_pose[2] = -np.atan2(2 * (q0 * q1 + q2 * q3), (q0**2 - q1**2 - q2**2 + q3**2))
+
 
 class Lidar_Subscriber(Node):
 
-    def __init__(self,name,context):
-        super().__init__('lidar_subscriber',context=context)
+    def __init__(self, name, context):
+        super().__init__('lidar_subscriber', context=context)
         self.subscription = self.create_subscription(
             LaserScan,
             f'{name}/lidar_scan',
@@ -235,16 +238,16 @@ class Lidar_Subscriber(Node):
         global lidar_data
 
         for i in range(20):
-            value = data.ranges[180*i:180*i + 8]
+            value = data.ranges[180 * i:180 * i + 8]
             lidar_data[i] = np.max(value)
-            if(lidar_data[i] <= 0):
+            if (lidar_data[i] <= 0):
                 lidar_data[i] = self.lidar_data_prev_step[i]
             self.lidar_data_prev_step = copy.copy(lidar_data)
 
 
 class RGB_Subscriber(Node):
-    def __init__(self,name,context):
-        super().__init__('rgb_subscriber',context=context)
+    def __init__(self, name, context):
+        super().__init__('rgb_subscriber', context=context)
         # Initialize the subscription to the RGB camera topic
         self.subscription = self.create_subscription(
             Image,
@@ -266,7 +269,7 @@ class RGB_Subscriber(Node):
         try:
             # Convert ROS Image message to OpenCV image (BGR format)
             current_image = self.bridge.imgmsg_to_cv2(data, desired_encoding='bgr8')
-            
+
             if current_image is not None:
                 rgb_image = current_image
             else:
@@ -279,7 +282,7 @@ class RGB_Subscriber(Node):
             rgb_image = self.rgb_image_prev_step
 
         # Store a copy of the current image for the next step
-        self.rgb_image_prev_step = copy.deepcopy(rgb_image) 
+        self.rgb_image_prev_step = copy.deepcopy(rgb_image)
 
 # class CollisionDetector(Node):
 #     def __init__(self, env):
@@ -300,25 +303,25 @@ class RGB_Subscriber(Node):
 #         # Example condition based on impulse
 #         if collision_event.impulse > 0.1:  # Threshold value
 #             self.collision = True
-            # self.env.done = True
-            # self.get_logger().info(f"Collision detected with {collision_event.other_prim_path}")
+        # self.env.done = True
+        # self.get_logger().info(f"Collision detected with {collision_event.other_prim_path}")
 
 
 class Env(Node):
     def __init__(self,
-                agent_name,
-                world,
-                context):
-        super().__init__('isaac_env',context=context)
+                 agent_name,
+                 world,
+                 context):
+        super().__init__('isaac_env', context=context)
 
-        self.world = world 
-        
+        self.world = world
+
         self.model = assign_robot_model(name=agent_name, prim_path="/World/waffle_1", model="waffle")
-        self.model.controller = NavigationController(name=agent_name,context=context)
+        self.model.controller = NavigationController(name=agent_name, context=context)
 
         self.get_model_state = Get_Model_State(context)
-        self.lidar_subscriber = Lidar_Subscriber(agent_name,context)
-        self.rgb_subscriber = RGB_Subscriber(agent_name,context)
+        self.lidar_subscriber = Lidar_Subscriber(agent_name, context)
+        self.rgb_subscriber = RGB_Subscriber(agent_name, context)
 
         # self.collision_detector = CollisionDetector(self)
 
@@ -373,7 +376,6 @@ class Env(Node):
     #             position = rep.distribution.choice(pos)
     #         )
 
-
     def update_state(self):
         global body_pose, lidar_data, rgb_image
 
@@ -382,32 +384,31 @@ class Env(Node):
         self.state["lidar"] = lidar_data.copy()
         self.state["image"] = rgb_image.copy()
 
-
     def step(self, action):
         if self.done:
             self.get_logger().warn("Episode has terminated. Please reset the environment.")
             return self.state, 0.0, self.done
-        
+
         for _ in range(20):  # Adjust the number of steps as needed
             self.apply_action(action)
             self.world.step(render=True)
             # rep.orchestrator.step(delta_time=0.0)
-        
+
         self.update_state()
 
         reward = self.calculate_reward()
 
         self.check_terminated()
-        
+
         self.current_step += 1
 
         if self.current_step % 20 == 0:
             self.reset()
 
         return self.state, reward, self.done
-    
+
     def apply_action(self, action):
-        if action == 0 :
+        if action == 0:
             self.model.controller.go_straight()
         elif action == 1:
             self.model.controller.turn_right()
@@ -426,24 +427,25 @@ class Env(Node):
         # print(context)
         rep.utils.send_og_event(event_name="randomize_cubes")
         return
-    
+
     def calculate_reward(self):
         distance_to_goal = np.linalg.norm(self.goal - self.state['position'])
         reward = -distance_to_goal
-        
+
         # Penalty for collision
         if self.check_terminated:
             reward -= 10
-        
+
         # Reward for reaching the goal
         if distance_to_goal < 1.0:
             reward += 100
-        
+
         return reward
-    
+
     def check_terminated(self):
         self.done = False
         return False
+
 
 class RLAgent(Node):
     def __init__(self, name, num_steps):
@@ -520,7 +522,7 @@ class RLAgent(Node):
 def main():
     context = rclpy.context.Context()
     rclpy.init(context=context)
-    env = Env(agent_name ="waffle_1", world=World.instance(),context=context)
+    env = Env(agent_name="waffle_1", world=World.instance(), context=context)
     executor = rclpy.executors.MultiThreadedExecutor(context=context)
     executor.add_node(env)
     executor.add_node(env.get_model_state)
@@ -530,13 +532,14 @@ def main():
 
     executor_thread = threading.Thread(target=executor.spin, daemon=True)
     executor_thread.start()
-    
+
     # # agent = RLAgent("waffle", 500)
 
     env.reset()
     while True:
         action = np.random.choice(5)
         env.step(action)
+
 
 if __name__ == '__main__':
     main()

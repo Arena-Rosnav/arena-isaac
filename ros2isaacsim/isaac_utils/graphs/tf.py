@@ -1,11 +1,11 @@
 import os
 import omni.graph.core as og
 from isaac_utils.graphs import Graph
-from omni.isaac.core.utils import extensions
+from isaacsim.core.utils import extensions
 
 extensions.enable_extension("omni.graph.nodes")
-extensions.enable_extension("omni.isaac.core_nodes")
-extensions.enable_extension("omni.isaac.ros2_bridge")
+extensions.enable_extension("isaacsim.core.nodes")
+extensions.enable_extension("isaacsim.ros2.bridge")
 
 
 def tf(
@@ -38,9 +38,9 @@ def tf(
     on_tick = graph.node('on_tick', 'omni.graph.action.OnTick')
     on_tick.attribute('framePeriod', throttle)
 
-    read_simulation_time = graph.node('read_simulation_time', 'omni.isaac.core_nodes.IsaacReadSimulationTime')
+    read_simulation_time = graph.node('read_simulation_time', 'isaacsim.core.nodes.IsaacReadSimulationTime')
     get_base_prim = graph.node('get_base_prim', 'omni.replicator.core.OgnGetPrimAtPath')
-    publish_tf = graph.node('publish_tf', 'omni.isaac.ros2_bridge.ROS2PublishTransformTree')
+    publish_tf = graph.node('publish_tf', 'isaacsim.ros2.bridge.ROS2PublishTransformTree')
     prefix_transform = graph.node('prefix_transform', 'omni.graph.scriptnode.ScriptNode')
 
     on_tick.connect('tick', publish_tf, 'execIn')

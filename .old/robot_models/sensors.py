@@ -1,23 +1,22 @@
+from isaacsim.ros2.bridge import read_camera_info
 import omni
 import omni.graph.core as og
-from omni.isaac.core.utils import extensions
-from omni.isaac.core_nodes.scripts.utils import set_target_prims
-from omni.isaac.core.articulations import Articulation
+from isaacsim.core.utils import extensions
+from isaacsim.core.nodes.scripts.utils import set_target_prims
+from isaacsim.core.prims import SingleArticulation
 from omni.isaac.sensor import Camera, ContactSensor, IMUSensor, LidarRtx
 import omni.replicator.core as rep
 import omni.syntheticdata._syntheticdata as sd
 import omni.isaac.core.utils.numpy.rotations as rot_utils
 import omni.kit.commands as commands
 from pxr import Gf
-from omni.isaac.core.utils.prims import is_prim_path_valid, get_prim_at_path
-extensions.enable_extension("omni.isaac.ros2_bridge")
-
-from omni.isaac.ros2_bridge import read_camera_info
+from isaacsim.core.utils.prims import is_prim_path_valid, get_prim_at_path
+extensions.enable_extension("isaacsim.ros2.bridge")
 
 
-#Lidar
+# Lidar
 def lidar_setup(prim_path, name):
-    prim = Articulation(prim_path = prim_path)
+    prim = SingleArticulation(prim_path=prim_path)
     pos, ori = prim.get_world_pose()
     # _, lidar = commands.execute(
     # "IsaacSensorCreateRtxLidar",
@@ -28,13 +27,14 @@ def lidar_setup(prim_path, name):
     # # orientation=Gf.Quatd(ori),
     # )
     lidar = LidarRtx(
-        prim_path = prim_path + "/Lidar",
-        name = name,
-        config_file_name = 'Temp_Config_0',
+        prim_path=prim_path + "/Lidar",
+        name=name,
+        config_file_name='Temp_Config_0',
     )
     return lidar
 
-def publish_lidar(name,prim_path,lidar):
+
+def publish_lidar(name, prim_path, lidar):
     lidar_prim_path = lidar.prim_path
     print(lidar_prim_path)
     keys = og.Controller.Keys
@@ -43,25 +43,25 @@ def publish_lidar(name,prim_path,lidar):
         {
             keys.CREATE_NODES: [
                 ("OnPlaybackTick", "omni.graph.action.OnPlaybackTick"),
-                ("RunOnce", "omni.isaac.core_nodes.OgnIsaacRunOneSimulationFrame"),
-                ("RenderProduct", "omni.isaac.core_nodes.IsaacCreateRenderProduct"),
-                ("Context", "omni.isaac.ros2_bridge.ROS2Context"),
-                ("LidarPublisher", "omni.isaac.ros2_bridge.ROS2RtxLidarHelper"),
-                ("readSimTime", "omni.isaac.core_nodes.IsaacReadSimulationTime"),
-                ("LidarPointCloudPublisher", "omni.isaac.ros2_bridge.ROS2RtxLidarHelper"),
-                ("publishTF", "omni.isaac.ros2_bridge.ROS2PublishTransformTree"),
+                ("RunOnce", "isaacsim.core.nodes.OgnIsaacRunOneSimulationFrame"),
+                ("RenderProduct", "isaacsim.core.nodes.IsaacCreateRenderProduct"),
+                ("Context", "isaacsim.ros2.bridge.ROS2Context"),
+                ("LidarPublisher", "isaacsim.ros2.bridge.ROS2RtxLidarHelper"),
+                ("readSimTime", "isaacsim.core.nodes.IsaacReadSimulationTime"),
+                ("LidarPointCloudPublisher", "isaacsim.ros2.bridge.ROS2RtxLidarHelper"),
+                ("publishTF", "isaacsim.ros2.bridge.ROS2PublishTransformTree"),
 
 
             ],
             keys.SET_VALUES: [
                 ("RenderProduct.inputs:cameraPrim", lidar_prim_path),
                 ("LidarPublisher.inputs:topicName", f"{name}/lidar_scan"),
-                ("LidarPublisher.inputs:frameId", f"base_scan"),               
+                ("LidarPublisher.inputs:frameId", f"base_scan"),
                 ("LidarPublisher.inputs:type", f"laser_scan"),
-                ("LidarPointCloudPublisher.inputs:frameId", f"base_scan"),               
+                ("LidarPointCloudPublisher.inputs:frameId", f"base_scan"),
                 ("LidarPointCloudPublisher.inputs:topicName", f"{name}/lidar_point_cloud"),
                 ("LidarPointCloudPublisher.inputs:type", f"point_cloud"),
-                ("publishTF.inputs:targetPrims", [prim_path,prim_path+'/base_scan']),
+                ("publishTF.inputs:targetPrims", [prim_path, prim_path + '/base_scan']),
                 # ("publishTF.inputs:topicName", f"{name}/tf"),
 
 
@@ -71,19 +71,17 @@ def publish_lidar(name,prim_path,lidar):
                 ("OnPlaybackTick.outputs:tick", "RunOnce.inputs:execIn"),
                 ("OnPlaybackTick.outputs:tick", "publishTF.inputs:execIn"),
                 ("readSimTime.outputs:simulationTime", "publishTF.inputs:timeStamp"),
-                ("RenderProduct.outputs:execOut","LidarPublisher.inputs:execIn"),
-                ("RenderProduct.outputs:renderProductPath","LidarPublisher.inputs:renderProductPath"),
-                ("Context.outputs:context","LidarPublisher.inputs:context"),
-                ("Context.outputs:context","publishTF.inputs:context"),
+                ("RenderProduct.outputs:execOut", "LidarPublisher.inputs:execIn"),
+                ("RenderProduct.outputs:renderProductPath", "LidarPublisher.inputs:renderProductPath"),
+                ("Context.outputs:context", "LidarPublisher.inputs:context"),
+                ("Context.outputs:context", "publishTF.inputs:context"),
                 ("RunOnce.outputs:step", "RenderProduct.inputs:execIn"),
-                ("RenderProduct.outputs:execOut","LidarPointCloudPublisher.inputs:execIn"),
-                ("RenderProduct.outputs:renderProductPath","LidarPointCloudPublisher.inputs:renderProductPath"),
-                ("Context.outputs:context","LidarPointCloudPublisher.inputs:context"),
+                ("RenderProduct.outputs:execOut", "LidarPointCloudPublisher.inputs:execIn"),
+                ("RenderProduct.outputs:renderProductPath", "LidarPointCloudPublisher.inputs:renderProductPath"),
+                ("Context.outputs:context", "LidarPointCloudPublisher.inputs:context"),
             ],
         },
     )
-
-
 
     # hydra_texture = rep.create.render_product(lidar.GetPath(), [1, 1], name="Isaac")
 
@@ -102,31 +100,34 @@ def publish_lidar(name,prim_path,lidar):
 
     return
 
-#Contact Sensor
+# Contact Sensor
+
+
 def contact_sensor_setup(prim_path):
     contact_sensor = ContactSensor(
 
-    prim_path=prim_path,
-    name="Contact_Sensor",
-    frequency=60,
-    min_threshold=0,
-    max_threshold=10000000,
-    radius=-1,
+        prim_path=prim_path,
+        name="Contact_Sensor",
+        frequency=60,
+        min_threshold=0,
+        max_threshold=10000000,
+        radius=-1,
     )
     contact_sensor.initialize()
     return contact_sensor
 
-def publish_contact_sensor_info(name, prim_path,link, contact_sensor: ContactSensor):
+
+def publish_contact_sensor_info(name, prim_path, link, contact_sensor: ContactSensor):
     contact_sensor_prim = contact_sensor.prim_path
-    (graph_handle,nodes,_,_) = og.Controller.edit(
+    (graph_handle, nodes, _, _) = og.Controller.edit(
         {"graph_path": f"{prim_path}/{link}_Contact_Sensor"},
         {
             # 2) Create the nodes needed
             og.Controller.Keys.CREATE_NODES: [
                 ("OnPlaybackTick", "omni.graph.action.OnPlaybackTick"),
-                ("ROS2Context", "omni.isaac.ros2_bridge.ROS2Context"),
+                ("ROS2Context", "isaacsim.ros2.bridge.ROS2Context"),
                 ("ReadContactSensor", "omni.isaac.sensor.IsaacReadContactSensor"),
-                ("ROS2Publisher", "omni.isaac.ros2_bridge.ROS2Publisher"), # ROS2Publisher setup
+                ("ROS2Publisher", "isaacsim.ros2.bridge.ROS2Publisher"),  # ROS2Publisher setup
             ],
             og.Controller.Keys.SET_VALUES: [
                 ("ROS2Context.inputs:domain_id", 1),
@@ -138,10 +139,10 @@ def publish_contact_sensor_info(name, prim_path,link, contact_sensor: ContactSen
             # 3) Connect each node's pins
             og.Controller.Keys.CONNECT: [
                 ("OnPlaybackTick.outputs:tick", "ReadContactSensor.inputs:execIn"),
-                ("OnPlaybackTick.outputs:tick", "ROS2Publisher.inputs:execIn"),  
+                ("OnPlaybackTick.outputs:tick", "ROS2Publisher.inputs:execIn"),
                 ("ROS2Context.outputs:context", "ROS2Publisher.inputs:context"),
                 # ("ReadContactSensor.outputs:inContact","ROS2Publisher.inputs:in_contact"),
-                # ("ReadContactSensor.outputs:value", "ROS2Publisher.inputs:force_value"),  
+                # ("ReadContactSensor.outputs:value", "ROS2Publisher.inputs:force_value"),
             ],
 
         }
@@ -159,21 +160,23 @@ def publish_contact_sensor_info(name, prim_path,link, contact_sensor: ContactSen
 
     return
 
-#IMU
+# IMU
+
 
 def imu_setup(prim_path):
     imu = IMUSensor(
-    prim_path=prim_path,
-    name="imu",
-    frequency=60,
-    linear_acceleration_filter_size = 10,
-    angular_velocity_filter_size = 10,
-    orientation_filter_size = 10,
-)
+        prim_path=prim_path,
+        name="imu",
+        frequency=60,
+        linear_acceleration_filter_size=10,
+        angular_velocity_filter_size=10,
+        orientation_filter_size=10,
+    )
     # imu.initialize()
     return imu
 
-def publish_imu(name,prim_path,link,imu):
+
+def publish_imu(name, prim_path, link, imu):
     imu_sensor_prim_path = imu.prim_path
     og.Controller.edit(
         {"graph_path": f"{prim_path}/{link}_IMU"},  # Define the graph path
@@ -181,11 +184,11 @@ def publish_imu(name,prim_path,link,imu):
             # Create the required nodes
             og.Controller.Keys.CREATE_NODES: [
                 ("OnPlaybackTick", "omni.graph.action.OnPlaybackTick"),
-                ("ROS2Context", "omni.isaac.ros2_bridge.ROS2Context"),
+                ("ROS2Context", "isaacsim.ros2.bridge.ROS2Context"),
                 ("IsaacReadIMU", "omni.isaac.sensor.IsaacReadIMU"),
                 ("ToString", "omni.graph.nodes.ToString"),
                 ("PrintText", "omni.graph.ui_nodes.PrintText"),
-                ("ROS2PublishImu", "omni.isaac.ros2_bridge.ROS2PublishImu")
+                ("ROS2PublishImu", "isaacsim.ros2.bridge.ROS2PublishImu")
             ],
             # Connect the nodes
             og.Controller.Keys.CONNECT: [
@@ -213,15 +216,16 @@ def publish_imu(name,prim_path,link,imu):
     )
     return
 
-#=================================================================================
-#===================================Sensors Camera================================
+# =================================================================================
+# ===================================Sensors Camera================================
+
 
 def camera_set_up(prim_path, name):
-    prim = Articulation(prim_path = prim_path)
+    prim = SingleArticulation(prim_path=prim_path)
     pos, ori = prim.get_world_pose()
     camera = Camera(
-        prim_path = prim_path + "/" + name,
-        name = name,
+        prim_path=prim_path + "/" + name,
+        name=name,
         translation=pos,
         orientation=ori,
         frequency=10,
@@ -230,14 +234,15 @@ def camera_set_up(prim_path, name):
     camera.initialize()
     return camera
 
-def publish_camera_info( name,camera: Camera, freq):
+
+def publish_camera_info(name, camera: Camera, freq):
     # The following code will link the camera's render product and publish the data to the specified topic name.
     render_product = camera._render_product_path
-    step_size = int(60/freq)
-    topic_name = name + "/" + camera.name+"_camera_info"
+    step_size = int(60 / freq)
+    topic_name = name + "/" + camera.name + "_camera_info"
     queue_size = 1
     node_namespace = ""
-    frame_id = camera.prim_path.split("/")[-1] # This matches what the TF tree is publishing.
+    frame_id = camera.prim_path.split("/")[-1]  # This matches what the TF tree is publishing.
 
     writer = rep.writers.get("ROS2PublishCameraInfo")
     camera_info = read_camera_info(render_product_path=render_product)
@@ -265,14 +270,15 @@ def publish_camera_info( name,camera: Camera, freq):
     og.Controller.attribute(gate_path + ".inputs:step").set(step_size)
     return
 
-def publish_pointcloud_from_depth(name,camera: Camera, freq):
+
+def publish_pointcloud_from_depth(name, camera: Camera, freq):
     # The following code will link the camera's render product and publish the data to the specified topic name.
     render_product = camera._render_product_path
-    step_size = int(60/freq)
-    topic_name = name + "/" + camera.name+"_pointcloud" # Set topic name to the camera's name
+    step_size = int(60 / freq)
+    topic_name = name + "/" + camera.name + "_pointcloud"  # Set topic name to the camera's name
     queue_size = 1
     node_namespace = ""
-    frame_id = camera.prim_path.split("/")[-1] # This matches what the TF tree is publishing.
+    frame_id = camera.prim_path.split("/")[-1]  # This matches what the TF tree is publishing.
 
     # Note, this pointcloud publisher will simply convert the Depth image to a pointcloud using the Camera intrinsics.
     # This pointcloud generation method does not support semantic labelled objects.
@@ -297,14 +303,15 @@ def publish_pointcloud_from_depth(name,camera: Camera, freq):
 
     return
 
-def publish_rgb(name,camera: Camera, freq):
+
+def publish_rgb(name, camera: Camera, freq):
     # The following code will link the camera's render product and publish the data to the specified topic name.
     render_product = camera._render_product_path
-    step_size = int(60/freq)
-    topic_name = name + "/" + camera.name+"_rgb"
+    step_size = int(60 / freq)
+    topic_name = name + "/" + camera.name + "_rgb"
     queue_size = 1
     node_namespace = ""
-    frame_id = camera.prim_path.split("/")[-1] # This matches what the TF tree is publishing.
+    frame_id = camera.prim_path.split("/")[-1]  # This matches what the TF tree is publishing.
 
     rv = omni.syntheticdata.SyntheticData.convert_sensor_type_to_rendervar(sd.SensorType.Rgb.name)
     writer = rep.writers.get(rv + "ROS2PublishImage")
@@ -324,18 +331,19 @@ def publish_rgb(name,camera: Camera, freq):
 
     return
 
+
 def publish_depth(name, camera: Camera, freq):
     # The following code will link the camera's render product and publish the data to the specified topic name.
     render_product = camera._render_product_path
-    step_size = int(60/freq)
-    topic_name = name + "/" + camera.name+"_depth"
+    step_size = int(60 / freq)
+    topic_name = name + "/" + camera.name + "_depth"
     queue_size = 1
     node_namespace = ""
-    frame_id = camera.prim_path.split("/")[-1] # This matches what the TF tree is publishing.
+    frame_id = camera.prim_path.split("/")[-1]  # This matches what the TF tree is publishing.
 
     rv = omni.syntheticdata.SyntheticData.convert_sensor_type_to_rendervar(
-                            sd.SensorType.DistanceToImagePlane.name
-                        )
+        sd.SensorType.DistanceToImagePlane.name
+    )
     writer = rep.writers.get(rv + "ROS2PublishImage")
     writer.initialize(
         frameId=frame_id,
@@ -353,7 +361,8 @@ def publish_depth(name, camera: Camera, freq):
 
     return
 
-def publish_camera_tf(name,prim_path, camera: Camera):
+
+def publish_camera_tf(name, prim_path, camera: Camera):
     camera_prim = camera.prim_path
 
     if not is_prim_path_valid(camera_prim):
@@ -363,7 +372,7 @@ def publish_camera_tf(name,prim_path, camera: Camera):
         # Generate the camera_frame_id. OmniActionGraph will use the last part of
         # the full camera prim path as the frame name, so we will extract it here
         # and use it for the pointcloud frame_id.
-        camera_frame_id=camera_prim.split("/")[-1]
+        camera_frame_id = camera_prim.split("/")[-1]
 
         # Generate an action graph associated with camera TF publishing.
         ros_camera_graph_path = f"{prim_path}/CameraTFActionGraph"
@@ -379,8 +388,8 @@ def publish_camera_tf(name,prim_path, camera: Camera):
                 {
                     og.Controller.Keys.CREATE_NODES: [
                         ("OnTick", "omni.graph.action.OnTick"),
-                        ("IsaacClock", "omni.isaac.core_nodes.IsaacReadSimulationTime"),
-                        ("RosPublisher", "omni.isaac.ros2_bridge.ROS2PublishClock"),
+                        ("IsaacClock", "isaacsim.core.nodes.IsaacReadSimulationTime"),
+                        ("RosPublisher", "isaacsim.ros2.bridge.ROS2PublishClock"),
                     ],
                     og.Controller.Keys.CONNECT: [
                         ("OnTick.outputs:tick", "RosPublisher.inputs:execIn"),
@@ -394,28 +403,28 @@ def publish_camera_tf(name,prim_path, camera: Camera):
             ros_camera_graph_path,
             {
                 og.Controller.Keys.CREATE_NODES: [
-                    ("PublishTF_"+camera_frame_id, "omni.isaac.ros2_bridge.ROS2PublishTransformTree"),
-                    ("PublishRawTF_"+camera_frame_id+"_world", "omni.isaac.ros2_bridge.ROS2PublishRawTransformTree"),
+                    ("PublishTF_" + camera_frame_id, "isaacsim.ros2.bridge.ROS2PublishTransformTree"),
+                    ("PublishRawTF_" + camera_frame_id + "_world", "isaacsim.ros2.bridge.ROS2PublishRawTransformTree"),
                 ],
                 og.Controller.Keys.SET_VALUES: [
-                    ("PublishTF_"+camera_frame_id+".inputs:topicName", f"{name}/camera_tf"),
+                    ("PublishTF_" + camera_frame_id + ".inputs:topicName", f"{name}/camera_tf"),
                     # Note if topic_name is changed to something else besides "/tf",
                     # it will not be captured by the ROS tf broadcaster.
-                    ("PublishRawTF_"+camera_frame_id+"_world.inputs:topicName", f"{name}/camera_tf"),
-                    ("PublishRawTF_"+camera_frame_id+"_world.inputs:parentFrameId", camera_frame_id),
-                    ("PublishRawTF_"+camera_frame_id+"_world.inputs:childFrameId", camera_frame_id+"_world"),
+                    ("PublishRawTF_" + camera_frame_id + "_world.inputs:topicName", f"{name}/camera_tf"),
+                    ("PublishRawTF_" + camera_frame_id + "_world.inputs:parentFrameId", camera_frame_id),
+                    ("PublishRawTF_" + camera_frame_id + "_world.inputs:childFrameId", camera_frame_id + "_world"),
                     # Static transform from ROS camera convention to world (+Z up, +X forward) convention:
-                    ("PublishRawTF_"+camera_frame_id+"_world.inputs:rotation", [0.5, -0.5, 0.5, 0.5]),
+                    ("PublishRawTF_" + camera_frame_id + "_world.inputs:rotation", [0.5, -0.5, 0.5, 0.5]),
                 ],
                 og.Controller.Keys.CONNECT: [
-                    (ros_camera_graph_path+"/OnTick.outputs:tick",
-                        "PublishTF_"+camera_frame_id+".inputs:execIn"),
-                    (ros_camera_graph_path+"/OnTick.outputs:tick",
-                        "PublishRawTF_"+camera_frame_id+"_world.inputs:execIn"),
-                    (ros_camera_graph_path+"/IsaacClock.outputs:simulationTime",
-                        "PublishTF_"+camera_frame_id+".inputs:timeStamp"),
-                    (ros_camera_graph_path+"/IsaacClock.outputs:simulationTime",
-                        "PublishRawTF_"+camera_frame_id+"_world.inputs:timeStamp"),
+                    (ros_camera_graph_path + "/OnTick.outputs:tick",
+                        "PublishTF_" + camera_frame_id + ".inputs:execIn"),
+                    (ros_camera_graph_path + "/OnTick.outputs:tick",
+                        "PublishRawTF_" + camera_frame_id + "_world.inputs:execIn"),
+                    (ros_camera_graph_path + "/IsaacClock.outputs:simulationTime",
+                        "PublishTF_" + camera_frame_id + ".inputs:timeStamp"),
+                    (ros_camera_graph_path + "/IsaacClock.outputs:simulationTime",
+                        "PublishRawTF_" + camera_frame_id + "_world.inputs:timeStamp"),
                 ],
             },
         )
@@ -424,7 +433,7 @@ def publish_camera_tf(name,prim_path, camera: Camera):
 
     # Add target prims for the USD pose. All other frames are static.
     set_target_prims(
-        primPath=ros_camera_graph_path+"/PublishTF_"+camera_frame_id,
+        primPath=ros_camera_graph_path + "/PublishTF_" + camera_frame_id,
         inputName="inputs:targetPrims",
         targetPrimPaths=[camera_prim],
     )

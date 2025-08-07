@@ -26,8 +26,8 @@ def joint_states(
 
     # Create nodes
     on_playback_tick = graph.node('on_playback_tick', 'omni.graph.action.OnPlaybackTick')
-    publish_joint_state = graph.node('publish_joint_state', 'omni.isaac.ros2_bridge.ROS2PublishJointState')
-    read_sim_time = graph.node('read_sim_time', 'omni.isaac.core_nodes.IsaacReadSimulationTime')
+    publish_joint_state = graph.node('publish_joint_state', 'isaacsim.ros2.bridge.ROS2PublishJointState')
+    read_sim_time = graph.node('read_sim_time', 'isaacsim.core.nodes.IsaacReadSimulationTime')
 
     # Set values
     publish_joint_state.attribute('targetPrim', prim_path)

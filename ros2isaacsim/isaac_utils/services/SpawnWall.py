@@ -5,7 +5,7 @@ import numpy as np
 import omni
 from isaac_utils.utils.path import world_path
 from omni.isaac.core import World
-from omni.isaac.core.objects import FixedCuboid
+from isaacsim.core.api.objects import FixedCuboid
 from omni.isaac.core.utils.rotations import euler_angles_to_quat
 from pxr import Gf
 from rclpy.qos import QoSProfile
