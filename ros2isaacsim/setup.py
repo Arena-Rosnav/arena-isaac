@@ -20,7 +20,6 @@ setup(
     maintainer_email='anhddhe180559@fpt.edu.vn',
     description='TODO: Package description',
     license='TODO: License declaration',
-    tests_require=['pytest'],
     entry_points={
         'console_scripts': [
             "run_isaacsim=ros2isaacsim.run_isaacsim:main",
@@ -29,6 +28,6 @@ setup(
             'sdf_to_urdf=ros2isaacsim.SdftoUrdf:main',
             'agent_rl=ros2isaacsim.agent_RL:main',
             "client_pub_ped=ros2isaacsim.client_publisher:main",
-            ],
+        ],
     },
 )

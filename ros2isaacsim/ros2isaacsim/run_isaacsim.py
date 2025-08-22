@@ -1,5 +1,8 @@
 
 # fmt: off
+
+from .polyfill import *
+
 # Use the isaacsim to import SimulationApp
 from isaacsim import SimulationApp
 
