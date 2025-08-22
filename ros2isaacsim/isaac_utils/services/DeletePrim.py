@@ -1,6 +1,7 @@
 import omni.kit.commands as commands
 from isaac_utils.utils.path import world_path
 from rclpy.qos import QoSProfile
+from isaac_utils.managers.door_manager import door_manager
 
 from isaacsim_msgs.srv import DeletePrim
 
@@ -12,6 +13,9 @@ profile = QoSProfile(depth=2000)
 @safe()
 def prim_deleter(request, response):
     prim_path = world_path(request.name)
+    if prim_path == "/World/pedestrians":
+        door_manager.reset()
+        
     commands.execute(
         "IsaacSimDestroyPrim",
         prim_path=prim_path,

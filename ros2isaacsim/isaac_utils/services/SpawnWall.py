@@ -20,11 +20,15 @@ profile = QoSProfile(depth=2000)
 @safe()
 def wall_spawner(request, response):
     # Get service attributes
-    prim_path = world_path('walls', request.name)
+    prim_path = world_path('Walls', request.name)
     height = request.height
-
-    start = np.append(np.array(request.start), height / 2 + 0.1)
-    end = np.append(np.array(request.end), height / 2 + 0.1)
+    material = request.material
+    if not material:
+        material = "Adobe_Bricks_01"
+    # start = np.append(np.array(request.start), height / 2 + 0.1)
+    # end = np.append(np.array(request.end), height / 2 + 0.1)
+    start = np.append(np.array(request.start), height / 2)
+    end = np.append(np.array(request.end), height / 2)
 
     start_vec = Gf.Vec3d(*start)
     end_vec = Gf.Vec3d(*end)
@@ -46,21 +50,33 @@ def wall_spawner(request, response):
         position=center,
         scale=scale,
         orientation=euler_angles_to_quat([0, 0, angle]),
-        color=np.array([0, 0, 0.02]),
     ))
 
-    # mdl_path = "/home/brainfucker/arena4_ws/src/arena/simulation-setup/entities/obstacles/static/canteen_wall/usd/Collected_SM_Wall_2m_198/Materials/MI_Props.mdl"
-    # mtl_path = "/World/Looks/WallMaterial"
-    # mtl = stage.GetPrimAtPath(mtl_path)
-    # if not (mtl and mtl.IsValid()):
-    #     create_res = omni.kit.commands.execute('CreateMdlMaterialPrimCommand',
-    #                                            mtl_url=mdl_path,
-    #                                            mtl_name='MI_Props',
-    #                                            mtl_path=mtl_path)
+    # Create a simple material using OmniPBR instead of external URLs
+    mtl_path = "/World/Looks/WallMaterial"
+    mtl = stage.GetPrimAtPath(mtl_path)
+    if not (mtl and mtl.IsValid()):
+        try:
+            omni.kit.commands.execute('CreateAndBindMdlMaterialFromLibrary',
+                                     mdl_name='OmniPBR.mdl',
+                                     mtl_name='OmniPBR',
+                                     mtl_path=mtl_path,
+                                     select_new_prim=False)
+            # Set a gray/concrete color for walls
+            omni.kit.commands.execute('ChangeProperty',
+                                     prop_path=f"{mtl_path}/Shader.inputs:diffuse_color_constant",
+                                     value=(0.7, 0.7, 0.7),
+                                     prev=None)
+        except:
+            # Fallback: create basic material without external dependencies
+            pass
 
-    # bind_res = omni.kit.commands.execute('BindMaterialCommand',
-    #                                      prim_path=prim_path,
-    #                                      material_path=mtl_path)
+    try:
+        omni.kit.commands.execute('BindMaterialCommand',
+                                 prim_path=prim_path,
+                                 material_path=mtl_path)
+    except:
+        pass  # Material binding failed, continue without material
 
     response.ret = True
     return response

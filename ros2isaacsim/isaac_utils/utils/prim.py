@@ -60,8 +60,17 @@ def create_prim_safe(
 
 
 def ensure_path(path: str):
-    if (parent := os.path.dirname(path)) != parent:
+    if not path or path == "":
+        return
+
+    # If prim already exists nothing to do
+    if stage.GetPrimAtPath(path):
+        return
+
+    parent = os.path.dirname(path)
+    # Stop recursion when reaching filesystem root or when parent equals path
+    if parent and parent != path:
         ensure_path(parent)
 
-    if not stage.GetPrimAtPath(path):
-        UsdGeom.Xform.Define(stage, path).GetPrim()
+    # Define an Xform prim at the requested path
+    UsdGeom.Xform.Define(stage, path).GetPrim()

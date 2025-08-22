@@ -6,10 +6,40 @@ from pedestrian.simulator.logic.people.person import Person
 from rclpy.qos import QoSProfile
 
 from isaacsim_msgs.srv import Pedestrian
+from isaac_utils.managers.door_manager import door_manager
 
 from .utils import safe
 
 profile = QoSProfile(depth=2000)
+
+
+# simple logger helpers
+try:
+    import rclpy
+    from rclpy.logging import get_logger
+    _LOGGER = get_logger('isaac_spawn_ped')
+except Exception:
+    _LOGGER = None
+
+
+def _log_info(msg: str):
+    try:
+        if _LOGGER:
+            _LOGGER.info(msg)
+            return
+    except Exception:
+        pass
+    print(msg)
+
+
+def _log_debug(msg: str):
+    try:
+        if _LOGGER:
+            _LOGGER.debug(msg)
+            return
+    except Exception:
+        pass
+    print(msg)
 
 
 @safe()
@@ -23,17 +53,11 @@ def pedestrian_spawn(request, response):
         ensure_path(os.path.dirname(usd_path))
         if not person.controller_stats:
             p = Person(world, usd_path, person.character_name, person.initial_pose, person.orientation)
-            # inav = nav.acquire_interface()
-            # navmesh = inav.get_navmesh()
-            # if navmesh:
-            #     navmesh_path = navmesh.query_shortest_path(person.initial_pose, person.goal_pose)
-            #     if navmesh_path:
-            #         path_points = navmesh_path.get_points()
-            #         p.update_target_position(path_points, person.velocity)
-            #     else:
-            #         carb.log_error(f"NavMesh could not query points")
         else:
             p = Person(world, usd_path, person.character_name, person.initial_pose, person.orientation, person.controller_name)
+        
+        # Register the pedestrian root prim for door checks
+        door_manager.add_pedestrian(usd_path)
 
     response.ret = True
     return response
