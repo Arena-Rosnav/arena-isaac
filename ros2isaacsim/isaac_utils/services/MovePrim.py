@@ -1,5 +1,5 @@
+import isaac_utils.utils.paths as Paths
 from isaac_utils.utils import geom
-from isaac_utils.utils.path import world_path
 from rclpy.qos import QoSProfile
 
 from isaacsim_msgs.srv import MovePrim
@@ -9,9 +9,9 @@ from .utils import safe
 profile = QoSProfile(depth=2000)
 
 
-@safe()
+@safe
 def prim_mover(request, response):
-    prim_path = world_path(request.name)
+    prim_path = Paths.scene.path(request.name)
     position = request.pose.position
     orientation = request.pose.orientation
 

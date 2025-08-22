@@ -1,21 +1,23 @@
-from .utils import safe
 import os
 
+import isaac_utils.utils.paths as Paths
+import isaacsim.core.utils.prims as prim_utils
 import numpy as np
 from isaac_utils.utils import geom
-import isaacsim.core.utils.prims as prim_utils
+from rclpy.qos import QoSProfile
 
 from isaacsim_msgs.srv import ImportUsd
-from rclpy.qos import QoSProfile
+
+from .utils import safe
 
 profile = QoSProfile(depth=2000)
 
 
-@safe()
+@safe
 def usd_importer(stage, request, response):
     name = request.name
     usd_path = request.usd_path
-    prim_path = request.prim_path
+    prim_path = Paths.scene.path(request.prim_path)
 
     prim_utils.create_prim(
         prim_path=prim_path,

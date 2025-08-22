@@ -8,7 +8,7 @@ from isaacsim_msgs.srv import DeletePrim
 from .utils import safe
 
 
-@safe()
+@safe
 def characters_delete(request, response):
     commands.execute(
         "IsaacSimDestroyPrim",

@@ -1,15 +1,16 @@
 import os
 import sys
+import typing
 from pathlib import Path
 
-import isaac_utils.graphs.odom as odom
 import isaac_utils.graphs.joint_states as joint_states
-import isaac_utils.graphs.tf as tf
+import isaac_utils.graphs.odom as odom
 import isaac_utils.graphs.sensors.sensors as sensors
+import isaac_utils.graphs.tf as tf
+import isaac_utils.utils.paths as Paths
 import omni.kit.commands as commands
 from isaac_utils.graphs import control
 from isaac_utils.utils import geom
-from isaac_utils.utils.path import world_path
 from isaac_utils.utils.prim import ensure_path
 from rclpy.qos import QoSProfile
 
@@ -23,13 +24,14 @@ parent_dir = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(parent_dir))
 
 
-@safe()
-def urdf_to_usd(request, response):
-    name = request.name
-    urdf_path = request.urdf_path
-    robot_model = request.robot_model
-
-    prim_path = world_path(name)
+def import_urdf(urdf_path: str, prim_path: str) -> typing.Optional[str]:
+    """Import URDF file to USD and return the USD path.
+    Args:
+        urdf_path (str): Path to the URDF file.
+        robot_model (str): Name of the robot model.
+    Returns:
+        str: Path to the imported USD file.
+    """
 
     status, import_config = commands.execute("URDFCreateImportConfig")
     import_config.set_merge_fixed_joints(False)
@@ -50,10 +52,26 @@ def urdf_to_usd(request, response):
         dest_path=prim_path,
     )
 
+    import sys
+    print('tried to import to', prim_path, file=sys.stderr)
+
+    if not status:
+        return None
+    return usd_path
+
+
+@safe
+def urdf_to_usd(request, response):
+    name = request.name
+    urdf_path = request.urdf_path
+    robot_model = request.robot_model
+
+    prim_path = Paths.scene.robot(name)
+
+    usd_path = import_urdf(urdf_path, prim_path)
     if usd_path is None:
         return response
 
-    # print(usd_path)
     if not request.no_localization:
         odom.odom(
             os.path.join(prim_path, 'odom_publisher'),

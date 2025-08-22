@@ -3,7 +3,7 @@ import os
 import xml.etree.ElementTree as ET
 
 from isaac_utils.utils.geom import Rotation, Translation
-from isaac_utils.utils.path import world_path
+import isaac_utils.utils.paths as Paths
 
 from .camera import SensorCamera, SensorCameraRGBD
 from .contact import SensorContact
@@ -18,7 +18,7 @@ class Sensors:
         base_topic: str,
     ):
         self.prim_path: str = prim_path
-        self.robot_base_frame: str = os.path.relpath(self.prim_path, world_path())
+        self.robot_base_frame: str = os.path.relpath(self.prim_path, scene.path())
         self.robot_base_topic: str = base_topic
 
     def parse_gazebo(self, urdf: str):

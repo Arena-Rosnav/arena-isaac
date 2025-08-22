@@ -1,3 +1,7 @@
+import functools
+
+
+@functools.wraps
 def safe():
     def inner(fun):
         def wrapper(request, response):

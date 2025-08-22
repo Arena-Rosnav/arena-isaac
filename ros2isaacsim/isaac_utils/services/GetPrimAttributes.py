@@ -1,3 +1,4 @@
+import isaac_utils.utils.paths as Paths
 import numpy as np
 from isaacsim.core.utils.prims import get_prim_at_path
 from rclpy.qos import QoSProfile
@@ -9,9 +10,9 @@ from .utils import safe
 profile = QoSProfile(depth=2000)
 
 
-@safe()
+@safe
 def get_prim_attributes(request, response):
-    prim = get_prim_at_path(request.prim_path)
+    prim = get_prim_at_path(Paths.scene.path(request.prim_path))
 
     translate = np.array(prim.GetAttribute("xformOp:translate").Get(), dtype=np.float32)
     quat = prim.GetAttribute("xformOp:orient").Get()
