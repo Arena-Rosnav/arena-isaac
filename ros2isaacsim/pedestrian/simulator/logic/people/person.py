@@ -21,6 +21,11 @@ from pedestrian.simulator.logic.state import State
 from pxr import Gf, Sdf
 from scipy.spatial.transform import Rotation
 
+import isaacsim.replicator.agent.core
+from isaacsim.replicator.agent.core.settings import PrimPaths
+from isaacsim.replicator.agent.core.stage_util import CharacterUtil
+from isaacsim.replicator.agent.core.simulation import SimulationManager
+
 
 class Person:
     """
@@ -264,6 +269,7 @@ class Person:
 
         # Spawn the person in the world
         self.prim = prims.create_prim(stage_name, "Xform", usd_path=usd_file)
+        CharacterUtil.load_character_usd_to_stage(usd_file, init_pos, init_yaw, stage_name)
 
         # Set the initial position and orientation of the person
         self.prim.GetAttribute("xformOp:translate").Set(Gf.Vec3d(float(init_pos[0]), float(init_pos[1]), float(init_pos[2])))

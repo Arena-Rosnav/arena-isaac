@@ -47,7 +47,8 @@ EXTENSIONS_PEOPLE = [
     'omni.kit.scripting',
     'omni.graph.nodes',
     'omni.anim.curve.core',
-    'omni.anim.navigation.core'
+    'omni.anim.navigation.core',
+    'isaacsim.replicator.agent'
 ]
 
 EXTENSIONS_MATERIAL = [
