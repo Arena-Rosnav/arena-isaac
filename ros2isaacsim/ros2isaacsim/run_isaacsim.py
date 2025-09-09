@@ -84,32 +84,6 @@ import omni.syntheticdata._syntheticdata as sd
 import rclpy
 
 # graphs
-from isaacsim_msgs.srv import ImportYaml
-from isaacsim_msgs.srv import Pedestrian
-from pedestrian.simulator.logic.people_manager import PeopleManager
-
-#Import robot models
-from isaac_utils.robot_graphs import assign_robot_model
-
-#Import services
-from isaac_utils.services import spawn_wall
-from isaac_utils.services import move_prim
-from isaac_utils.services import get_prim_attr
-from isaac_utils.services import delete_prim
-from isaac_utils.services import convert_urdf_to_usd
-from isaac_utils.services import import_obstacle
-from isaac_utils.services import spawn_ped
-from isaac_utils.services import move_ped
-from isaac_utils.services import delete_all_characters
-from isaac_utils.services import spawn_floor
-from isaac_utils.services import spawn_door
-from isaac_utils.managers.door_manager import door_manager
-from isaac_utils.services.SpawnElevator import spawn_elevator
-#Import sensors
-from isaac_utils.sensors import imu_setup,publish_imu, contact_sensor_setup, publish_contact_sensor_info, camera_set_up,publish_camera_tf,publish_depth,publish_camera_info,publish_pointcloud_from_depth,publish_rgb, lidar_setup,publish_lidar 
-
-# other imports
-from isaac_utils.utils import geom
 from isaac_utils.graphs.time import PublishTime
 from isaac_utils.managers.door_manager import door_manager
 
@@ -196,23 +170,10 @@ simulation_app.update()
 def create_controller(time=120):
     rclpy.init()
     controller = rclpy.create_node("isaac_controller")
+
     PublishTime('/World/publish_time')
     for service in services:
         service.create(controller, qos_profile=QoSProfile(depth=2000))
-    import_usd(controller)
-    import_yaml(controller)
-    spawn_wall(controller)
-    move_prim(controller)
-    get_prim_attr(controller)
-    delete_prim(controller)
-    convert_urdf_to_usd(controller)
-    import_obstacle(controller)
-    spawn_ped(controller)
-    move_ped(controller)
-    delete_all_characters(controller)
-    spawn_floor(controller)
-    spawn_door(controller)
-    spawn_elevator(controller)
     # Let the DoorManager subscribe to ROS topics on this controller node
     try:
         door_manager.register_node(controller)
