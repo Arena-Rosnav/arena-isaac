@@ -1,27 +1,12 @@
-import sys
-import rclpy.node
-
-
-def on_exception(value):
+def safe():
     def inner(fun):
-        def wrapper(*args, **kwargs):
+        def wrapper(request, response):
             try:
-                return fun(*args, **kwargs)
+                return fun(request, response)
             except Exception as e:
+                import sys
                 print(f"Error in {fun.__name__}: {e}", file=sys.stderr)
-                return value
+                response.ret = False
+            return response
         return wrapper
     return inner
-
-
-class Service:
-    def __init__(self, srv_type, srv_name, callback, **kwargs):
-        self.kwargs = {
-            'srv_type': srv_type,
-            'srv_name': srv_name,
-            'callback': callback,
-            **kwargs
-        }
-
-    def create(self, controller: rclpy.node.Node, **kwargs):
-        controller.create_service(**{**self.kwargs, **kwargs})

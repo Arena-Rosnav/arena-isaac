@@ -1,2 +1,0 @@
-string url
-string name

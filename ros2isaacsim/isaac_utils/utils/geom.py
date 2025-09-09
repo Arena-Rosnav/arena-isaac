@@ -57,7 +57,7 @@ class Rotation:
         return [float(getattr(self, axis)) for axis in convention if axis in 'wxyz']
 
     def euler(self, convention: str = 'xyz') -> typing.List[float]:
-        x, y, z = quat_to_euler_angles(self.quat())
+        x, y, z = quat_to_euler_angles(self.quat)
         axes: dict[str, float] = dict(
             x=x,
             y=y,

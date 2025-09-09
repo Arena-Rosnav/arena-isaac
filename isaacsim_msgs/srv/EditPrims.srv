@@ -1,5 +1,0 @@
-Prim[] prims
-bool pose false # edit pose?
-bool scale false # edit scale?
----
-bool[] ret

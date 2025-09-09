@@ -1,0 +1,4 @@
+string prim_path
+---
+geometry_msgs/Pose pose
+float32[3] scale

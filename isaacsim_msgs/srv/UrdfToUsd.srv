@@ -1,12 +1,10 @@
 string name
 string urdf_path
 string robot_model
-string tf_prefix
+bool no_localization
 string base_frame
 string odom_frame
 geometry_msgs/Pose pose
 string cmd_vel_topic
-string joint_states_topic
-bool localization true
 ---
-string path
+string usd_path
