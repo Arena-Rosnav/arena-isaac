@@ -1,0 +1,2 @@
+string url
+string name

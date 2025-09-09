@@ -7,35 +7,30 @@ import arena_simulation_setup.utils.cattrs
 # Use the isaacsim to import SimulationApp
 from isaacsim import SimulationApp
 
-
 # Setting the config for simulation and make an simulation.
 CONFIG = {"renderer": "Wireframe", "headless": False}
 #import parent directory
-from pathlib import Path
 import sys
+from pathlib import Path
+
 simulation_app = SimulationApp(CONFIG)
 parent_dir = Path(__file__).resolve().parent.parent
 sys.path.insert(0,str(parent_dir))
 
 
 # Import Isaac Sim dependencies
-import carb
-import omni.usd
-import omni.timeline
-from omni.isaac.core import World, SimulationContext
-from omni.isaac.core.utils import prims
-from omni.isaac.core import SimulationContext
-from pxr import Sdf, Gf, UsdLux
-import yaml
-from omni.isaac.core.utils import extensions, stage
-from isaac_utils.utils.assets import get_assets_root_path_safe
-
-from omni.isaac.core.utils.prims import set_prim_attribute_value
-from omni.importer.urdf import _urdf
-import omni.kit.commands as commands
-from omni.isaac.core.utils.rotations import euler_angles_to_quat
-from omni.isaac.core.utils.stage import get_current_stage, open_stage
 import random
+
+import carb
+import omni.kit.commands as commands
+import omni.timeline
+import omni.usd
+import yaml
+from isaac_utils.utils.assets import get_assets_root_path_safe
+from omni.importer.urdf import _urdf
+from omni.isaac.core import SimulationContext, World
+from omni.isaac.core.utils import extensions, prims, stage
+from pxr import Sdf
 
 EXTENSIONS_PEOPLE = [
     'omni.anim.people', 
@@ -75,17 +70,20 @@ omni.usd.get_context().new_stage()
 extensions.disable_extension("omni.isaac.ros_bridge")
 extensions.enable_extension("omni.isaac.ros2_bridge")
 
-import rclpy
-import numpy as np
+import random
 
-#imprt navmesh gen
-import omni.anim.navigation.core as nav
+import numpy as np
 
 #Import world generation dependencies
 import omni.anim.graph.core as ag
+
+#imprt navmesh gen
+import omni.anim.navigation.core as nav
 import omni.replicator.core as rep
 import omni.syntheticdata._syntheticdata as sd
+import rclpy
 
+# graphs
 from isaacsim_msgs.srv import ImportUsd, ImportYaml
 from isaacsim_msgs.srv import Pedestrian
 from pedestrian.simulator.logic.people_manager import PeopleManager
@@ -112,10 +110,13 @@ from isaac_utils.sensors import imu_setup,publish_imu, contact_sensor_setup, pub
 
 # other imports
 from isaac_utils.utils import geom
-
 from isaac_utils.graphs.time import PublishTime
+from isaac_utils.managers.door_manager import door_manager
 
-import random
+#Import services
+from isaac_utils.services import services
+from pedestrian.simulator.logic.people_manager import PeopleManager
+from rclpy.qos import QoSProfile
 
 # fmt: on
 # ======================================Base======================================
@@ -134,15 +135,15 @@ plane_mdl_path = random.choice(plane_material_paths)
 plane_mtl_name = plane_mdl_path.split('/')[-1][:-4]
 plane_mtl_path = "/World/Looks/PlaneMaterial"
 plane_mtl = _stage.GetPrimAtPath(plane_mtl_path)
-if not (plane_mtl and plane_mtl.IsValid()):
-    create_res = omni.kit.commands.execute('CreateMdlMaterialPrimCommand',
-                                           mtl_url=plane_mdl_path,
-                                           mtl_name=plane_mtl_name,
-                                           mtl_path=plane_mtl_path)
+# if not (plane_mtl and plane_mtl.IsValid()):
+#     create_res = omni.kit.commands.execute('CreateMdlMaterialPrimCommand',
+#                                                 mtl_url=plane_mdl_path,
+#                                                 mtl_name=plane_mtl_name,
+#                                                 mtl_path=plane_mtl_path)
 
-    bind_res = omni.kit.commands.execute('BindMaterialCommand',
-                                         prim_path="/World/groundPlane",
-                                         material_path=plane_mtl_path)
+#     bind_res = omni.kit.commands.execute('BindMaterialCommand',
+#                                             prim_path="/World/groundPlane",
+#                                             material_path=plane_mtl_path)
 simulation_app.update()  # update the simulation once for update ros2_bridge.
 simulation_context = SimulationContext(stage_units_in_meters=1.0)  # currently we use 1m for simulation.
 light_1 = prims.create_prim(
@@ -185,148 +186,6 @@ inav = nav.acquire_interface()
 x = inav.start_navmesh_baking()
 simulation_app.update()
 
-# stage.add_reference_to_stage(assets_root_path, BACKGROUND_USD_PATH)
-
-# Setting up URDF importer.
-status, import_config = commands.execute("URDFCreateImportConfig")
-import_config.merge_fixed_joints = False
-import_config.convex_decomp = False
-import_config.import_inertia_tensor = False
-import_config.self_collision = False
-import_config.fix_base = False
-import_config.distance_scale = 1
-import_config.make_default_prim = True
-import_config.default_drive_type = (_urdf.UrdfJointTargetType.JOINT_DRIVE_VELOCITY)
-extension_path = _urdf.ImportConfig()
-
-# list devices.
-robots = []
-environments = []
-robot_positions = []
-robot_orientation = []
-environment_positions = []
-environment_orientation = []
-
-# ================================================================================
-# ============================read yaml file===============================
-
-
-def read_yaml_config(yaml_path):
-    with open(yaml_path, 'r') as file:
-        config = yaml.safe_load(file)
-    return config
-
-
-def yaml_importer(request, response):
-    # Read configuration from YAML file
-    yaml_path = request.yaml_path
-    config = read_yaml_config(yaml_path)
-
-    # Extract parameters
-    name = config['robot']['name']
-    model = config['robot']['model']
-    usd_path = config['robot']['usd_path']
-    prim_path = config['robot']['prim_path']
-    control = config['robot']['control']
-    position = config['robot']['position']
-    orientation = config['robot']['orientation']
-
-    # Prepare the request for ImportUsd service
-    yaml_request = ImportUsd.Request()
-    yaml_request.name = name
-    yaml_request.model = model
-    yaml_request.usd_path = usd_path
-    yaml_request.prim_path = prim_path
-    yaml_request.control = control
-    yaml_request.position = np.array(position, dtype=np.float32)
-    yaml_request.orientation = np.array(orientation, dtype=np.float32)
-
-    usd_response = usd_importer(yaml_request, response)
-
-    # Pass the response back (optional, depending on how you want to structure your service)
-    response.ret = usd_response.ret
-    return response
-
-# ============================usd importer service================================
-# Usd importer (service) -> bool.
-
-
-def usd_importer(request, response):
-    name = request.name
-    model = request.model
-    usd_path = request.usd_path
-    prim_path = request.prim_path + "/" + name
-
-    model_prim = prims.create_prim(
-        prim_path=f"/World/{name}",
-        position=np.array(geom.Translation.parse(request.pose.position).tuple()),
-        orientation=np.array(geom.Rotation.parse(request.pose.orientation).quat()),
-        usd_path=usd_path,
-        semantic_label=model,
-    )
-    door_manager.add_robot(f"/World/{name}")
-
-    response.ret = True
-    if not request.control:
-        environments.append(prim_path)
-        return response
-    camera_prim_path = prim_path + "/camera_link"
-    camera = camera_set_up(camera_prim_path, "Camera")
-    camera.initialize()
-    publish_camera_info(name, camera, 20)
-    publish_depth(name, camera, 20)
-    publish_rgb(name, camera, 20)
-    publish_pointcloud_from_depth(name, camera, 20)
-    publish_camera_tf(name, prim_path, camera)
-
-    lidar_prim_path = prim_path + "/base_scan"
-    lidar = lidar_setup(lidar_prim_path, "Lidar")
-    publish_lidar(name, prim_path, lidar)
-
-    links = ["wheel_left_link", "wheel_right_link"]
-    for link in links:
-        imu_prim_path = prim_path + "/" + link + "/" + "IMU"
-        contact_prim_path = prim_path + "/" + link + "/" + "ContactSensor"
-        imu = imu_setup(imu_prim_path)
-        contact_sensor = contact_sensor_setup(contact_prim_path)
-        publish_contact_sensor_info(name, prim_path, link, contact_sensor)
-        publish_imu(name, prim_path, link, imu)
-
-    robots.append(prim_path)
-
-    model = assign_robot_model(name, prim_path, model)
-
-    # publish joint_states and control
-    model.control_and_publish_joint_states()
-    model.publish_odom_and_tf()
-
-    world.reset()
-    return response
-
-# Usd importer service callback.
-
-
-def import_yaml(controller):
-    service = controller.create_service(
-        srv_type=ImportYaml,
-        srv_name='isaac/import_yaml',
-        callback=yaml_importer
-    )
-    return service
-
-
-def import_usd(controller):
-    service = controller.create_service(
-        srv_type=ImportUsd,
-        srv_name='isaac/import_usd',
-        callback=usd_importer
-    )
-    return service
-
-
-def time_publisher(controller):
-    PublishTime('/World/publish_time')
-
 
 # =================================================================================
 
@@ -337,6 +196,9 @@ def time_publisher(controller):
 def create_controller(time=120):
     rclpy.init()
     controller = rclpy.create_node("isaac_controller")
+    PublishTime('/World/publish_time')
+    for service in services:
+        service.create(controller, qos_profile=QoSProfile(depth=2000))
     import_usd(controller)
     import_yaml(controller)
     spawn_wall(controller)
@@ -363,7 +225,6 @@ def create_controller(time=120):
         controller.get_logger().info('DoorManager per-tick logging enabled (filter=jackal)')
     except Exception as e:
         controller.get_logger().warning(f'Failed to set DoorManager logging flags: {e}')
-    time_publisher(controller)
     return controller
 
 # =================================================================================
@@ -396,6 +257,12 @@ def main(args=None):
 
     except KeyboardInterrupt:
         controller.get_logger().info('Received KeyboardInterrupt, shutting down.')
+    except Exception as e:
+        controller.get_logger().error(f'Exception in main loop: {e}')
+        import traceback
+        import sys
+        controller.get_logger().error(traceback.format_exc())
+        traceback.print_exc(file=sys.stdout)
     finally:
         # Cleanly shut down the simulation and ROS 2
         controller.get_logger().info('Shutting down ROS 2 node and simulation.')

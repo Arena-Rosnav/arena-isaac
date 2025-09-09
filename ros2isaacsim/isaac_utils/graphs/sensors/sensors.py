@@ -15,10 +15,11 @@ class Sensors:
     def __init__(
         self,
         prim_path: str,
+        base_frame: str,
         base_topic: str,
     ):
         self.prim_path: str = prim_path
-        self.robot_base_frame: str = os.path.relpath(self.prim_path, world_path())
+        self.robot_base_frame: str = base_frame
         self.robot_base_topic: str = base_topic
 
     def parse_gazebo(self, urdf: str):

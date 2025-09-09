@@ -1,7 +1,6 @@
-string name
 float32[] start
 float32[] end
 float32 height
-string material
----
-bool ret
+string name
+Material material
+string kind

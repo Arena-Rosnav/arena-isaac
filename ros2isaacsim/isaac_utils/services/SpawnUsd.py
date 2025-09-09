@@ -1,18 +1,19 @@
-from .utils import safe
 import os
 
 import numpy as np
-from isaac_utils.utils import geom
 import omni.isaac.core.utils.prims as prim_utils
-
-from isaacsim_msgs.srv import ImportUsd
 from rclpy.qos import QoSProfile
+
+from isaac_utils.utils import geom
+from isaacsim_msgs.srv import SpawnUsd
+
+from .utils import Service, on_exception
 
 profile = QoSProfile(depth=2000)
 
 
-@safe()
-def usd_importer(stage, request, response):
+@on_exception(False)
+def spawn_usd(stage, request: SpawnUsd.Request) -> bool:
     name = request.name
     usd_path = request.usd_path
     prim_path = request.prim_path
@@ -26,14 +27,19 @@ def usd_importer(stage, request, response):
     )
 
     stage.add_reference_to_stage(usd_path, os.path.join(prim_path, name))
-    response.ret = True
+    return True
 
 
-def import_usd(controller):
-    service = controller.create_service(
-        srv_type=ImportUsd,
-        profile=qos_profile,
-        srv_name='isaac/import_usd',
-        callback=usd_importer
-    )
-    return service
+def spawn_usd_callback(request: SpawnUsd.Request, response: SpawnUsd.Response):
+    stage = omni.usd.get_context().get_stage()
+    response.ret = spawn_usd(stage, request)
+
+
+spawn_usd_service = Service(
+    srv_type=SpawnUsd,
+    srv_name='isaac/SpawnUsd',
+    callback=spawn_usd
+)
+
+
+__all__ = ['spawn_usd_service']

@@ -2,6 +2,7 @@ from launch import LaunchDescription
 import launch
 from launch_ros.actions import Node
 
+
 def generate_launch_description():
     logger = launch.substitutions.LaunchConfiguration("log_level")
     return LaunchDescription([
@@ -13,7 +14,7 @@ def generate_launch_description():
         Node(
             package='ros2isaacsim',
             executable='run_isaacsim',
-            output='screen', 
+            output='screen',
             arguments=['--ros-args', '--log-level', logger]
         ),
     ])

@@ -1,5 +1,4 @@
-string name
 string usd_path
+string name
 geometry_msgs/Pose pose
----
-bool ret
+Scale scale

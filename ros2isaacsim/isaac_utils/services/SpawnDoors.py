@@ -1,25 +1,23 @@
 import math
 import os
-import typing
 
 import numpy as np
 import omni
-from isaac_utils.managers.door_manager import door_manager
-from isaac_utils.utils.path import world_path
-from isaac_utils.utils.prim import ensure_path
 from omni.isaac.core import World
 from omni.isaac.core.objects import FixedCuboid
 from omni.isaac.core.utils.rotations import euler_angles_to_quat
 from pxr import Gf
-from rclpy.qos import QoSProfile
 
-from isaacsim_msgs.srv import SpawnDoor
+from isaac_utils.managers.door_manager import door_manager
+from isaac_utils.utils.material import Material
+from isaac_utils.utils.path import world_path
+from isaac_utils.utils.prim import ensure_path
+from isaacsim_msgs.msg import Door
+from isaacsim_msgs.srv import SpawnDoors
 
-from .utils import safe
+from .utils import Service, on_exception
 
-profile = QoSProfile(depth=2000)
 try:
-    import rclpy
     from rclpy.logging import get_logger
     _LOGGER = get_logger('isaac_spawn_door')
 except Exception:
@@ -56,11 +54,11 @@ def _log_warn(msg: str):
     print(msg)
 
 
-@safe()
-def door_spawner(request: SpawnDoor.Request, response: SpawnDoor.Response):
+@on_exception(False)
+def spawn_door(door: Door) -> bool:
     # Get service attributes
-    prim_path = world_path(request.name)
-    _log_debug(f"DEBUG SpawnDoor called for '{request.name}' -> prim_path: {prim_path}")
+    prim_path = world_path(door.name)
+    _log_debug(f"DEBUG SpawnDoor called for '{door.name}' -> prim_path: {prim_path}")
 
     # Ensure parent path exists so creation won't fail silently
     try:
@@ -68,12 +66,11 @@ def door_spawner(request: SpawnDoor.Request, response: SpawnDoor.Response):
     except Exception:
         pass
 
-    height = request.height
-    material = request.material
-    kind = request.kind
+    height = door.height
+    kind = door.kind
 
-    start = np.append(np.array(request.start), height / 2)
-    end = np.append(np.array(request.end), height / 2)
+    start = np.append(np.array(door.start), height / 2)
+    end = np.append(np.array(door.end), height / 2)
 
     start_vec = Gf.Vec3d(*start)
     end_vec = Gf.Vec3d(*end)
@@ -90,7 +87,7 @@ def door_spawner(request: SpawnDoor.Request, response: SpawnDoor.Response):
     world = World.instance()
 
     # Generate unique name and check if object already exists
-    unique_name = prim_path.replace('/', '_') + f"_{id(request)}"
+    unique_name = prim_path.replace('/', '_') + f"_{id(door)}"
 
     # Check if an object with this name already exists and remove it
     try:
@@ -124,6 +121,7 @@ def door_spawner(request: SpawnDoor.Request, response: SpawnDoor.Response):
     except Exception as e:
         _log_warn(f"DEBUG SpawnDoor: diagnostics failed: {e}")
         door_prim_path = prim_path
+        return False
 
     # Persist door endpoint metadata so wall spawner can cut walls
     try:
@@ -137,32 +135,10 @@ def door_spawner(request: SpawnDoor.Request, response: SpawnDoor.Response):
             _log_warn(f"DEBUG SpawnDoor: prim {door_prim_path} invalid, cannot set metadata")
     except Exception as e:
         _log_warn(f"DEBUG SpawnDoor: failed to set metadata on {door_prim_path}: {e}")
+        return False
 
-    # Create a simple material using OmniPBR instead of external URLs
-    mtl_path = f"/World/Looks/DoorMaterial_{request.name}"
-    mtl = stage.GetPrimAtPath(mtl_path)
-    if not (mtl and mtl.IsValid()):
-        try:
-            omni.kit.commands.execute('CreateAndBindMdlMaterialFromLibrary',
-                                      mdl_name='OmniPBR.mdl',
-                                      mtl_name='OmniPBR',
-                                      mtl_path=mtl_path,
-                                      select_new_prim=False)
-            # Set a brown/wood color for doors
-            omni.kit.commands.execute('ChangeProperty',
-                                      prop_path=f"{mtl_path}/Shader.inputs:diffuse_color_constant",
-                                      value=(0.6, 0.4, 0.2),
-                                      prev=None)
-        except BaseException:
-            # Fallback: create basic material without external dependencies
-            pass
-
-    try:
-        omni.kit.commands.execute('BindMaterialCommand',
-                                  prim_path=prim_path,
-                                  material_path=mtl_path)
-    except BaseException:
-        pass  # Material binding failed, continue without material
+    if (material := Material.from_msg(door.material)):
+        material.bind_to(door_prim_path)
 
     # Register the actual prim path with DoorManager
     try:
@@ -170,16 +146,20 @@ def door_spawner(request: SpawnDoor.Request, response: SpawnDoor.Response):
         door_manager.add_door(door_prim_path, kind)
     except Exception as e:
         _log_warn(f"DEBUG SpawnDoor: failed to register door: {e}")
+        return False
 
-    response.ret = True
+    return True
+
+
+def spawn_doors_callback(request: SpawnDoors.Request, response: SpawnDoors.Response):
+    response.ret = list(map(spawn_door, request.doors))
     return response
 
 
-def spawn_door(controller):
-    service = controller.create_service(
-        srv_type=SpawnDoor,
-        qos_profile=profile,
-        srv_name='isaac/spawn_door',
-        callback=door_spawner
-    )
-    return service
+spawn_doors_service = Service(
+    srv_type=SpawnDoors,
+    srv_name='isaac/SpawnDoors',
+    callback=spawn_doors_callback
+)
+
+__all__ = ['spawn_doors_service']

@@ -1,5 +1,4 @@
-string stage_prefix
+string name
 string character_name
-float32[3] initial_pose
-float32 orientation
+geometry_msgs/Pose pose
 bool controller_stats
