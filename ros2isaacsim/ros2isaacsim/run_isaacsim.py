@@ -200,9 +200,13 @@ def main(args=None):
     """
     # Create the ROS 2 controller node. This also calls rclpy.init().
     controller = create_controller()
-
     world.reset()
     SimulationContext().play()
+
+    # Initialize simulator
+    from task_generator.simulators.sim.isaac_simulator import IsaacSimulator
+
+    simulator = IsaacSimulator(namespace="")
 
     try:
         # Main simulation loop
