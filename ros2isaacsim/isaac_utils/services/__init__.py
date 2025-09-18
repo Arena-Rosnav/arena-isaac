@@ -12,7 +12,7 @@ from .SpawnPedestrians import spawn_pedestrians_service
 from .SpawnUrdf import spawn_urdf_service
 from .SpawnUsd import spawn_usd_service
 from .SpawnWalls import spawn_walls_service
-from .SpawnElevator import spawn_elevator_service
+from .SpawnElevators import spawn_elevators_service
 from .utils import Service
 
 services: collections.abc.Iterable[Service] = (
@@ -28,7 +28,7 @@ services: collections.abc.Iterable[Service] = (
     spawn_urdf_service,
     spawn_usd_service,
     spawn_walls_service,
-    spawn_elevator_service,
+    spawn_elevators_service,
 )
 
 __all__ = ["services"]
