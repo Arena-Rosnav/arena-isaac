@@ -86,6 +86,7 @@ import rclpy
 # graphs
 from isaac_utils.graphs.time import PublishTime
 from isaac_utils.managers.door_manager import door_manager
+from isaac_utils.managers.elevator_manager import elevator_manager
 
 #Import services
 from isaac_utils.services import services
