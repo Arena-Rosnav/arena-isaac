@@ -213,6 +213,9 @@ def main(args=None):
             # Update door logic
             door_manager.update()
 
+            # Update elevator logic
+            simulator.update_elevators()
+
             # Tick the ROS 2 node
             rclpy.spin_once(controller, timeout_sec=0.0)
 
