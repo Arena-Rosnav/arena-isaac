@@ -1,0 +1,125 @@
+import time
+import numpy as np
+
+try:
+    from rclpy.qos import QoSProfile
+    from nav_msgs.msg import Odometry
+    from std_msgs.msg import String as StdString
+except Exception:
+    QoSProfile = None
+    Odometry = None
+    StdString = None
+
+try:
+    from rclpy.logging import get_logger
+    _LOGGER = get_logger('isaac_elevator_manager')
+except Exception:
+    _LOGGER = None
+
+def _log_info(msg: str):
+    try:
+        if _LOGGER:
+            _LOGGER.info(msg)
+            return
+    except Exception:
+        pass
+    print(msg)
+
+def _log_warn(msg: str):
+    try:
+        if _LOGGER:
+            _LOGGER.warn(msg)
+            return
+    except Exception:
+        pass
+    print(msg)
+
+class ElevatorManager:
+    def __init__(self):
+        self._elevators = {}
+        self._pairs = []
+        self._robots = []
+        self._odom_cache = {}
+        self._odom_subs = {}
+        self._cooldowns = {}
+
+        self._controller = None
+
+    def register_node(self, controller):
+        self._controller = controller
+        # Subscribe to robot odometry for all registered robots
+        for robot_name in self._robots:
+            self._ensure_robot_subscription(robot_name)
+
+    def add_elevator(self, elevator, destination):
+        self._elevators[elevator.name] = elevator
+        # Pair elevators by destination
+        dest = self._elevators.get(destination)
+        if dest:
+            self._pairs.append({
+                'a': {'name': elevator.name, 'position': elevator.position, 'size': elevator.size},
+                'b': {'name': dest.name, 'position': dest.position, 'size': dest.size},
+                'cooldown': {},
+            })
+
+    def add_robot(self, robot_name):
+        if robot_name not in self._robots:
+            self._robots.append(robot_name)
+            self._ensure_robot_subscription(robot_name)
+
+    def _ensure_robot_subscription(self, robot_name):
+        if self._controller is None or robot_name in self._odom_subs:
+            return
+        topic = f"/{robot_name}/odom"
+        def odom_cb(msg):
+            try:
+                pos = msg.pose.pose.position
+                self._odom_cache[robot_name] = (pos.x, pos.y, getattr(pos, 'z', 0.0))
+            except Exception as e:
+                _log_warn(f"odom_cb failed for {robot_name}: {e}")
+        sub = self._controller.create_subscription(Odometry, topic, odom_cb, 10)
+        self._odom_subs[robot_name] = sub
+        _log_info(f"Subscribed to odometry for robot {robot_name} on topic {topic}")
+
+    def get_robot_pose(self, robot_name):
+        return self._odom_cache.get(robot_name, None)
+
+    def update(self):
+        cooldown_sec = 2.0
+        now = time.time()
+        for pair in self._pairs:
+            for robot_name in self._robots:
+                robot_pose = self.get_robot_pose(robot_name)
+                if robot_pose is None:
+                    continue
+                state = pair['cooldown'].get(robot_name, {'last_tp': 0, 'was_on': None})
+                last_tp = state.get('last_tp', 0)
+                was_on = state.get('was_on', None)
+                on_a = self._robot_on_platform(robot_pose, pair['a'])
+                on_b = self._robot_on_platform(robot_pose, pair['b'])
+                if on_a and not on_b and was_on == 'none' and (now - last_tp > cooldown_sec):
+                    self.teleport_robot(robot_name, pair['b']['position'])
+                    pair['cooldown'][robot_name] = {'last_tp': now, 'was_on': 'a'}
+                elif on_b and not on_a and was_on == 'none' and (now - last_tp > cooldown_sec):
+                    self.teleport_robot(robot_name, pair['a']['position'])
+                    pair['cooldown'][robot_name] = {'last_tp': now, 'was_on': 'b'}
+                elif not on_a and not on_b:
+                    pair['cooldown'][robot_name] = {'last_tp': last_tp, 'was_on': 'none'}
+                else:
+                    pair['cooldown'][robot_name] = {'last_tp': last_tp, 'was_on': 'a' if on_a else 'b' if on_b else 'none'}
+
+    def _robot_on_platform(self, robot_pose, platform):
+        px, py, pz = platform['position']
+        sx, sy, sz = platform['size']
+        rx, ry, rz = robot_pose
+        return (
+            abs(rx - px) <= sx / 2 and
+            abs(ry - py) <= sy / 2 and
+            abs(rz - pz) <= max(sz / 2, 0.5)
+        )
+
+    def teleport_robot(self, robot_name, position):
+        # TODO: Actually move the robot prim in IsaacSim
+        _log_info(f"Teleporting robot {robot_name} to {position}")
+
+elevator_manager = ElevatorManager()
