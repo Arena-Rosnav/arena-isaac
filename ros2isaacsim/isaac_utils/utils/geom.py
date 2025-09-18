@@ -17,6 +17,9 @@ class Translation:
     y: float
     z: float
 
+    def __iter__(self):
+        yield from self.tuple()
+
     def tuple(self) -> typing.Tuple[float, float, float]:
         return self.x, self.y, self.z
 
@@ -52,6 +55,9 @@ class Rotation:
     x: float
     y: float
     z: float
+
+    def __iter__(self):
+        yield from self.quat()
 
     def quat(self, convention: str = 'wxyz') -> typing.List[float]:
         return [float(getattr(self, axis)) for axis in convention if axis in 'wxyz']

@@ -1,8 +1,0 @@
-float32[] position
-float32[] size
-float32 height_min
-float32 height_max
-string name
-string material
----
-bool ret
