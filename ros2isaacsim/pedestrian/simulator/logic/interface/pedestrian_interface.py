@@ -9,7 +9,7 @@ import carb
 import omni.kit.app
 from isaacsim.core.api.world import World
 from isaacsim.core.utils.stage import clear_stage, create_new_stage_async, update_stage_async, create_new_stage
-from omni.isaac.core.utils.viewports import set_camera_view
+from isaacsim.core.utils.viewports import set_camera_view
 import omni.isaac.nucleus as nucleus
 
 # Pedestrian Simulator internal API

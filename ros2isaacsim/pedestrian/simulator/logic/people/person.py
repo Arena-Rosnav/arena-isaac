@@ -4,18 +4,16 @@ import os
 import carb
 import numpy as np
 import omni.anim.graph.core as ag
+
 # High level Isaac sim APIs
 import omni.client
-from omni.anim.people import PeopleSettings
 from isaacsim.core.utils import prims
 from isaac_utils.utils.assets import get_assets_root_path_safe
 
 from omni.usd import get_stage_next_free_path
-from pedestrian.simulator.logic.interface.pedestrian_interface import \
-    PedestrianInterface
-from pedestrian.simulator.logic.people.person_controller import \
-    PersonController
+from pedestrian.simulator.logic.people.person_controller import PersonController
 from pedestrian.simulator.logic.people_manager import PeopleManager
+
 # Extension APIs
 from pedestrian.simulator.logic.state import State
 from pxr import Gf, Sdf
@@ -33,21 +31,17 @@ class Person:
     """
 
     # Get root assets path from setting, if not set, get the Isaac-Sim asset path
-    setting_dict = carb.settings.get_settings()
-    people_asset_folder = setting_dict.get(PeopleSettings.CHARACTER_ASSETS_PATH)
-    character_root_prim_path = setting_dict.get(PeopleSettings.CHARACTER_PRIM_PATH)
-    assets_root_path = None
+    people_asset_folder = "http://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/4.2/Isaac/People/Characters/"
+    character_root_prim_path = PrimPaths.characters_parent_path()
 
-    if not character_root_prim_path:
-        character_root_prim_path = "/World/Characters"
+    assets_root_path = None
 
     if people_asset_folder:
         assets_root_path = people_asset_folder
     else:
-        root_path = get_assets_root_path_safe()
-        assets_root_path = os.path.join(root_path, 'Isaac/People/Characters')
-
-    character_skel_root_stage_path: str | None
+        root_path = get_assets_root_path()
+        if root_path is not None:
+            assets_root_path = "{}/Isaac/People/Characters".format(root_path)
 
     def __init__(
         self,
@@ -57,7 +51,7 @@ class Person:
         init_pos=[0.0, 0.0, 0.0],
         init_yaw=0.0,
         controller: PersonController | None = None,
-        backend=None
+        backend=None,
     ):
         """Initializes the person object
 
@@ -76,7 +70,9 @@ class Person:
         # Variable that will hold the current state of the vehicle
         self._state = State()
         self._state.position = np.array(init_pos)
-        self._state.orientation = Rotation.from_euler('z', init_yaw, degrees=False).as_quat()
+        self._state.orientation = Rotation.from_euler(
+            "z", init_yaw, degrees=False
+        ).as_quat()
 
         # Set the target position for the character
         self._target_position = np.array(init_pos)
@@ -92,7 +88,7 @@ class Person:
         self._stage_prefix = get_stage_next_free_path(
             self._current_stage,
             os.path.join(Person.character_root_prim_path, stage_prefix),
-            False
+            False,
         )
 
         # The name of the character in the USD file
@@ -119,7 +115,9 @@ class Person:
             self._backend.initialize(self)
 
         # Add a callback to the physics engine to update the current state of the person
-        self._world.add_physics_callback(self._stage_prefix + "/state", self.update_state)
+        self._world.add_physics_callback(
+            self._stage_prefix + "/state", self.update_state
+        )
 
         # Add the update method to the physics callback if the world was received
         # so that we can apply the new references to be tracked by the person
@@ -129,7 +127,9 @@ class Person:
         self._sim_running = False
 
         # Add a callback to start/stop of the simulation once the play/stop button is hit
-        self._world.add_timeline_callback(self._stage_prefix + "/start_stop_sim", self.sim_start_stop)
+        self._world.add_timeline_callback(
+            self._stage_prefix + "/start_stop_sim", self.sim_start_stop
+        )
 
     @property
     def state(self):
@@ -189,7 +189,9 @@ class Person:
 
         # Compute the distance between the current position and the goal position
         index_point = self._current_point_index
-        distance_to_target_position = np.linalg.norm(self._target_position[index_point] - self._state.position)
+        distance_to_target_position = np.linalg.norm(
+            self._target_position[index_point] - self._state.position
+        )
         # print(self._num_path_points)
 
         # If we are still far away from the target position, keep moving towards it
@@ -201,11 +203,23 @@ class Person:
                     index_point -= 1
                     self._current_point_index -= 1
                 self.character_graph.set_variable("Action", "Walk")
-                self.character_graph.set_variable("PathPoints", [carb.Float3(self._state.position), carb.Float3(self._target_position[index_point])])
+                self.character_graph.set_variable(
+                    "PathPoints",
+                    [
+                        carb.Float3(self._state.position),
+                        carb.Float3(self._target_position[index_point]),
+                    ],
+                )
                 self.character_graph.set_variable("Walk", self._target_speed)
             else:
                 self.character_graph.set_variable("Action", "Walk")
-                self.character_graph.set_variable("PathPoints", [carb.Float3(self._state.position), carb.Float3(self._target_position[index_point])])
+                self.character_graph.set_variable(
+                    "PathPoints",
+                    [
+                        carb.Float3(self._state.position),
+                        carb.Float3(self._target_position[index_point]),
+                    ],
+                )
                 self.character_graph.set_variable("Walk", self._target_speed)
         else:
             # If we are close to the target position, stop moving
@@ -263,41 +277,69 @@ class Person:
             prims.create_prim(Person.character_root_prim_path, "Xform")
 
         # If the base biped character is not present in the stage, spawn it
-        if not self._current_stage.GetPrimAtPath(Person.character_root_prim_path + "/Biped_Setup"):
-            prim = prims.create_prim(Person.character_root_prim_path + "/Biped_Setup", "Xform", usd_path=Person.assets_root_path + "/Biped_Setup.usd")
+        if not self._current_stage.GetPrimAtPath(
+            Person.character_root_prim_path + "/Biped_Setup"
+        ):
+            prim = prims.create_prim(
+                Person.character_root_prim_path + "/Biped_Setup",
+                "Xform",
+                usd_path=Person.assets_root_path + "/Biped_Setup.usd",
+            )
             prim.GetAttribute("visibility").Set("invisible")
 
         # Spawn the person in the world
         self.prim = prims.create_prim(stage_name, "Xform", usd_path=usd_file)
-        CharacterUtil.load_character_usd_to_stage(usd_file, init_pos, init_yaw, stage_name)
+        CharacterUtil.load_character_usd_to_stage(
+            usd_file, init_pos, init_yaw, stage_name
+        )
 
         # Set the initial position and orientation of the person
-        self.prim.GetAttribute("xformOp:translate").Set(Gf.Vec3d(float(init_pos[0]), float(init_pos[1]), float(init_pos[2])))
+        self.prim.GetAttribute("xformOp:translate").Set(
+            Gf.Vec3d(float(init_pos[0]), float(init_pos[1]), float(init_pos[2]))
+        )
 
         if type(self.prim.GetAttribute("xformOp:orient").Get()) == Gf.Quatf:
-            self.prim.GetAttribute("xformOp:orient").Set(Gf.Quatf(Gf.Rotation(Gf.Vec3d(0, 0, 1), float(init_yaw)).GetQuat()))
+            self.prim.GetAttribute("xformOp:orient").Set(
+                Gf.Quatf(Gf.Rotation(Gf.Vec3d(0, 0, 1), float(init_yaw)).GetQuat())
+            )
         else:
-            self.prim.GetAttribute("xformOp:orient").Set(Gf.Rotation(Gf.Vec3d(0, 0, 1), float(init_yaw)).GetQuat())
+            self.prim.GetAttribute("xformOp:orient").Set(
+                Gf.Rotation(Gf.Vec3d(0, 0, 1), float(init_yaw)).GetQuat()
+            )
 
         # Get the Skeleton root of the character
-        self.character_skel_root, root_path = Person._transverse_prim(self._current_stage, self._stage_prefix)
+        self.character_skel_root, root_path = Person._transverse_prim(
+            self._current_stage, self._stage_prefix
+        )
         self.character_skel_root_stage_path = root_path
 
         # Add the current person to the person manager
-        PeopleManager.get_people_manager().add_person(self.character_skel_root_stage_path, self)
+        PeopleManager.get_people_manager().add_person(
+            self.character_skel_root_stage_path, self
+        )
 
     def add_animation_graph_to_agent(self):
 
         # Get the animation graph that we are going to add to the person
-        animation_graph = self._current_stage.GetPrimAtPath(Person.character_root_prim_path + "/Biped_Setup/CharacterAnimation/AnimationGraph")
+        animation_graph = self._current_stage.GetPrimAtPath(
+            Person.character_root_prim_path
+            + "/Biped_Setup/CharacterAnimation/AnimationGraph"
+        )
 
         # Remove the animation graph attribute if it exists
         if self.character_skel_root is not None:
-            omni.kit.commands.execute("RemoveAnimationGraphAPICommand", paths=[Sdf.Path(self.character_skel_root.GetPrimPath())])
+            omni.kit.commands.execute(
+                "RemoveAnimationGraphAPICommand",
+                paths=[Sdf.Path(self.character_skel_root.GetPrimPath())],
+            )
 
         # Add the animation graph to the character
         if self.character_skel_root is not None:
-            omni.kit.commands.execute("ApplyAnimationGraphAPICommand", paths=[Sdf.Path(self.character_skel_root.GetPrimPath())], animation_graph_path=Sdf.Path(animation_graph.GetPrimPath()))
+            omni.kit.commands.execute(
+                "ApplyAnimationGraphAPICommand",
+                paths=[Sdf.Path(self.character_skel_root.GetPrimPath())],
+                animation_graph_path=Sdf.Path(animation_graph.GetPrimPath()),
+            )
 
     @staticmethod
     def _transverse_prim(stage, stage_prefix):
@@ -318,7 +360,9 @@ class Person:
 
         # Recursively look through the children to get the SkelRoot
         for child in children:
-            prim_child, child_stage_prefix = Person._transverse_prim(stage, stage_prefix + "/" + child.GetName())
+            prim_child, child_stage_prefix = Person._transverse_prim(
+                stage, stage_prefix + "/" + child.GetName()
+            )
 
             if prim_child is not None:
                 return prim_child, child_stage_prefix
@@ -331,12 +375,18 @@ class Person:
         result, folder_list = omni.client.list("{}/".format(Person.assets_root_path))
 
         if result != omni.client.Result.OK:
-            carb.log_error("Unable to get character assets from provided asset root path.")
+            carb.log_error(
+                "Unable to get character assets from provided asset root path."
+            )
             return
 
         # Prune items from folder list that are not directories.
-        pruned_folder_list = [folder.relative_path for folder in folder_list
-                              if (folder.flags & omni.client.ItemFlags.CAN_HAVE_CHILDREN) and not folder.relative_path.startswith(".")]
+        pruned_folder_list = [
+            folder.relative_path
+            for folder in folder_list
+            if (folder.flags & omni.client.ItemFlags.CAN_HAVE_CHILDREN)
+            and not folder.relative_path.startswith(".")
+        ]
 
         return pruned_folder_list
 
@@ -349,7 +399,9 @@ class Person:
 
         # Attempt to load the character if it exists, otherwise load a random character
         if result != omni.client.Result.OK:
-            carb.log_error(f"Character folder does not exist: {agent_name}. Available: {Person.get_character_asset_list()}")
+            carb.log_error(
+                f"Character folder does not exist: {agent_name}. Available: {Person.get_character_asset_list()}"
+            )
             return None
 
         # Get the usd present in the character folder
@@ -364,11 +416,19 @@ class Person:
         result, folder_list = omni.client.list(character_folder_path)
 
         if result != omni.client.Result.OK:
-            carb.log_error("Unable to read character folder path at {}".format(character_folder_path))
+            carb.log_error(
+                "Unable to read character folder path at {}".format(
+                    character_folder_path
+                )
+            )
             return
 
         for item in folder_list:
             if item.relative_path.endswith(".usd"):
                 return item.relative_path
 
-        carb.log_error("Unable to file a .usd file in {} character folder".format(character_folder_path))
+        carb.log_error(
+            "Unable to file a .usd file in {} character folder".format(
+                character_folder_path
+            )
+        )

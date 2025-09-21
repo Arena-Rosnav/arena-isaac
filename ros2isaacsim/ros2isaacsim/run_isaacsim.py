@@ -30,17 +30,16 @@ from isaac_utils.utils.assets import get_assets_root_path_safe
 from isaacsim.core.utils.prims import set_prim_attribute_value
 from isaacsim.asset.importer.urdf import _urdf
 import omni.kit.commands as commands
-from omni.isaac.core.utils.rotations import euler_angles_to_quat
+from isaacsim.core.utils.rotations import euler_angles_to_quat
 from isaacsim.core.utils.stage import get_current_stage, open_stage
 import random
 
-EXTENSIONS_PEOPLE = [
-    'omni.anim.people', 
-    'omni.anim.navigation.bundle', 
+EXTENSIONS_PEOPLE = [  
     'omni.anim.timeline',
     'omni.anim.graph.bundle', 
     'omni.anim.graph.core', 
     'omni.anim.graph.ui',
+    'omni.anim.graph.schema',
     'omni.anim.retarget.bundle', 
     'omni.anim.retarget.core',
     'omni.anim.retarget.ui', 
