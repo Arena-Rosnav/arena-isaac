@@ -21,7 +21,10 @@ profile = QoSProfile(depth=2000)
 def spawn_elevator(elevator: Elevator) -> bool:
     prim_path = world_path(elevator.name)
     pos = geom.Translation.parse(elevator.position)
-    size = Gf.Vec3f(*elevator.size)
+    if hasattr(elevator.size, 'x') and hasattr(elevator.size, 'y') and hasattr(elevator.size, 'z'):
+        size = Gf.Vec3f(elevator.size.x, elevator.size.y, elevator.size.z)
+    else:
+        size = Gf.Vec3f(*elevator.size)
     material = elevator.material
 
     # Ensure parent path exists
