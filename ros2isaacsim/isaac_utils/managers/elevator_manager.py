@@ -127,13 +127,23 @@ class ElevatorManager:
             import omni
             from omni.isaac.core import World
             world = World.instance()
-            prim_path = f"/World/{robot_name}"
-            prim = world.scene.get_object(prim_path)
+            # Try several possible prim paths
+            possible_paths = [
+                f"/World/Robots/{robot_name}",
+                f"/World/{robot_name}",
+                f"/World/Robots/{robot_name}/base_link",
+            ]
+            prim = None
+            for prim_path in possible_paths:
+                prim = world.scene.get_object(prim_path)
+                if prim:
+                    _log_info(f"Found robot prim for {robot_name} at {prim_path}")
+                    break
             if prim:
                 prim.set_world_pose(np.array(position))
                 _log_info(f"Teleported robot {robot_name} to {position}")
             else:
-                _log_warn(f"Could not find prim for robot {robot_name} at {prim_path}")
+                _log_warn(f"Could not find prim for robot {robot_name} at any of: {possible_paths}")
         except Exception as e:
             _log_warn(f"Teleport failed for {robot_name}: {e}")
 
