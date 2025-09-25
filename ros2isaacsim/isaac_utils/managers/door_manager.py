@@ -29,33 +29,30 @@ except Exception:
 
 
 def _log_debug(msg: str):
+    print(f"[DoorManager][DEBUG] {msg}")
     try:
         if _LOGGER:
             _LOGGER.debug(msg)
-            return
     except Exception:
         pass
-    print(msg)
 
 
 def _log_info(msg: str):
+    print(f"[DoorManager][INFO] {msg}")
     try:
         if _LOGGER:
             _LOGGER.info(msg)
-            return
     except Exception:
         pass
-    print(msg)
 
 
 def _log_warn(msg: str):
+    print(f"[DoorManager][WARN] {msg}")
     try:
         if _LOGGER:
             _LOGGER.warn(msg)
-            return
     except Exception:
         pass
-    print(msg)
 
 
 def _log_error(msg: str):
