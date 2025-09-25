@@ -92,21 +92,25 @@ class ElevatorManager:
                 robot_pose = self.get_robot_pose(robot_name)
                 if robot_pose is None:
                     continue
-                state = pair['cooldown'].get(robot_name, {'last_tp': 0, 'was_on': None})
+                state = pair['cooldown'].get(robot_name, {'last_tp': 0, 'can_tp': True, 'was_on': 'none'})
                 last_tp = state.get('last_tp', 0)
-                was_on = state.get('was_on', None)
+                can_tp = state.get('can_tp', True)
+                was_on = state.get('was_on', 'none')
                 on_a = self._robot_on_platform(robot_pose, pair['a'])
                 on_b = self._robot_on_platform(robot_pose, pair['b'])
-                if on_a and not on_b and was_on == 'none' and (now - last_tp > cooldown_sec):
-                    self.teleport_robot(robot_name, pair['b']['position'])
-                    pair['cooldown'][robot_name] = {'last_tp': now, 'was_on': 'a'}
-                elif on_b and not on_a and was_on == 'none' and (now - last_tp > cooldown_sec):
-                    self.teleport_robot(robot_name, pair['a']['position'])
-                    pair['cooldown'][robot_name] = {'last_tp': now, 'was_on': 'b'}
+                # Only allow teleport if robot is on a platform, was previously off both, and cooldown expired
+                if can_tp and (on_a ^ on_b) and not (was_on == 'a' and on_a) and not (was_on == 'b' and on_b) and (now - last_tp > cooldown_sec):
+                    if on_a:
+                        self.teleport_robot(robot_name, pair['b']['position'])
+                        pair['cooldown'][robot_name] = {'last_tp': now, 'can_tp': False, 'was_on': 'a'}
+                    elif on_b:
+                        self.teleport_robot(robot_name, pair['a']['position'])
+                        pair['cooldown'][robot_name] = {'last_tp': now, 'can_tp': False, 'was_on': 'b'}
+                # Reset teleport permission only when robot is fully off both platforms
                 elif not on_a and not on_b:
-                    pair['cooldown'][robot_name] = {'last_tp': last_tp, 'was_on': 'none'}
+                    pair['cooldown'][robot_name] = {'last_tp': last_tp, 'can_tp': True, 'was_on': 'none'}
                 else:
-                    pair['cooldown'][robot_name] = {'last_tp': last_tp, 'was_on': 'a' if on_a else 'b' if on_b else 'none'}
+                    pair['cooldown'][robot_name] = {'last_tp': last_tp, 'can_tp': can_tp, 'was_on': 'a' if on_a else 'b' if on_b else 'none'}
 
     def _robot_on_platform(self, robot_pose, platform):
         px, py, pz = platform['position']
@@ -119,7 +123,18 @@ class ElevatorManager:
         )
 
     def teleport_robot(self, robot_name, position):
-        # TODO: Actually move the robot prim in IsaacSim
-        _log_info(f"Teleporting robot {robot_name} to {position}")
+        try:
+            import omni
+            from omni.isaac.core import World
+            world = World.instance()
+            prim_path = f"/World/{robot_name}"
+            prim = world.scene.get_object(prim_path)
+            if prim:
+                prim.set_world_pose(np.array(position))
+                _log_info(f"Teleported robot {robot_name} to {position}")
+            else:
+                _log_warn(f"Could not find prim for robot {robot_name} at {prim_path}")
+        except Exception as e:
+            _log_warn(f"Teleport failed for {robot_name}: {e}")
 
 elevator_manager = ElevatorManager()
