@@ -12,6 +12,7 @@ from isaac_utils.utils.material import Material
 from isaac_utils.utils.path import world_path
 from isaacsim_msgs.msg import Wall
 from isaacsim_msgs.srv import SpawnWalls
+from isaac_utils.utils.geom import Translation
 
 from .utils import Service, on_exception
 
@@ -20,24 +21,18 @@ from .utils import Service, on_exception
 def wall_spawner(wall: Wall) -> bool:
 
     prim_path = world_path(wall.name)
-    height = wall.height
-    width = wall.width
-    z_offset = wall.z_offset
+    thickness = wall.thickness
 
-    start = np.append(np.array(wall.start[:2]), z_offset + height / 2)
-    end = np.append(np.array(wall.end[:2]), z_offset + height / 2)
-
-    start_vec = Gf.Vec3d(*start)
-    end_vec = Gf.Vec3d(*end)
-
+    start = Translation.parse(wall.start).Vec3d()
+    end = Translation.parse(wall.end).Vec3d()
     vector_ab = end - start
 
-    center = (start_vec + end_vec) / 2
+    center = (start + end) / 2
 
     length = np.linalg.norm(vector_ab[:2])
     angle = math.atan2(vector_ab[1], vector_ab[0])
     # print("wall angle", angle)
-    scale = Gf.Vec3f(*[length, width, height])
+    scale = Gf.Vec3f(length, thickness, end[2] - start[2])
 
     # create wall
     world = World.instance()

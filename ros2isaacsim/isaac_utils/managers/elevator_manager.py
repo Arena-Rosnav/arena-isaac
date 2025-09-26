@@ -16,6 +16,7 @@ try:
 except Exception:
     _LOGGER = None
 
+
 def _log_info(msg: str):
     try:
         if _LOGGER:
@@ -30,6 +31,7 @@ def _log_info(msg: str):
         except Exception:
             pass
 
+
 def _log_warn(msg: str):
     try:
         if _LOGGER:
@@ -43,6 +45,7 @@ def _log_warn(msg: str):
                 _LOGGER.warn(msg)
         except Exception:
             pass
+
 
 class ElevatorManager:
     def __init__(self):
@@ -65,51 +68,58 @@ class ElevatorManager:
         self._elevators[elevator.name] = elevator
         # Pair elevators by destination
         dest = self._elevators.get(destination)
-                print(f"[ElevatorManager] register_node called, controller: {controller}")
-                # Subscribe to robot odometry for all registered robots
-            self._pairs.append({
-                'a': {'name': elevator.name, 'position': elevator.position, 'size': elevator.size},
-                'b': {'name': dest.name, 'position': dest.position, 'size': dest.size},
-                'cooldown': {},
-            })
-                print(f"[ElevatorManager] add_elevator called for {elevator.name}, destination: {destination}")
+        print(f"[ElevatorManager] register_node called, controller: {controller}")
+        # Subscribe to robot odometry for all registered robots
+        self._pairs.append({
+            'a': {'name': elevator.name, 'position': elevator.position, 'size': elevator.size},
+            'b': {'name': dest.name, 'position': dest.position, 'size': dest.size},
+            'cooldown': {},
+        })
+        print(f"[ElevatorManager] add_elevator called for {elevator.name}, destination: {destination}")
 
     def add_robot(self, robot_name):
         if robot_name not in self._robots:
             self._robots.append(robot_name)
-                    print(f"[ElevatorManager] Pairing elevator {elevator.name} <-> {dest.name}")
+            print(f"[ElevatorManager] Pairing elevator {elevator.name} <-> {dest.name}")
             self._ensure_robot_subscription(robot_name)
 
     def _ensure_robot_subscription(self, robot_name):
         if self._controller is None or robot_name in self._odom_subs:
             return
         topic = f"/{robot_name}/odom"
-        def odom_cb(msg):
-                print(f"[ElevatorManager] add_robot called for {robot_name}")
-            try:
-                pos = msg.pose.pose.position
-                self._odom_cache[robot_name] = (pos.x, pos.y, getattr(pos, 'z', 0.0))
-            except Exception as e:
-                _log_warn(f"odom_cb failed for {robot_name}: {e}")
-                print(f"[ElevatorManager] _ensure_robot_subscription called for {robot_name}")
+
+    def odom_cb(msg):
+        print(f"[ElevatorManager] add_robot called for {robot_name}")
+        try:
+            pos = msg.pose.pose.position
+            self._odom_cache[robot_name] = (pos.x, pos.y, getattr(pos, 'z', 0.0))
+        except Exception as e:
+            _log_warn(f"odom_cb failed for {robot_name}: {e}")
+            print(f"[ElevatorManager] _ensure_robot_subscription called for {robot_name}")
         sub = self._controller.create_subscription(Odometry, topic, odom_cb, 10)
-                    print(f"[ElevatorManager] No controller or already subscribed for {robot_name}")
+        print(f"[ElevatorManager] No controller or already subscribed for {robot_name}")
         self._odom_subs[robot_name] = sub
         _log_info(f"Subscribed to odometry for robot {robot_name} on topic {topic}")
 
     def get_robot_pose(self, robot_name):
-                        print(f"[ElevatorManager] odom_cb received msg for {robot_name}")
+        print(f"[ElevatorManager] get_robot_pose called for {robot_name}")
         return self._odom_cache.get(robot_name, None)
 
     def update(self):
-                        print(f"[ElevatorManager] odom_cb error for {robot_name}: {e}")
-        cooldown_sec = 2.0
+        for robot_name in self._robots:
+            robot_pose = self.get_robot_pose(robot_name)
+            if robot_pose is None:
+                print(f"[ElevatorManager] get_robot_pose for {robot_name}: {pose}")
+                continue
+            state = pair['cooldown'].get(robot_name, {'last_tp': 0, 'can_tp': True, 'was_on': 'none'})
+            last_tp = state.get('last_tp', 0)
+            print(f"[ElevatorManager] update called")
         now = time.time()
         for pair in self._pairs:
             for robot_name in self._robots:
                 robot_pose = self.get_robot_pose(robot_name)
                 if robot_pose is None:
-                print(f"[ElevatorManager] get_robot_pose for {robot_name}: {pose}")
+                    print(f"[ElevatorManager] get_robot_pose for {robot_name}: {pose}")
                     continue
                 state = pair['cooldown'].get(robot_name, {'last_tp': 0, 'can_tp': True, 'was_on': 'none'})
                 last_tp = state.get('last_tp', 0)
@@ -117,12 +127,12 @@ class ElevatorManager:
                 can_tp = state.get('can_tp', True)
                 was_on = state.get('was_on', 'none')
                 on_a = self._robot_on_platform(robot_pose, pair['a'])
-                    print(f"[ElevatorManager] Checking elevator pair: {pair['a']['name']} <-> {pair['b']['name']}")
+                print(f"[ElevatorManager] Checking elevator pair: {pair['a']['name']} <-> {pair['b']['name']}")
                 on_b = self._robot_on_platform(robot_pose, pair['b'])
-                        print(f"[ElevatorManager] Checking robot: {robot_name}")
+                print(f"[ElevatorManager] Checking robot: {robot_name}")
                 # Only allow teleport if robot is on a platform, was previously off both, and cooldown expired
                 if can_tp and (on_a ^ on_b) and not (was_on == 'a' and on_a) and not (was_on == 'b' and on_b) and (now - last_tp > cooldown_sec):
-                            print(f"[ElevatorManager] No pose for robot: {robot_name}")
+                    print(f"[ElevatorManager] No pose for robot: {robot_name}")
                     if on_a:
                         self.teleport_robot(robot_name, pair['b']['position'])
                         pair['cooldown'][robot_name] = {'last_tp': now, 'can_tp': False, 'was_on': 'a'}
@@ -170,5 +180,6 @@ class ElevatorManager:
                 _log_warn(f"Could not find prim for robot {robot_name} at any of: {possible_paths}")
         except Exception as e:
             _log_warn(f"Teleport failed for {robot_name}: {e}")
+
 
 elevator_manager = ElevatorManager()

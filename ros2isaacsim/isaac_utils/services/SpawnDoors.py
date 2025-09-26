@@ -9,6 +9,7 @@ from omni.isaac.core.utils.rotations import euler_angles_to_quat
 from pxr import Gf
 
 from isaac_utils.managers.door_manager import door_manager
+from isaac_utils.utils.geom import Translation
 from isaac_utils.utils.material import Material
 from isaac_utils.utils.path import world_path
 from isaac_utils.utils.prim import ensure_path
@@ -66,21 +67,17 @@ def spawn_door(door: Door) -> bool:
     except Exception:
         pass
 
-    height = door.height
     kind = door.kind
 
-    start = np.append(np.array(door.start), height / 2)
-    end = np.append(np.array(door.end), height / 2)
+    start = Translation.parse(door.start).Vec3d()
+    end = Translation.parse(door.end).Vec3d()
 
-    start_vec = Gf.Vec3d(*start)
-    end_vec = Gf.Vec3d(*end)
-
-    vector_ab = end - start
-
-    center = (start_vec + end_vec) / 2
-    length = np.linalg.norm(vector_ab[:2])
-    angle = math.atan2(vector_ab[1], vector_ab[0])
-    scale = Gf.Vec3f(*[length, 0.1, height])
+    center = (start + end) / 2
+    thickness = door.thickness
+    height = end[2] - start[2]
+    length = np.linalg.norm((end - start)[:2])
+    angle = math.atan2(end[1] - start[1], end[0] - start[0])
+    scale = Gf.Vec3f(length, thickness, height)
 
     # create door
     stage = omni.usd.get_context().get_stage()
@@ -123,20 +120,6 @@ def spawn_door(door: Door) -> bool:
         door_prim_path = prim_path
         return False
 
-    # Persist door endpoint metadata so wall spawner can cut walls
-    try:
-        door_prim = stage.GetPrimAtPath(door_prim_path)
-        if door_prim and door_prim.IsValid():
-            # store full XYZ endpoints (start/end already include height/2)
-            door_prim.SetMetadata('door_start', list(start))
-            door_prim.SetMetadata('door_end', list(end))
-            _log_debug(f"DEBUG SpawnDoor: set metadata door_start={list(start)} door_end={list(end)} on {door_prim_path}")
-        else:
-            _log_warn(f"DEBUG SpawnDoor: prim {door_prim_path} invalid, cannot set metadata")
-    except Exception as e:
-        _log_warn(f"DEBUG SpawnDoor: failed to set metadata on {door_prim_path}: {e}")
-        return False
-
     if (material := Material.from_msg(door.material)):
         material.bind_to(door_prim_path)
 
@@ -160,6 +143,8 @@ spawn_doors_service = Service(
     srv_type=SpawnDoors,
     srv_name='isaac/SpawnDoors',
     callback=spawn_doors_callback
+
+
 )
 
 __all__ = ['spawn_doors_service']

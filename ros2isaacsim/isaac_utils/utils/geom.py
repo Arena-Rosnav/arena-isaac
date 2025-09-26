@@ -24,7 +24,7 @@ class Translation:
         return Gf.Vec3d(self.x, self.y, self.z)
 
     @classmethod
-    def parse(cls, values: geometry_msgs.msg.Point | typing.Collection[float]) -> "Translation":
+    def parse(cls, values: geometry_msgs.msg.Point | typing.Sequence[float]) -> "Translation":
         if isinstance(values, geometry_msgs.msg.Point):
             return cls(
                 x=values.x,
@@ -37,7 +37,8 @@ class Translation:
 
         if len(values) == 2:
             return cls(
-                *values,
+                values[0],
+                values[1],
                 0.0,
             )
 
@@ -69,7 +70,7 @@ class Rotation:
         return Gf.Quatd(self.w, self.x, self.y, self.z)
 
     @classmethod
-    def parse(cls, values: geometry_msgs.msg.Quaternion | typing.Collection[float]) -> "Rotation":
+    def parse(cls, values: geometry_msgs.msg.Quaternion | typing.Sequence[float]) -> "Rotation":
         if isinstance(values, geometry_msgs.msg.Quaternion):
             return cls(
                 x=values.x,

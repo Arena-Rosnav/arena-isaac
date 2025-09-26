@@ -1,7 +1,5 @@
 string name
-float32[] start
-float32[] end
-float32 height
-float32 width
-float32 z_offset
+geometry_msgs/Point start
+geometry_msgs/Point end
 Material material
+float64 thickness 0.1
