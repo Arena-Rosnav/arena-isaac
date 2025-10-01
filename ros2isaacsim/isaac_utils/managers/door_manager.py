@@ -535,120 +535,44 @@ class DoorManager:
 
     def _open_door(self, door_data):
         if door_data["kind"] == 'sliding':
-            stage = omni.usd.get_context().get_stage()
-            prim = door_data["prim"]
-            move_prim = stage.GetPrimAtPath(door_data.get("move_prim_path", prim.GetPath().pathString))
-             # Determine target translate/scale
+            prim_path = door_data.get("move_prim_path", door_data["prim"].GetPath().pathString)
+            init_t = door_data.get("initial_translate", Gf.Vec3f(0, 0, 0))
             init_scale = door_data.get("initial_scale", Gf.Vec3f(1, 1, 1))
             try:
                 size_x = float(init_scale[0])
             except Exception:
                 size_x = 1.0
             opening_offset = max(0.5, size_x * 0.9)
-            init_t = door_data.get("initial_translate", Gf.Vec3f(0, 0, 0))
             target_t = (float(init_t[0]) + opening_offset, float(init_t[1]), float(init_t[2]))
-
-            moved = False
-
-            # Try setting translate on the prim itself
-            try:
-                # operate on the chosen move_prim to avoid affecting parent walls
-                target = move_prim if move_prim and move_prim.IsValid() else prim
-                xform_api = UsdGeom.XformCommonAPI(target)
-                xform_api.SetTranslate(target_t)
-                try:
-                    t_attr = target.GetAttribute('xformOp:translate')
-                    t_val = t_attr.Get() if t_attr is not None else None
-                except Exception:
-                    t_val = None
-                if t_val is not None and any(abs(float(t_val[i]) - target_t[i]) > 1e-6 for i in range(3)):
-                    _log_info(f"Door {prim.GetPath().pathString} opened -> prim translated to {t_val} (moved {target.GetPath().pathString})")
-                    moved = True
-            except Exception as e:
-                _log_debug(f"Prim translate attempt failed for {prim.GetPath().pathString}: {e}")
-
-            # Final fallback: shrink target scale
-            if not moved:
-                try:
-                    target = move_prim if move_prim and move_prim.IsValid() else prim
-                    target_scale = Gf.Vec3f(init_scale[0], 0.01, init_scale[2])
-                    scale_attr = target.GetAttribute('xformOp:scale')
-                    if scale_attr:
-                        scale_attr.Set(target_scale)
-                    else:
-                        scale_attr = target.CreateAttribute('xformOp:scale', Sdf.ValueTypeNames.Float3)
-                        scale_attr.Set(target_scale)
-                    _log_info(f"Door {prim.GetPath().pathString} opened via scale fallback on {target.GetPath().pathString}")
-                    moved = True
-                except Exception as e:
-                    _log_warn(f"Failed scale fallback for {prim.GetPath().pathString}: {e}")
-
-            if moved:
-                door_data["open"] = True
-                # If enabled, hide the door geometry instead of relying on transforms
-                if getattr(self, '_use_visibility_toggle', False):
-                    try:
-                        target = move_prim if 'move_prim' in locals() and move_prim and move_prim.IsValid() else prim
-                        ok = self._set_visibility(target, visible=False, recursive=True)
-                        if ok:
-                            _log_info(f"Door {prim.GetPath().pathString} hidden via visibility on {target.GetPath().pathString}")
-                    except Exception as e:
-                        _log_debug(f'Visibility toggle failed for {prim.GetPath().pathString}: {e}')
-            else:
-                _log_warn(f"Door {prim.GetPath().pathString} did not move or scale; no visible opening performed")
+            from isaac_utils.utils import geom
+            geom.move(
+                prim_path=prim_path,
+                translation=geom.Translation(*target_t),
+                rotation=geom.Rotation(w=1, x=0, y=0, z=0),
+            )
+            door_data["open"] = True
+        else:
+            # Fallback: hide door if kind not recognized
+            prim = door_data["prim"]
+            self._set_visibility(prim, visible=False, recursive=True)
+            door_data["open"] = True
 
     def _close_door(self, door_data):
         if door_data["kind"] == 'sliding':
-            stage = omni.usd.get_context().get_stage()
-            prim = door_data["prim"]
-            move_prim = stage.GetPrimAtPath(door_data.get("move_prim_path", prim.GetPath().pathString))
-            init_scale = door_data.get("initial_scale", Gf.Vec3f(1, 1, 1))
+            prim_path = door_data.get("move_prim_path", door_data["prim"].GetPath().pathString)
             init_t = door_data.get("initial_translate", Gf.Vec3f(0, 0, 0))
-            restored = False
-
-            # Try reset translate on target (move_prim if available)
-            try:
-                target = move_prim if move_prim and move_prim.IsValid() else prim
-                xform_api = UsdGeom.XformCommonAPI(target)
-                xform_api.SetTranslate((float(init_t[0]), float(init_t[1]), float(init_t[2])))
-                try:
-                    t_attr = target.GetAttribute('xformOp:translate')
-                    t_val = t_attr.Get() if t_attr is not None else None
-                except Exception:
-                    t_val = None
-                if t_val is not None and any(abs(float(t_val[i]) - float(init_t[i])) > 1e-6 for i in range(3)):
-                    restored = True
-                    _log_info(f"Door {prim.GetPath().pathString} closed -> translate reset on {target.GetPath().pathString} to {t_val}")
-            except Exception as e:
-                _log_debug(f"Prim translate reset failed for {prim.GetPath().pathString}: {e}")
-
-            # Final fallback: restore target scale
-            if not restored:
-                try:
-                    target = move_prim if move_prim and move_prim.IsValid() else prim
-                    sc_attr = target.GetAttribute('xformOp:scale')
-                    if sc_attr:
-                        sc_attr.Set(init_scale)
-                    else:
-                        sc_attr = target.CreateAttribute('xformOp:scale', Sdf.ValueTypeNames.Float3)
-                        sc_attr.Set(init_scale)
-                    restored = True
-                    _log_info(f"Door {prim.GetPath().pathString} closed via target-scale restore on {target.GetPath().pathString}")
-                except Exception as e:
-                    _log_warn(f"Failed prim-scale restore for {prim.GetPath().pathString}: {e}")
-
-            if restored:
-                door_data["open"] = False
-                if getattr(self, '_use_visibility_toggle', False):
-                    try:
-                        target = move_prim if 'move_prim' in locals() and move_prim and move_prim.IsValid() else prim
-                        ok = self._set_visibility(target, visible=True, recursive=True)
-                        if ok:
-                            _log_info(f"Door {prim.GetPath().pathString} visibility restored on {target.GetPath().pathString}")
-                    except Exception as e:
-                        _log_debug(f'Visibility restore failed for {prim.GetPath().pathString}: {e}')
-            else:
-                _log_warn(f"Door {prim.GetPath().pathString} did not restore transforms/scale; remains in open state")
+            from isaac_utils.utils import geom
+            geom.move(
+                prim_path=prim_path,
+                translation=geom.Translation(*init_t),
+                rotation=geom.Rotation(w=1, x=0, y=0, z=0),
+            )
+            door_data["open"] = False
+        else:
+            # Fallback: show door if kind not recognized
+            prim = door_data["prim"]
+            self._set_visibility(prim, visible=True, recursive=True)
+            door_data["open"] = False
 
     def _resolve_entity_prim(self, prim_path: str) -> str:
         """Try to resolve a dynamic/moving sub-prim for a given USD prim path.
