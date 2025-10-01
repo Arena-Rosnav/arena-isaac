@@ -269,15 +269,34 @@ class DoorManager:
         stage = omni.usd.get_context().get_stage()
         prim = stage.GetPrimAtPath(prim_path)
         if prim.IsValid():
+            start_v, end_v = None, None
+            try:
+                start_attr = prim.GetAttribute('door_start')
+                end_attr = prim.GetAttribute('door_end')
+                if start_attr and end_attr:
+                    start_v = start_attr.Get()
+                    end_v = end_attr.Get()
+            except Exception:
+                pass
+            if not start_v or not end_v:
+                start_v = [0, 0, 0]
+                end_v = [1, 0, 0]
+            dx = end_v[0] - start_v[0]
+            dy = end_v[1] - start_v[1]
+            axis = np.array([dx, dy, 0])
+            axis = axis / (np.linalg.norm(axis) + 1e-8)
+            angle = np.arctan2(axis[1], axis[0])
             self._doors[prim_path] = {
                 "prim": prim,
                 "kind": kind,
                 "initial_scale": Gf.Vec3f(1, 1, 1),
                 "initial_translate": Gf.Vec3f(0, 0, 0),
-                # move_prim_path: the actual prim we will translate/scale when opening/closing
                 "move_prim_path": prim_path,
-                "open": False
-                ,"last_toggle_time": 0.0
+                "open": False,
+                "last_toggle_time": 0.0,
+                "axis": axis,
+                "angle": angle,
+                "anim": None
             }
             # Store initial scale
             scale_attr = prim.GetAttribute('xformOp:scale')
@@ -309,13 +328,27 @@ class DoorManager:
                 except Exception:
                     wp = self._get_prim_position(prim)
                     self._doors[prim_path]["initial_translate"] = Gf.Vec3f(float(wp[0]), float(wp[1]), float(wp[2]))
+            try:
+                xformable = UsdGeom.Xformable(prim)
+                ops = xformable.GetOrderedXformOps()
+                rot_quat = [0, 0, 0, 1]
+                for op in ops:
+                    if op.GetOpType() == UsdGeom.XformOp.TypeRotateXYZ:
+                        rot = op.Get()
+                        from scipy.spatial.transform import Rotation as R
+                        rot_quat = R.from_euler('xyz', rot, degrees=True).as_quat()
+                        break
+                    elif op.GetOpType() == UsdGeom.XformOp.TypeOrient:
+                        rot_quat = op.Get()
+                        break
+                self._doors[prim_path]["initial_rotation"] = rot_quat
+            except Exception:
+                self._doors[prim_path]["initial_rotation"] = [0, 0, 0, 1]
 
-            # Choose a sensible move target: prefer a child geometry/xform so we don't move parents (walls)
             try:
                 for child in prim.GetAllChildren():
                     if not child or not child.IsValid():
                         continue
-                    # Prefer a child that is xformable (likely geometry holder)
                     try:
                         _ = UsdGeom.Xformable(child)
                         self._doors[prim_path]["move_prim_path"] = child.GetPath().pathString
@@ -409,6 +442,32 @@ class DoorManager:
                 # No entities registered — optionally print a placeholder distance message
                 if self._log_every_tick:
                     _log_info(f"DISTANCE: Door {door_path} -> (no entities registered)")
+
+        for door_path, door_data in self._doors.items():
+            if door_data.get("anim"):
+                anim = door_data["anim"]
+                now = time.time()
+                t = min((now - anim["start_time"]) / anim["duration"], 1.0)
+                interp_pos = tuple(
+                    anim["start"][i] + (anim["end"][i] - anim["start"][i]) * t
+                    for i in range(3)
+                )
+                from isaac_utils.utils import geom
+                rot_quat = door_data.get("initial_rotation", [0, 0, 0, 1])
+                if hasattr(rot_quat, "GetReal") and hasattr(rot_quat, "GetImaginary"):
+                    w = rot_quat.GetReal()
+                    x, y, z = rot_quat.GetImaginary()
+                elif isinstance(rot_quat, (list, tuple, np.ndarray)) and len(rot_quat) == 4:
+                    x, y, z, w = rot_quat
+                else:
+                    x, y, z, w = 0, 0, 0, 1
+                geom.move(
+                    prim_path=door_data.get("move_prim_path", door_data["prim"].GetPath().pathString),
+                    translation=geom.Translation(*interp_pos),
+                    rotation=geom.Rotation(w=w, x=x, y=y, z=z),
+                )
+                if t >= 1.0:
+                    door_data["anim"] = None
 
     def _get_prim_position(self, prim):
         try:
@@ -538,21 +597,28 @@ class DoorManager:
             prim_path = door_data.get("move_prim_path", door_data["prim"].GetPath().pathString)
             init_t = door_data.get("initial_translate", Gf.Vec3f(0, 0, 0))
             init_scale = door_data.get("initial_scale", Gf.Vec3f(1, 1, 1))
+            axis = door_data.get("axis", np.array([1, 0, 0]))
+            angle = door_data.get("angle", 0.0)
             try:
                 size_x = float(init_scale[0])
             except Exception:
                 size_x = 1.0
             opening_offset = max(0.5, size_x * 0.9)
-            target_t = (float(init_t[0]) + opening_offset, float(init_t[1]), float(init_t[2]))
-            from isaac_utils.utils import geom
-            geom.move(
-                prim_path=prim_path,
-                translation=geom.Translation(*target_t),
-                rotation=geom.Rotation(w=1, x=0, y=0, z=0),
+            target_t = (
+                float(init_t[0]) + opening_offset * axis[0],
+                float(init_t[1]) + opening_offset * axis[1],
+                float(init_t[2])
             )
+            door_data["anim"] = {
+                "start": tuple(init_t),
+                "end": target_t,
+                "angle": angle,
+                "start_time": time.time(),
+                "duration": 3.0,
+                "opening": True
+            }
             door_data["open"] = True
         else:
-            # Fallback: hide door if kind not recognized
             prim = door_data["prim"]
             self._set_visibility(prim, visible=False, recursive=True)
             door_data["open"] = True
@@ -561,15 +627,28 @@ class DoorManager:
         if door_data["kind"] == 'sliding':
             prim_path = door_data.get("move_prim_path", door_data["prim"].GetPath().pathString)
             init_t = door_data.get("initial_translate", Gf.Vec3f(0, 0, 0))
-            from isaac_utils.utils import geom
-            geom.move(
-                prim_path=prim_path,
-                translation=geom.Translation(*init_t),
-                rotation=geom.Rotation(w=1, x=0, y=0, z=0),
+            axis = door_data.get("axis", np.array([1, 0, 0]))
+            angle = door_data.get("angle", 0.0)
+            try:
+                size_x = float(door_data.get("initial_scale", Gf.Vec3f(1, 1, 1))[0])
+            except Exception:
+                size_x = 1.0
+            opening_offset = max(0.5, size_x * 0.9)
+            open_t = (
+                float(init_t[0]) + opening_offset * axis[0],
+                float(init_t[1]) + opening_offset * axis[1],
+                float(init_t[2])
             )
+            door_data["anim"] = {
+                "start": open_t,
+                "end": tuple(init_t),
+                "angle": angle,
+                "start_time": time.time(),
+                "duration": 3.0,
+                "opening": False
+            }
             door_data["open"] = False
         else:
-            # Fallback: show door if kind not recognized
             prim = door_data["prim"]
             self._set_visibility(prim, visible=True, recursive=True)
             door_data["open"] = False
