@@ -599,14 +599,15 @@ class DoorManager:
             init_scale = door_data.get("initial_scale", Gf.Vec3f(1, 1, 1))
             axis = door_data.get("axis", np.array([1, 0, 0]))
             angle = door_data.get("angle", 0.0)
+            slide_dir = np.array([-axis[1], axis[0], 0])
             try:
                 size_x = float(init_scale[0])
             except Exception:
                 size_x = 1.0
             opening_offset = max(0.5, size_x * 0.9)
             target_t = (
-                float(init_t[0]) + opening_offset * axis[0],
-                float(init_t[1]) + opening_offset * axis[1],
+                float(init_t[0]) + opening_offset * slide_dir[0],
+                float(init_t[1]) + opening_offset * slide_dir[1],
                 float(init_t[2])
             )
             door_data["anim"] = {
@@ -629,14 +630,15 @@ class DoorManager:
             init_t = door_data.get("initial_translate", Gf.Vec3f(0, 0, 0))
             axis = door_data.get("axis", np.array([1, 0, 0]))
             angle = door_data.get("angle", 0.0)
+            slide_dir = np.array([-axis[1], axis[0], 0])
             try:
                 size_x = float(door_data.get("initial_scale", Gf.Vec3f(1, 1, 1))[0])
             except Exception:
                 size_x = 1.0
             opening_offset = max(0.5, size_x * 0.9)
             open_t = (
-                float(init_t[0]) + opening_offset * axis[0],
-                float(init_t[1]) + opening_offset * axis[1],
+                float(init_t[0]) + opening_offset * slide_dir[0],
+                float(init_t[1]) + opening_offset * slide_dir[1],
                 float(init_t[2])
             )
             door_data["anim"] = {
