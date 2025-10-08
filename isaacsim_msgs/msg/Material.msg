@@ -1,2 +1,2 @@
-string url
+string path
 string name

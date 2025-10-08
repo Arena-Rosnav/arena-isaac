@@ -16,7 +16,7 @@ class Material:
         :param msg: The msg to create the material from.
         :return: The created material, or None if the material could not be created.
         """
-        return cls.load(path=msg.url, name=msg.name) if msg.url and msg.name else None
+        return cls.load(path=msg.path, name=msg.name) if msg.path and msg.name else None
 
     @classmethod
     def load(cls, path: str, name: str) -> Material | None:
