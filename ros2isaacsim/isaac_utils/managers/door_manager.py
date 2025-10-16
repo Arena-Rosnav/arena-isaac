@@ -593,12 +593,14 @@ class DoorManager:
             return False
 
     def _open_door(self, door_data):
-        if door_data["kind"] == 'sliding':
-            prim_path = door_data.get("move_prim_path", door_data["prim"].GetPath().pathString)
-            init_t = door_data.get("initial_translate", Gf.Vec3f(0, 0, 0))
-            init_scale = door_data.get("initial_scale", Gf.Vec3f(1, 1, 1))
-            axis = door_data.get("axis", np.array([1, 0, 0]))
-            angle = door_data.get("angle", 0.0)
+        kind = door_data["kind"]
+        prim_path = door_data.get("move_prim_path", door_data["prim"].GetPath().pathString)
+        init_t = door_data.get("initial_translate", Gf.Vec3f(0, 0, 0))
+        init_scale = door_data.get("initial_scale", Gf.Vec3f(1, 1, 1))
+        axis = door_data.get("axis", np.array([1, 0, 0]))
+        angle = door_data.get("angle", 0.0)
+
+        if kind == 'sliding':
             slide_dir = np.array([-axis[1], axis[0], 0])
             try:
                 size_x = float(init_scale[0])
@@ -619,20 +621,46 @@ class DoorManager:
                 "opening": True
             }
             door_data["open"] = True
+
+        elif kind == 'sliding_top':
+            # Move up in Z by the door's height (or use scale[2])
+            try:
+                size_z = float(init_scale[2])
+            except Exception:
+                size_z = 2.0
+            opening_offset = max(0.5, size_z * 0.9)
+            target_t = (
+                float(init_t[0]),
+                float(init_t[1]),
+                float(init_t[2]) + opening_offset
+            )
+            door_data["anim"] = {
+                "start": tuple(init_t),
+                "end": target_t,
+                "angle": angle,
+                "start_time": time.time(),
+                "duration": 3.0,
+                "opening": True
+            }
+            door_data["open"] = True
+
         else:
             prim = door_data["prim"]
             self._set_visibility(prim, visible=False, recursive=True)
             door_data["open"] = True
 
     def _close_door(self, door_data):
-        if door_data["kind"] == 'sliding':
-            prim_path = door_data.get("move_prim_path", door_data["prim"].GetPath().pathString)
-            init_t = door_data.get("initial_translate", Gf.Vec3f(0, 0, 0))
-            axis = door_data.get("axis", np.array([1, 0, 0]))
-            angle = door_data.get("angle", 0.0)
+        kind = door_data["kind"]
+        prim_path = door_data.get("move_prim_path", door_data["prim"].GetPath().pathString)
+        init_t = door_data.get("initial_translate", Gf.Vec3f(0, 0, 0))
+        init_scale = door_data.get("initial_scale", Gf.Vec3f(1, 1, 1))
+        axis = door_data.get("axis", np.array([1, 0, 0]))
+        angle = door_data.get("angle", 0.0)
+
+        if kind == 'sliding':
             slide_dir = np.array([-axis[1], axis[0], 0])
             try:
-                size_x = float(door_data.get("initial_scale", Gf.Vec3f(1, 1, 1))[0])
+                size_x = float(init_scale[0])
             except Exception:
                 size_x = 1.0
             opening_offset = max(0.5, size_x * 0.9)
@@ -650,6 +678,28 @@ class DoorManager:
                 "opening": False
             }
             door_data["open"] = False
+
+        elif kind == 'sliding_top':
+            try:
+                size_z = float(init_scale[2])
+            except Exception:
+                size_z = 2.0
+            opening_offset = max(0.5, size_z * 0.9)
+            open_t = (
+                float(init_t[0]),
+                float(init_t[1]),
+                float(init_t[2]) + opening_offset
+            )
+            door_data["anim"] = {
+                "start": open_t,
+                "end": tuple(init_t),
+                "angle": angle,
+                "start_time": time.time(),
+                "duration": 3.0,
+                "opening": False
+            }
+            door_data["open"] = False
+
         else:
             prim = door_data["prim"]
             self._set_visibility(prim, visible=True, recursive=True)
