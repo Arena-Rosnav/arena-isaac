@@ -34,9 +34,11 @@ import omni.timeline
 import omni.usd
 import yaml
 from isaac_utils.utils.assets import get_assets_root_path_safe
-from omni.importer.urdf import _urdf
+from isaacsim.core.utils.extensions import enable_extension
+enable_extension("omni.asset.importer.urdf")
+from isaacsim.asset.importer.urdf import _urdf
 from omni.isaac.core import SimulationContext, World
-from omni.isaac.core.utils import extensions, prims, stage
+from isaacsim.core.utils import extensions, prims, stage
 from pxr import Sdf
 
 EXTENSIONS_PEOPLE = [
@@ -74,8 +76,12 @@ simulation_app.update()
 # -------------------------------------------------------------------------------------------------
 omni.usd.get_context().new_stage()
 
-extensions.enable_extension("omni.isaac.ros2_bridge")
-
+extensions.enable_extension("isaacsim.ros2.bridge")
+#extensions.enable_extension("isaacsim.core.nodes")
+#extensions.enable_extension("isaacsim.ros2.bridge")
+#extensions.enable_extension("omni.isaac.sensors.rtx")
+#extensions.enable_extension("isaacsim.core.nodes")
+#simulation_app.update()
 import random
 
 import numpy as np
@@ -99,7 +105,7 @@ from isaac_utils.managers.door_manager import DoorManager
 from isaac_utils.managers.elevator_manager import elevator_manager
 
 #Import services
-from .services import services
+from arena_isaac.services import services
 from pedestrian.simulator.logic.people_manager import PeopleManager
 from rclpy.qos import QoSProfile
 

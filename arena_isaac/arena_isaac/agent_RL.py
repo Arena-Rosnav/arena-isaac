@@ -33,16 +33,16 @@ simulation_app = SimulationApp(CONFIG)
 import omni
 from isaac_utils import world_generation_utils
 
-from omni.isaac.core.utils import prims
-from omni.isaac.core import SimulationContext
-from omni.isaac.core.utils import extensions, stage
-from omni.isaac.core.world import World
+from isaacsim.core.utils import prims
+from isaacsim.core import SimulationContext
+from isaacsim.core.utils import extensions, stage
+from isaacsim.core.world import World
 from isaac_utils.robot_graphs import assign_robot_model
-from omni.isaac.core.prims import XFormPrim
+from isaacsim.core.prims import XFormPrim
 from pxr import UsdGeom
 import omni.replicator.core as rep
 from isaac_utils.sensors import imu_setup,publish_imu, contact_sensor_setup, publish_contact_sensor_info, camera_set_up,publish_camera_tf,publish_depth,publish_camera_info,publish_pointcloud_from_depth,publish_rgb, lidar_setup,publish_lidar 
-extensions.enable_extension("omni.isaac.ros2_bridge")
+extensions.enable_extension("isaacsim.ros2.bridge")
 
 class NavigationController(Node):
     def __init__(self, name,context):
@@ -127,10 +127,10 @@ omni.usd.get_context().open_stage("/home/ubuntu/arena4_ws/src/arena/isaac/robot_
 
 # wait for things to load
 simulation_app.update()
-while omni.isaac.core.utils.stage.is_stage_loading():
+while isaacsim.core.utils.stage.is_stage_loading():
     simulation_app.update()
 
-simulation_context = omni.isaac.core.SimulationContext(stage_units_in_meters=1.0)
+simulation_context = isaacsim.core.SimulationContext(stage_units_in_meters=1.0)
 # simulation_context.initialize_physics()
 # simulation_context.play()
 

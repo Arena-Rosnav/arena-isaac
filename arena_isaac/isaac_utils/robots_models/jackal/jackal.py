@@ -14,20 +14,20 @@ class Jackal:
             #Create nodes for the OmniGraph
             og.Controller.Keys.CREATE_NODES: [
                 ("OnPlaybackTick",        "omni.graph.action.OnPlaybackTick"),
-                ("ROS2Context",           "omni.isaac.ros2_bridge.ROS2Context"),
-                ("ROS2SubscribeTwist",    "omni.isaac.ros2_bridge.ROS2SubscribeTwist"),
-                ("ScaleStageUnits",       "omni.isaac.core_nodes.OgnIsaacScaleToFromStageUnit"),       
+                ("ROS2Context",           "isaacsim.ros2.bridge.ROS2Context"),
+                ("ROS2SubscribeTwist",    "isaacsim.ros2.bridge.ROS2SubscribeTwist"),
+                ("ScaleStageUnits",       "isaacsim.core.nodes.OgnIsaacScaleToFromStageUnit"),       
                 ("Break3Vector_Linear",   "omni.graph.nodes.BreakVector3"),
                 ("Break3Vector_Angular",  "omni.graph.nodes.BreakVector3"),
-                ("DifferentialController","omni.isaac.wheeled_robots.DifferentialController"),
+                ("DifferentialController","isaacsim.robot.wheeled_robots.DifferentialController"),
                 ("ConstantToken0",        "omni.graph.nodes.ConstantToken"),
                 ("ConstantToken1",        "omni.graph.nodes.ConstantToken"),
                 ("ConstantToken2",        "omni.graph.nodes.ConstantToken"),
                 ("ConstantToken3",        "omni.graph.nodes.ConstantToken"),                
                 ("MakeArray",             "omni.graph.nodes.ConstructArray"),
-                ("PublishJointState", "omni.isaac.ros2_bridge.ROS2PublishJointState"),
-                ("ArticulationController","omni.isaac.core_nodes.IsaacArticulationController"),
-                ("ReadSimTime", "omni.isaac.core_nodes.IsaacReadSimulationTime"),
+                ("PublishJointState", "isaacsim.ros2.bridge.ROS2PublishJointState"),
+                ("ArticulationController","isaacsim.core.nodes.IsaacArticulationController"),
+                ("ReadSimTime", "isaacsim.core.nodes.IsaacReadSimulationTime"),
                 
 
             ],
@@ -113,13 +113,13 @@ class Jackal:
         {
             og.Controller.Keys.CREATE_NODES: [
                 ("onPlaybackTick", "omni.graph.action.OnPlaybackTick"),
-                ("context", "omni.isaac.ros2_bridge.ROS2Context"),
-                ("readSimTime", "omni.isaac.core_nodes.IsaacReadSimulationTime"),
-                ("computeOdom", "omni.isaac.core_nodes.IsaacComputeOdometry"),
-                ("publishOdom", "omni.isaac.ros2_bridge.ROS2PublishOdometry"),
-                ("publishRawTF", "omni.isaac.ros2_bridge.ROS2PublishRawTransformTree"),
-                ("publishRawTF2", "omni.isaac.ros2_bridge.ROS2PublishRawTransformTree"),
-                ("publishTF", "omni.isaac.ros2_bridge.ROS2PublishTransformTree"),
+                ("context", "isaacsim.ros2.bridge.ROS2Context"),
+                ("readSimTime", "isaacsim.core.nodes.IsaacReadSimulationTime"),
+                ("computeOdom", "isaacsim.core.nodes.IsaacComputeOdometry"),
+                ("publishOdom", "isaacsim.ros2.bridge.ROS2PublishOdometry"),
+                ("publishRawTF", "isaacsim.ros2.bridge.ROS2PublishRawTransformTree"),
+                ("publishRawTF2", "isaacsim.ros2.bridge.ROS2PublishRawTransformTree"),
+                ("publishTF", "isaacsim.ros2.bridge.ROS2PublishTransformTree"),
                 
             ],
             og.Controller.Keys.SET_VALUES: [

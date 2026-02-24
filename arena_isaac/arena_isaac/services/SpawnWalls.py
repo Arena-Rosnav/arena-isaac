@@ -2,7 +2,7 @@ import math
 
 import numpy as np
 import omni
-from omni.isaac.core.utils.rotations import euler_angles_to_quat
+from isaacsim.core.utils.rotations import euler_angles_to_quat
 
 from isaac_utils.utils.geom import Rotation, Scale, Translation
 from isaac_utils.utils.material import Material

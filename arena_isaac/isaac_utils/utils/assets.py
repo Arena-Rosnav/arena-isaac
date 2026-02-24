@@ -1,4 +1,4 @@
-import omni.isaac.nucleus
+import isaacsim.storage.native
 
 _assets_root_path: str = None
 
@@ -12,7 +12,7 @@ def get_assets_root_path_safe(fallback: str = '/', *, reload: bool = False) -> s
         return _assets_root_path
 
     try:
-        _assets_root_path = omni.isaac.nucleus.get_assets_root_path()
+        _assets_root_path = isaacsim.storage.native.get_assets_root_path()
     except RuntimeError:
         _assets_root_path = fallback
 

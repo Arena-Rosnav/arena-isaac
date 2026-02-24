@@ -1,10 +1,10 @@
 import omni.graph.core as og
 from isaac_utils.graphs import Graph
 
-from omni.isaac.core.utils import extensions
+from isaacsim.core.utils import extensions
 
-extensions.enable_extension("omni.isaac.core_nodes")
-extensions.enable_extension("omni.isaac.ros2_bridge")
+extensions.enable_extension("isaacsim.core.nodes")
+extensions.enable_extension("isaacsim.ros2.bridge")
 
 
 def joint_controller(
@@ -26,10 +26,10 @@ def joint_controller(
 
     # Create nodes
     on_playback_tick = graph.node('on_playback_tick', 'omni.graph.action.OnPlaybackTick')
-    ros2_publish_joint_state = graph.node('ros2_publish_joint_state', 'omni.isaac.ros2_bridge.ROS2PublishJointState')
-    isaac_read_simulation_time = graph.node('isaac_read_simulation_time', 'omni.isaac.core_nodes.IsaacReadSimulationTime')
+    ros2_publish_joint_state = graph.node('ros2_publish_joint_state', 'isaacsim.ros2.bridge.ROS2PublishJointState')
+    isaac_read_simulation_time = graph.node('isaac_read_simulation_time', 'isaacsim.core.nodes.IsaacReadSimulationTime')
     ros2_subscribe_joint_state = graph.node('ros2_subscribe_joint_state', 'omni.graph.nodes.ROS2SubscribeJointState')
-    articulation_controller = graph.node('articulation_controller', 'omni.isaac.core_nodes.IsaacArticulationController')
+    articulation_controller = graph.node('articulation_controller', 'isaacsim.core.nodes.IsaacArticulationController')
 
     # Connect nodes
     on_playback_tick.connect('tick', ros2_publish_joint_state, 'execIn')

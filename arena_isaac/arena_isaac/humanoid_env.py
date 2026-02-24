@@ -1,26 +1,26 @@
 from isaac_utils.sensors import imu_setup, publish_imu, contact_sensor_setup, publish_contact_sensor_info, camera_set_up, publish_camera_tf, publish_depth, publish_camera_info, publish_pointcloud_from_depth, publish_rgb, lidar_setup, publish_lidar
 from isaac_utils.sensors import imu_setup, publish_imu, contact_sensor_setup, publish_contact_sensor_info, camera_set_up, publish_camera_tf, publish_depth, publish_camera_info, publish_pointcloud_from_depth, publish_rgb, lidar_setup, publish_lidar, LidarDataPublisher
-from omni.isaac.lab.assets import AssetBaseCfg  # , ArticulationCfg
+from isaacsim.lab.assets import AssetBaseCfg  # , ArticulationCfg
 import omni.replicator.core as rep
 from isaac_utils.utils.assets import get_assets_root_path_safe
-from omni.isaac.core.utils.prims import define_prim, get_prim_at_path
-from omni.isaac.lab.sensors import CameraCfg, ContactSensorCfg, RayCasterCfg, patterns
-from omni.isaac.lab.utils.assets import ISAACLAB_NUCLEUS_DIR
-from omni.isaac.lab.utils import configclass
-from omni.isaac.lab.managers import TerminationTermCfg as DoneTerm
-from omni.isaac.lab.managers import SceneEntityCfg
-from omni.isaac.lab.managers import RewardTermCfg as RewTerm
-from omni.isaac.lab.managers import ObservationTermCfg as ObsTerm
-from omni.isaac.lab.managers import ObservationGroupCfg as ObsGroup
-from omni.isaac.lab.managers import EventTermCfg as EventTerm
-from omni.isaac.lab.scene import InteractiveScene, InteractiveSceneCfg
-from omni.isaac.lab.envs import mdp
-from omni.isaac.lab.envs import ManagerBasedRLEnvCfg
-from omni.isaac.lab.assets import ArticulationCfg
-from omni.isaac.lab.actuators import ImplicitActuatorCfg
-import omni.isaac.lab.sim as sim_utils
-from omni.isaac.lab.envs import ManagerBasedRLEnv
-import omni.isaac.core.utils.numpy.rotations as rot_utils
+from isaacsim.core.utils.prims import define_prim, get_prim_at_path
+from isaacsim.lab.sensors import CameraCfg, ContactSensorCfg, RayCasterCfg, patterns
+from isaacsim.lab.utils.assets import ISAACLAB_NUCLEUS_DIR
+from isaacsim.lab.utils import configclass
+from isaacsim.lab.managers import TerminationTermCfg as DoneTerm
+from isaacsim.lab.managers import SceneEntityCfg
+from isaacsim.lab.managers import RewardTermCfg as RewTerm
+from isaacsim.lab.managers import ObservationTermCfg as ObsTerm
+from isaacsim.lab.managers import ObservationGroupCfg as ObsGroup
+from isaacsim.lab.managers import EventTermCfg as EventTerm
+from isaacsim.lab.scene import InteractiveScene, InteractiveSceneCfg
+from isaacsim.lab.envs import mdp
+from isaacsim.lab.envs import ManagerBasedRLEnvCfg
+from isaacsim.lab.assets import ArticulationCfg
+from isaacsim.lab.actuators import ImplicitActuatorCfg
+import isaacsim.lab.sim as sim_utils
+from isaacsim.lab.envs import ManagerBasedRLEnv
+import isaacsim.core.utils.numpy.rotations as rot_utils
 from omni.isaac.sensor import Camera
 import rclpy
 import numpy as np
@@ -33,7 +33,7 @@ import sys
 from pathlib import Path
 import argparse
 
-from omni.isaac.lab.app import AppLauncher
+from isaacsim.lab.app import AppLauncher
 
 # add argparse arguments
 parser = argparse.ArgumentParser(description="Training for wheeled quadruped robot.")

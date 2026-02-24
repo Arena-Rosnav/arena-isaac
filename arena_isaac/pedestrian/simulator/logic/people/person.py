@@ -10,7 +10,7 @@ import omni.anim.graph.core as ag
 import omni.client
 from isaac_utils.utils.assets import get_assets_root_path_safe
 from omni.anim.people import PeopleSettings
-from omni.isaac.core.utils import prims
+from isaacsim.core.utils import prims
 from omni.usd import get_stage_next_free_path
 from pxr import Gf, Sdf
 from scipy.spatial.transform import Rotation

@@ -1,12 +1,12 @@
 import omni
 import omni.graph.core as og
-from omni.isaac.core.utils import extensions
-from omni.isaac.core_nodes.scripts.utils import set_target_prims
+from isaacsim.core.utils import extensions
+from isaacsim.core.nodes.scripts.utils import set_target_prims
 from omni.isaac.core.articulations import Articulation
 from omni.isaac.sensor import Camera, ContactSensor, IMUSensor, LidarRtx
 import omni.replicator.core as rep
 import omni.syntheticdata._syntheticdata as sd
-import omni.isaac.core.utils.numpy.rotations as rot_utils
+import isaacsim.core.utils.numpy.rotations as rot_utils
 import omni.kit.commands as commands
 from pxr import Gf
 from sensor_msgs.msg import PointCloud2, PointField
@@ -16,10 +16,10 @@ from tf2_ros import TransformBroadcaster
 from rclpy.node import Node
 import subprocess
 import time
-from omni.isaac.core.utils.prims import is_prim_path_valid, get_prim_at_path
-extensions.enable_extension("omni.isaac.ros2_bridge")
+from isaacsim.core.utils.prims import is_prim_path_valid, get_prim_at_path
+extensions.enable_extension("isaacsim.ros2.bridge")
 
-from omni.isaac.ros2_bridge import read_camera_info
+from isaacsim.ros2.bridge import read_camera_info
 
 
 class LidarDataPublisher(Node):
@@ -61,8 +61,8 @@ class LidarDataPublisher(Node):
             {"graph_path": "/ClockGraph", "evaluator_name": "execution"},
             {
                 og.Controller.Keys.CREATE_NODES: [
-                    ("ReadSimTime", "omni.isaac.core_nodes.IsaacReadSimulationTime"),
-                    ("PublishClock", "omni.isaac.ros2_bridge.ROS2PublishClock"),
+                    ("ReadSimTime", "isaacsim.core.nodes.IsaacReadSimulationTime"),
+                    ("PublishClock", "isaacsim.ros2.bridge.ROS2PublishClock"),
                     ("OnPlayBack", "omni.graph.action.OnPlaybackTick"),
                 ],
                 og.Controller.Keys.CONNECT: [
@@ -247,13 +247,13 @@ def publish_lidar(name,prim_path,lidar):
         {
             keys.CREATE_NODES: [
                 ("OnPlaybackTick", "omni.graph.action.OnPlaybackTick"),
-                ("RunOnce", "omni.isaac.core_nodes.OgnIsaacRunOneSimulationFrame"),
-                ("RenderProduct", "omni.isaac.core_nodes.IsaacCreateRenderProduct"),
-                ("Context", "omni.isaac.ros2_bridge.ROS2Context"),
-                ("LidarPublisher", "omni.isaac.ros2_bridge.ROS2RtxLidarHelper"),
-                ("readSimTime", "omni.isaac.core_nodes.IsaacReadSimulationTime"),
-                ("LidarPointCloudPublisher", "omni.isaac.ros2_bridge.ROS2RtxLidarHelper"),
-                ("publishTF", "omni.isaac.ros2_bridge.ROS2PublishTransformTree"),
+                ("RunOnce", "isaacsim.core.nodes.OgnIsaacRunOneSimulationFrame"),
+                ("RenderProduct", "isaacsim.core.nodes.IsaacCreateRenderProduct"),
+                ("Context", "isaacsim.ros2.bridge.ROS2Context"),
+                ("LidarPublisher", "isaacsim.ros2.bridge.ROS2RtxLidarHelper"),
+                ("readSimTime", "isaacsim.core.nodes.IsaacReadSimulationTime"),
+                ("LidarPointCloudPublisher", "isaacsim.ros2.bridge.ROS2RtxLidarHelper"),
+                ("publishTF", "isaacsim.ros2.bridge.ROS2PublishTransformTree"),
 
 
             ],
@@ -320,9 +320,9 @@ def publish_contact_sensor_info(name, prim_path,link, contact_sensor: ContactSen
             # 2) Create the nodes needed
             og.Controller.Keys.CREATE_NODES: [
                 ("OnPlaybackTick", "omni.graph.action.OnPlaybackTick"),
-                ("ROS2Context", "omni.isaac.ros2_bridge.ROS2Context"),
+                ("ROS2Context", "isaacsim.ros2.bridge.ROS2Context"),
                 ("ReadContactSensor", "omni.isaac.sensor.IsaacReadContactSensor"),
-                ("ROS2Publisher", "omni.isaac.ros2_bridge.ROS2Publisher"), # ROS2Publisher setup
+                ("ROS2Publisher", "isaacsim.ros2.bridge.ROS2Publisher"), # ROS2Publisher setup
             ],
             og.Controller.Keys.SET_VALUES: [
                 ("ROS2Context.inputs:domain_id", 1),
@@ -377,11 +377,11 @@ def publish_imu(name,prim_path,link,imu):
             # Create the required nodes
             og.Controller.Keys.CREATE_NODES: [
                 ("OnPlaybackTick", "omni.graph.action.OnPlaybackTick"),
-                ("ROS2Context", "omni.isaac.ros2_bridge.ROS2Context"),
+                ("ROS2Context", "isaacsim.ros2.bridge.ROS2Context"),
                 ("IsaacReadIMU", "omni.isaac.sensor.IsaacReadIMU"),
                 ("ToString", "omni.graph.nodes.ToString"),
                 ("PrintText", "omni.graph.ui_nodes.PrintText"),
-                ("ROS2PublishImu", "omni.isaac.ros2_bridge.ROS2PublishImu")
+                ("ROS2PublishImu", "isaacsim.ros2.bridge.ROS2PublishImu")
             ],
             # Connect the nodes
             og.Controller.Keys.CONNECT: [
@@ -575,8 +575,8 @@ def publish_camera_tf(name,prim_path, camera: Camera):
                 {
                     og.Controller.Keys.CREATE_NODES: [
                         ("OnTick", "omni.graph.action.OnTick"),
-                        ("IsaacClock", "omni.isaac.core_nodes.IsaacReadSimulationTime"),
-                        ("RosPublisher", "omni.isaac.ros2_bridge.ROS2PublishClock"),
+                        ("IsaacClock", "isaacsim.core.nodes.IsaacReadSimulationTime"),
+                        ("RosPublisher", "isaacsim.ros2.bridge.ROS2PublishClock"),
                     ],
                     og.Controller.Keys.CONNECT: [
                         ("OnTick.outputs:tick", "RosPublisher.inputs:execIn"),
@@ -590,8 +590,8 @@ def publish_camera_tf(name,prim_path, camera: Camera):
             ros_camera_graph_path,
             {
                 og.Controller.Keys.CREATE_NODES: [
-                    ("PublishTF_"+camera_frame_id, "omni.isaac.ros2_bridge.ROS2PublishTransformTree"),
-                    ("PublishRawTF_"+camera_frame_id+"_world", "omni.isaac.ros2_bridge.ROS2PublishRawTransformTree"),
+                    ("PublishTF_"+camera_frame_id, "isaacsim.ros2.bridge.ROS2PublishTransformTree"),
+                    ("PublishRawTF_"+camera_frame_id+"_world", "isaacsim.ros2.bridge.ROS2PublishRawTransformTree"),
                 ],
                 og.Controller.Keys.SET_VALUES: [
                     ("PublishTF_"+camera_frame_id+".inputs:topicName", f"{name}/camera_tf"),

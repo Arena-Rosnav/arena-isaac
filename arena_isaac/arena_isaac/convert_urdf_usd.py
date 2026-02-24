@@ -22,7 +22,7 @@ class ConvertUrdfUsd(Node):
                 import omni.kit.commands
                 from omni.importer.urdf import _urdf
                 from omni.isaac.core import World
-                from omni.isaac.core.utils.extensions import get_extension_path_from_name
+                from isaacsim.core.utils.extensions import get_extension_path_from_name
                 # Setting up import configuration:
                 status, import_config = omni.kit.commands.execute("URDFCreateImportConfig")
                 import_config.merge_fixed_joints = False

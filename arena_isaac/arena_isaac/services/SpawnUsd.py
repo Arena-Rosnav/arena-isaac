@@ -1,7 +1,7 @@
 import os
 
 import numpy as np
-import omni.isaac.core.utils.prims as prim_utils
+import isaacsim.core.utils.prims as prim_utils
 from rclpy.qos import QoSProfile
 
 from isaac_utils.utils import geom
