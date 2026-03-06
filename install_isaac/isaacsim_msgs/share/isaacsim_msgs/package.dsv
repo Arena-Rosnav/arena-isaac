@@ -1,5 +1,0 @@
-source;share/isaacsim_msgs/local_setup.bash
-source;share/isaacsim_msgs/local_setup.dsv
-source;share/isaacsim_msgs/local_setup.ps1
-source;share/isaacsim_msgs/local_setup.sh
-source;share/isaacsim_msgs/local_setup.zsh
