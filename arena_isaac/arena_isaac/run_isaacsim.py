@@ -68,8 +68,26 @@ for ext_people in EXTENSIONS_PEOPLE:
 
 for ext_material in EXTENSIONS_MATERIAL:
     extensions.enable_extension(ext_material)
+
+import tomllib
+from isaacsim.core.utils.extensions import enable_extension
+
+def enable_extensions_from_kit(kit_path):
+    with open(kit_path, "rb") as f:
+        data = tomllib.load(f)
+        dependencies = data.get("dependencies", {})
+        
+        for ext_name in dependencies.keys():
+            print(f"Enabling: {ext_name}")
+            enable_extension(ext_name)
+
+# --- In your main code ---
+KIT_FILE_PATH = "/isaac-sim/apps/isaacsim.exp.full.kit"
+enable_extensions_from_kit(KIT_FILE_PATH)
+
 # Update the simulation app with the new extensions
-simulation_app.update()
+for _ in range(100):
+    simulation_app.update()
 
 # -------------------------------------------------------------------------------------------------
 # These lines are needed to restart the USD stage and make sure that the people extension is loaded
