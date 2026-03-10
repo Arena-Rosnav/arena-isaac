@@ -61,6 +61,7 @@ RUN echo 'export ROS_DISTRO=jazzy' >> /root/.bashrc && \
     echo 'export PRIVACY_CONSENT=Y' >> /root/.bashrc && \
     echo 'export RMW_IMPLEMENTATION=rmw_fastrtps_cpp' >> /root/.bashrc && \
     echo 'export AMENT_PREFIX_PATH=/opt/isaac_bridge_msgs/isaacsim_msgs:/isaac-sim/exts/isaacsim.ros2.bridge/jazzy:/opt/arena_ws/install/arena_robots:$AMENT_PREFIX_PATH' >> /root/.bashrc && \
+    echo 'export ROS_DOMAIN_ID=1' >> /root/.bashrc && \
     echo 'export PYTHONPATH=/opt/isaac_bridge_msgs/isaacsim_msgs/lib/python3.11/site-packages:/isaac-sim/exts/isaacsim.ros2.bridge/jazzy/python:/opt/arena_ws/src/Arena/:/opt/arena_ws/src/Arena/arena_simulation_setup/src/:$PYTHONPATH' >> /root/.bashrc && \
     echo 'export LD_LIBRARY_PATH=/opt/isaac_bridge_msgs/isaacsim_msgs/lib:/isaac-sim/exts/isaacsim.ros2.bridge/jazzy/rclpy/:/isaac-sim/exts/isaacsim.ros2.bridge/jazzy/lib/:$LD_LIBRARY_PATH' >> /root/.bashrc
 
