@@ -1,11 +1,6 @@
 import os
 import omni.graph.core as og
 from isaac_utils.graphs import Graph
-from isaacsim.core.utils import extensions
-
-extensions.enable_extension("omni.graph.nodes")
-extensions.enable_extension("isaacsim.core.nodes")
-extensions.enable_extension("isaacsim.ros2.bridge")
 
 
 def tf(

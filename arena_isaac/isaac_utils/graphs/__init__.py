@@ -102,3 +102,11 @@ class Graph:
             raise e
             return False
         return True
+
+    def load_extensions(self):
+        from isaacsim.core.utils import extensions
+        extensions.enable_extension("omni.graph.nodes")
+
+        for node in self._nodes:
+            ext_name = '.'.join(node.type.split('.')[:-1])
+            extensions.enable_extension(ext_name)

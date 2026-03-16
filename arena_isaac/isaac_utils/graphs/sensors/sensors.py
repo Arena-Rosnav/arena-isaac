@@ -1,9 +1,7 @@
 
-import os
 import xml.etree.ElementTree as ET
 
 from isaac_utils.utils.geom import Rotation, Translation
-from isaac_utils.utils.path import world_path
 
 from .camera import SensorCamera, SensorCameraRGBD
 from .contact import SensorContact
@@ -98,7 +96,7 @@ class Sensors:
                         camera = SensorCameraRGBD(
                             robot_base_frame=self.robot_base_frame,
                             parent_frame=reference,
-                            config=SensorCamera.Config.parse(sensor),
+                            config=SensorCameraRGBD.Config.parse(sensor),
                             name=sensor_name,
                             translation=translation,
                             rotation=rotation,

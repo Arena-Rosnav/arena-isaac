@@ -9,7 +9,7 @@ import numpy as np
 from omni.isaac.core.articulations import Articulation
 from isaacsim.core.prims import RigidPrim, XFormPrim
 from isaacsim.core.utils.rotations import (euler_angles_to_quat,
-                                             quat_to_euler_angles)
+                                           quat_to_euler_angles)
 from isaacsim.core.utils.stage import get_current_stage
 from pxr import Gf, UsdPhysics
 
@@ -19,6 +19,11 @@ class Translation:
     x: float
     y: float
     z: float
+
+    def __iter__(self):
+        yield self.x
+        yield self.y
+        yield self.z
 
     def __add__(self, other: Translation) -> Translation:
         return Translation(
@@ -70,6 +75,12 @@ class Rotation:
     x: float
     y: float
     z: float
+
+    def __iter__(self):
+        yield self.w
+        yield self.x
+        yield self.y
+        yield self.z
 
     def __add__(self, other: Rotation) -> Rotation:
         return Rotation(
@@ -132,6 +143,11 @@ class Scale:
     x: float
     y: float
     z: float
+
+    def __iter__(self):
+        yield self.x
+        yield self.y
+        yield self.z
 
     def __add__(self, other: Scale) -> Scale:
         return Scale(
@@ -199,23 +215,29 @@ def move(
 
     target = None
     if prim.HasAPI(UsdPhysics.ArticulationRootAPI):
-        target = Articulation(prim_path)
+        try:
+            target = Articulation(prim_path)
+        except Exception:
+            target = None
 
     if target is None and prim.HasAPI(UsdPhysics.RigidBodyAPI):
-        target = RigidPrim(prim_path)
+        try:
+            target = RigidPrim(prim_path)
+        except Exception:
+            target = None
 
     if target is None:
         target = XFormPrim(prim_path)
 
     if local:
-        target.set_local_pose(
-            translation=translation.tuple() if translation is not None else None,
-            orientation=rotation.quat() if rotation is not None else None
+        target.set_local_poses(
+            np.array(np.atleast_2d(translation.tuple())) if translation is not None else None,
+            np.array(np.atleast_2d(rotation.quat())) if rotation is not None else None
         )
     else:
-        target.set_world_pose(
-            position=translation.tuple() if translation is not None else None,
-            orientation=rotation.quat() if rotation is not None else None
+        target.set_world_poses(
+            np.array(np.atleast_2d(translation.tuple())) if translation is not None else None,
+            np.array(np.atleast_2d(rotation.quat())) if rotation is not None else None
         )
 
 
@@ -231,4 +253,4 @@ def rescale(
 
     xform_prim = XFormPrim(prim_path)
 
-    xform_prim.set_local_scale(scale.tuple())
+    xform_prim.set_local_scales(np.array(np.atleast_2d(scale.tuple())))

@@ -1,23 +1,20 @@
-import json
 import math
 import os
-import tempfile
 import xml.etree.ElementTree as ET
 
 import attrs
+import carb
 import numpy as np
 import omni
 import omni.graph.core as og
 import omni.kit.commands
+from isaacsim.core.utils.stage import get_current_stage
+
 from isaac_utils.graphs import Graph
 from isaac_utils.utils.geom import Rotation, Translation
-from isaacsim.core.utils import extensions
-from isaacsim.core.utils.extensions import get_extension_path_from_name
+from isaac_utils.utils.prim import ensure_path
 
 from . import SensorBase
-
-extensions.enable_extension("isaacsim.ros2.bridge")
-extensions.enable_extension("isaacsim.core.nodes")
 
 
 class SensorLidar(SensorBase):
@@ -29,10 +26,6 @@ class SensorLidar(SensorBase):
         frame (str): The frame ID of the lidar sensor.
         config (Config): The configuration of the lidar sensor.
     """
-
-    config_base_dir = os.path.join(get_extension_path_from_name("omni.isaac.sensor"), "data/lidar_configs/CustomLidar_tmp_")
-    config_base_prefix = os.path.basename(config_base_dir)
-    os.makedirs(config_base_dir, exist_ok=True)
 
     @attrs.define
     class Config:
@@ -79,91 +72,70 @@ class SensorLidar(SensorBase):
                 ),
             )
 
-        def as_profile(self) -> dict:
-            """
-            Converts the configuration to a profile for the lidar sensor.
-            Returns:
-                dict: The profile for the lidar sensor.
-            """
+        def as_omnilidar_attributes(self) -> dict[str, object]:
+            azimuth_deg = np.tile(
+                np.linspace(
+                    np.degrees(self.horizontal.min_angle),
+                    np.degrees(self.horizontal.max_angle),
+                    self.horizontal.samples,
+                    endpoint=True,
+                ),
+                self.vertical.samples,
+            ).tolist()
+
+            elevation_deg = np.repeat(
+                np.linspace(
+                    np.degrees(self.vertical.min_angle),
+                    np.degrees(self.vertical.max_angle),
+                    self.vertical.samples,
+                    endpoint=True,
+                ),
+                self.horizontal.samples,
+            ).tolist()
+
+            emitters_count = self.vertical.samples * self.horizontal.samples
+            fire_time_ns = np.linspace(
+                0,
+                1e9 / max(self.update_rate, 1e-6),
+                emitters_count,
+            ).astype(int).tolist()
+
             return {
-                "scanType": "solidState",
-                "intensityProcessing": "normalization",
-                "rayType": "IDEALIZED",
-                "nearRangeM": self.range.min,
-                "farRangeM": self.range.max,
-                "rangeResolutionM": self.range.resolution,
-                "rangeAccuracyM": 0.025,
-                "rotationDirection": "CW",
-                "wavelengthNm": 1550.0,
-                "maxReturns": 2,
-                "reportRateBaseHz": self.update_rate,
-
-                "numberOfEmitters": self.vertical.samples * self.horizontal.samples,
-                "numberOfChannels": self.vertical.samples * self.horizontal.samples,
-                "scanRateBaseHz": self.update_rate,
-
-                "numLines": self.vertical.samples,
-                "numRaysPerLine": [self.horizontal.samples] * self.vertical.samples,
-
-                "rangeCount": 1,
-                "ranges": [{"min": self.range.min, "max": self.range.max}],
-
-                "emitterStateCount": 1,
-                "emitterStates": [
-                    {
-                        "azimuthDeg": np.tile(
-                            np.linspace(
-                                np.degrees(self.horizontal.min_angle),
-                                np.degrees(self.horizontal.max_angle),
-                                self.horizontal.samples,
-                                endpoint=True
-                            ),
-                            self.vertical.samples
-                        ).tolist(),
-                        "elevationDeg": np.repeat(
-                            np.linspace(
-                                np.degrees(self.vertical.min_angle),
-                                np.degrees(self.vertical.max_angle),
-                                self.vertical.samples,
-                                endpoint=True
-                            ),
-                            self.horizontal.samples
-                        ).tolist(),
-                        "fireTimeNs": np.linspace(0, 1e9 / self.update_rate, self.vertical.samples * self.horizontal.samples).astype(int).tolist(),
-                    }
-                ],
-
-                "intensityMappingType": "LINEAR"
+                "omni:sensor:Core:scanType": "SOLID_STATE",
+                "omni:sensor:Core:intensityProcessing": "NORMALIZATION",
+                "omni:sensor:Core:rayType": "IDEALIZED",
+                "omni:sensor:Core:rotationDirection": "CW",
+                "omni:sensor:Core:nearRangeM": float(self.range.min),
+                "omni:sensor:Core:farRangeM": float(self.range.max),
+                "omni:sensor:Core:rangeResolutionM": float(self.range.resolution),
+                "omni:sensor:Core:rangeAccuracyM": 0.025,
+                "omni:sensor:Core:waveLengthNm": 1550.0,
+                "omni:sensor:Core:maxReturns": 2,
+                "omni:sensor:Core:reportRateBaseHz": int(max(1, round(self.update_rate))),
+                "omni:sensor:Core:scanRateBaseHz": int(max(1, round(self.update_rate))),
+                "omni:sensor:Core:numberOfEmitters": int(emitters_count),
+                "omni:sensor:Core:numberOfChannels": int(emitters_count),
+                "omni:sensor:Core:numLines": int(self.vertical.samples),
+                "omni:sensor:Core:numRaysPerLine": [int(self.horizontal.samples)] * int(self.vertical.samples),
+                "omni:sensor:Core:rangeCount": 1,
+                "omni:sensor:Core:rangesMinM": [float(self.range.min)],
+                "omni:sensor:Core:rangesMaxM": [float(self.range.max)],
+                "omni:sensor:Core:validStartAzimuthDeg": float(np.degrees(self.horizontal.min_angle)),
+                "omni:sensor:Core:validEndAzimuthDeg": float(np.degrees(self.horizontal.max_angle)),
+                "omni:sensor:Core:intensityMappingType": "LINEAR",
+                "OmniSensorGenericLidarCoreEmitterStateAPI:s001:azimuthDeg": azimuth_deg,
+                "OmniSensorGenericLidarCoreEmitterStateAPI:s001:elevationDeg": elevation_deg,
+                "OmniSensorGenericLidarCoreEmitterStateAPI:s001:fireTimeNs": fire_time_ns,
             }
 
-    @classmethod
-    def create_temp_config(cls, config: "SensorLidar.Config") -> str:
-        """
-        Creates a temporary config file for the lidar sensor.
-        Args:
-            config(SensorLidar.Config): The config to use for the lidar sensor.
-        Returns:
-            str: The path to the temporary config file.
-        """
-        with tempfile.NamedTemporaryFile(
-            'w',
-            dir=cls.config_base_dir,
-            suffix='.json',
-            delete=False,
-        ) as f:
-            f.write(
-                json.dumps(
-                    {
-                        "class": "sensor",
-                        "type": "lidar",
-                        "name": "CustomLidar",
-                        "driveWorksId": "GENERIC",
-                        "profile": config.as_profile()
-                    }
-                )
-            )
-            import sys
-            return os.path.join(cls.config_base_prefix, os.path.splitext(os.path.basename(f.name))[0])
+    _ARRAY_ATTRIBUTE_KEYS = {
+        "omni:sensor:Core:numRaysPerLine",
+        "omni:sensor:Core:rangesMinM",
+        "omni:sensor:Core:rangesMaxM",
+        "OmniSensorGenericLidarCoreEmitterStateAPI:s001:azimuthDeg",
+        "OmniSensorGenericLidarCoreEmitterStateAPI:s001:elevationDeg",
+        "OmniSensorGenericLidarCoreEmitterStateAPI:s001:fireTimeNs",
+    }
 
     def __init__(
         self,
@@ -201,16 +173,89 @@ class SensorLidar(SensorBase):
             translation(Translation): The translation of the lidar sensor relative to the base prim.
             rotation(Rotation): The rotation of the lidar sensor relative to the base prim.
         """
-        prim_path = os.path.join(base_prim, self.parent_frame, self.name)
-        _, lidar = omni.kit.commands.execute(
-            "IsaacSensorCreateRtxLidar",
-            path=prim_path,
-            config=self.create_temp_config(self.config),
-            translation=self.translation.tuple(),
-            orientation=self.rotation.Quatd(),
-        )
-        if lidar:
-            self.prim_path = prim_path
+        base_prim_path = f"/{str(base_prim).strip('/')}"
+        parent_frame_path = str(self.parent_frame).strip('/')
+        sensor_name = str(self.name).strip('/').split('/')[-1]
+
+        parent_prim_path = f"{base_prim_path}/{parent_frame_path}" if parent_frame_path else base_prim_path
+        prim_path = f"{parent_prim_path}/{sensor_name}"
+        sensor_attributes = self.config.as_omnilidar_attributes()
+        scalar_attributes = {
+            key: value
+            for key, value in sensor_attributes.items()
+            if key not in self._ARRAY_ATTRIBUTE_KEYS
+        }
+        array_attributes = {
+            key: value
+            for key, value in sensor_attributes.items()
+            if key in self._ARRAY_ATTRIBUTE_KEYS
+        }
+
+        try:
+            ensure_path(parent_prim_path)
+
+            _, lidar = omni.kit.commands.execute(
+                "IsaacSensorCreateRtxLidar",
+                path=prim_path,
+                parent=None,
+                config=None,
+                translation=self.translation.tuple(),
+                orientation=self.rotation.Quatd(),
+                force_camera_prim=False,
+                **scalar_attributes,
+            )
+        except Exception as error:
+            self.prim_path = None
+            carb.log_warn(
+                f"Lidar simulate failed for '{self.name}' at '{prim_path}': {error}"
+            )
+            return
+
+        if not lidar:
+            self.prim_path = None
+            carb.log_warn(
+                f"Lidar simulate returned no prim for '{self.name}' at '{prim_path}'."
+            )
+            return
+
+        created_prim_path = None
+        try:
+            created_prim_path = str(lidar.GetPath())
+        except Exception:
+            created_prim_path = None
+
+        if created_prim_path:
+            if created_prim_path != prim_path:
+                carb.log_warn(
+                    f"Lidar prim path remapped from '{prim_path}' to '{created_prim_path}' for '{self.name}'."
+                )
+            prim_path = created_prim_path
+
+        stage = get_current_stage()
+        prim = stage.GetPrimAtPath(prim_path) if stage is not None else None
+
+        if prim is None or not prim.IsValid():
+            self.prim_path = None
+            carb.log_warn(
+                f"Lidar prim '{prim_path}' is invalid after creation for '{self.name}'."
+            )
+            return
+
+        for key, value in array_attributes.items():
+            attr = prim.GetAttribute(key)
+            if not attr.IsValid():
+                carb.log_warn(
+                    f"Lidar attribute '{key}' not found on '{prim_path}', skipping."
+                )
+                continue
+            try:
+                attr.Set(value)
+            except Exception as error:
+                carb.log_warn(
+                    f"Failed to set lidar attribute '{key}' on '{prim_path}': {error}"
+                )
+
+        self.prim_path = prim_path
 
     def publish(self, base_topic: str):
         """
@@ -220,11 +265,13 @@ class SensorLidar(SensorBase):
         """
 
         if self.prim_path is None:
-            raise RuntimeError('Lidar not simulated. Call simulate() first.')
+            carb.log_warn(
+                f"Lidar publish skipped for '{self.name}': sensor not simulated (prim_path is None)."
+            )
+            return False
 
         graph = Graph(os.path.join(self.prim_path, "LidarPublisher"))
 
-        get_camera_prim = graph.node('get_camera_prim', 'omni.replicator.core.OgnGetPrimAtPath')
         on_playback_tick = graph.node("on_playback_tick", "omni.graph.action.OnPlaybackTick")
         render_product = graph.node("render_product", "isaacsim.core.nodes.IsaacCreateRenderProduct")
         lidar_publisher = graph.node("lidar_publisher", "isaacsim.ros2.bridge.ROS2RtxLidarHelper")
@@ -233,8 +280,9 @@ class SensorLidar(SensorBase):
         # ReadSimTime = graph.node("readSimTime", "isaacsim.core.nodes.IsaacReadSimulationTime")
         # publishTF = graph.node("publishTF", "isaacsim.ros2.bridge.ROS2PublishTransformTree")
 
-        get_camera_prim.attribute('paths', [self.prim_path])
-        get_camera_prim.connect('prims', render_product, 'cameraPrim')
+        render_product.attribute("cameraPrim", self.prim_path)
+        render_product.attribute("width", 1)
+        render_product.attribute("height", 1)
 
         lidar_publisher.attribute("topicName", os.path.join(base_topic, self.config.topic))
         lidar_publisher.attribute("frameId", os.path.join(self.robot_base_frame, self.parent_frame))
@@ -247,7 +295,6 @@ class SensorLidar(SensorBase):
         # publishTF.attribute("targetPrims", [self.prim_path, os.path.join(self.prim_path, self.frame)])
 
         on_playback_tick.connect("tick", render_product, "execIn")
-
         # OnPlaybackTick.connect("tick", publishTF, "execIn")
         # ReadSimTime.connect("simulationTime", publishTF, "timeStamp")
         render_product.connect("execOut", lidar_publisher, "execIn")
@@ -255,4 +302,5 @@ class SensorLidar(SensorBase):
         render_product.connect("execOut", lidar_publisher_points, "execIn")
         render_product.connect("renderProductPath", lidar_publisher_points, "renderProductPath")
 
-        graph.execute(og.Controller())
+        graph.load_extensions()
+        return graph.execute(og.Controller())

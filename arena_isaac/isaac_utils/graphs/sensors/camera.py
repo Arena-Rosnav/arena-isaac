@@ -6,14 +6,12 @@ import omni
 import omni.graph.core as og
 import omni.replicator.core as rep
 import omni.syntheticdata._syntheticdata as sd
-from isaac_utils.utils.geom import Rotation, Translation
-from isaacsim.core.utils import extensions
 from isaacsim.ros2.bridge import read_camera_info
-from omni.isaac.sensor import Camera
+from isaacsim.sensors.camera import Camera
+
+from isaac_utils.utils.geom import Rotation, Translation
 
 from . import SensorBase
-
-extensions.enable_extension("isaacsim.ros2.bridge")
 
 
 class SensorCamera(SensorBase):

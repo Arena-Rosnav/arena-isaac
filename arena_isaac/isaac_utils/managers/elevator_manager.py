@@ -157,7 +157,7 @@ class ElevatorManager:
                     _log_info(f"Found robot prim for {robot_name} at {prim_path}")
                     break
             if prim:
-                prim.set_world_pose(np.array(position))
+                prim.set_world_poses(np.array(position))
                 _log_info(f"Teleported robot {robot_name} to {position}")
             else:
                 _log_warn(f"Could not find prim for robot {robot_name} at any of: {possible_paths}")

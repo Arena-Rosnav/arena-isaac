@@ -1,3 +1,5 @@
+import xml.etree.ElementTree as ET
+import tempfile
 import os
 import sys
 from pathlib import Path
@@ -17,9 +19,70 @@ from isaac_utils.utils.prim import ensure_path
 from isaacsim_msgs.srv import SpawnUrdf
 
 from .utils import Service, on_exception
+from typing import Dict
 
 parent_dir = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(parent_dir))
+
+
+def sanitize_urdf_for_isaac(urdf_path: str) -> str:
+    # usd hates dashes in names, so i hate usd
+    tree = ET.parse(urdf_path)
+    root = tree.getroot()
+
+    link_name_map: Dict[str, str] = {}
+    joint_name_map: Dict[str, str] = {}
+
+    for tag in root.iter():
+        if tag.tag == 'link':
+            name = tag.attrib.get('name')
+            if name and '-' in name:
+                link_name_map[name] = name.replace('-', '_')
+        elif tag.tag == 'joint':
+            name = tag.attrib.get('name')
+            if name and '-' in name:
+                joint_name_map[name] = name.replace('-', '_')
+
+    tmp_mesh_dir_path = tempfile.mkdtemp(prefix="isaac_urdf_")
+
+    for tag in root.iter():
+        if tag.tag in ['robot', 'link', 'joint']:
+            name = tag.attrib.get('name')
+            if name and '-' in name:
+                tag.attrib['name'] = name.replace('-', '_')
+        elif tag.tag in ['parent', 'child']:
+            link = tag.attrib.get('link')
+            if link in link_name_map:
+                tag.attrib['link'] = link_name_map[link]
+        elif tag.tag in ['mimic', 'actuator']:
+            joint = tag.attrib.get('joint')
+            if joint in joint_name_map:
+                tag.attrib['joint'] = joint_name_map[joint]
+        elif tag.tag == 'gazebo':
+            reference = tag.attrib.get('reference')
+            if reference in link_name_map:
+                tag.attrib['reference'] = link_name_map[reference]
+
+        elif tag.tag == 'mesh':
+            original_abs_path = tag.attrib.get('filename')
+            if not original_abs_path:
+                continue
+
+            filename = os.path.basename(original_abs_path)
+
+            if '-' in filename:
+                sanitized_filename = filename.replace('-', '_')
+                symlink_path = os.path.join(tmp_mesh_dir_path, sanitized_filename)
+
+                if not os.path.exists(symlink_path):
+                    os.symlink(original_abs_path, symlink_path)
+
+                tag.attrib['filename'] = symlink_path
+
+    tmp_urdf = tempfile.NamedTemporaryFile(delete=False, suffix="_sanitized.urdf", mode='w')
+    tree.write(tmp_urdf.name, encoding='unicode', xml_declaration=True)
+
+    return tmp_urdf.name
 
 
 @on_exception('')
@@ -29,6 +92,8 @@ def spawn_urdf(request: SpawnUrdf.Request) -> str:
     robot_model = request.robot_model
 
     prim_path = world_path(name)
+
+    urdf_path = sanitize_urdf_for_isaac(urdf_path)
 
     status, import_config = commands.execute("URDFCreateImportConfig")
     import_config.set_merge_fixed_joints(False)
@@ -45,11 +110,10 @@ def spawn_urdf(request: SpawnUrdf.Request) -> str:
         "URDFParseAndImportFile",
         urdf_path=urdf_path,
         import_config=import_config,
-        dest_path='',
     )
 
     if usd_path is None:
-        raise ValueError(f"Failed to import URDF from '{urdf_path}'")
+        raise ValueError(f"Failed to import URDF from '{urdf_path}'. Status {status}")
 
     commands.execute(
         "MovePrim",
@@ -57,6 +121,9 @@ def spawn_urdf(request: SpawnUrdf.Request) -> str:
         path_to=prim_path,
         keep_world_transform=True
     )
+
+    # debug, graphs currently crash isaac
+    return prim_path
 
     # print(usd_path)
     if request.localization:
@@ -87,6 +154,7 @@ def spawn_urdf(request: SpawnUrdf.Request) -> str:
     if request.cmd_vel_topic:
         if not control.Control(
             prim_path=prim_path,
+            target_prim_path=os.path.join(prim_path, request.base_frame),
             cmd_vel_topic=request.cmd_vel_topic,
         ).parse(
             robot_model=robot_model,
@@ -97,7 +165,7 @@ def spawn_urdf(request: SpawnUrdf.Request) -> str:
         sensors.Sensors(
             prim_path=prim_path,
             base_frame=request.tf_prefix,
-            base_topic=os.path.dirname(request.cmd_vel_topic)
+            base_topic=os.path.dirname(request.cmd_vel_topic),
         ).parse_gazebo(f.read())
 
     geom.move(

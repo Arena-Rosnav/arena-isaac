@@ -8,10 +8,9 @@ from .utils import Service, on_exception
 
 @on_exception(False)
 def delete_prim(name: str) -> bool:
-    prim_path = world_path(name)
     commands.execute(
         "IsaacSimDestroyPrim",
-        prim_path=prim_path,
+        prim_path=world_path(name),
     )
     return True
 

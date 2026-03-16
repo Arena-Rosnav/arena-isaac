@@ -1,8 +1,0 @@
-robot:
-  name: "waffle"
-  model: "waffle"
-  usd_path: "/home/ubuntu/arena4_ws/src/arena/isaac/robot_models/waffle.usd"
-  prim_path: "/World"
-  control: true
-  position: [0, -2, 1]
-  orientation: [1, 0, 0, 0]

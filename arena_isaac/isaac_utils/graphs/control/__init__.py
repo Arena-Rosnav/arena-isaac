@@ -9,9 +9,11 @@ class Control:
     def __init__(
         self,
         prim_path: str,
+        target_prim_path: str,
         cmd_vel_topic: str,
     ):
         self.prim_path: str = prim_path
+        self.target_prim_path: str = target_prim_path
         self.cmd_vel_topic: str = cmd_vel_topic
 
     def parse(self, robot_model: str) -> bool:
@@ -51,7 +53,7 @@ class Control:
         for i, (left_wheel, right_wheel) in enumerate(zip(left_wheels, right_wheels)):
             if not differential(
                 graph_path=os.path.join(self.prim_path, f'{controller_name}_{i}'),
-                prim_path=self.prim_path,
+                prim_path=self.target_prim_path,
                 cmd_vel_topic=self.cmd_vel_topic,
                 joint_names=[left_wheel, right_wheel],
                 wheel_distance=wheel_distance,

@@ -39,11 +39,10 @@ def joint_controller(
     ros2_subscribe_joint_state.connect('jointNames', articulation_controller, 'jointNames')
     ros2_subscribe_joint_state.connect('positionCommand', articulation_controller, 'positionCommand')
     ros2_subscribe_joint_state.connect('velocityCommand', articulation_controller, 'velocityCommand')
-    
+
     # Set values
     ros2_publish_joint_state.attribute('targetPrim', prim_path)
     ros2_publish_joint_state.attribute('topicName', joint_topic_name)
 
-    graph.execute(og.Controller())
-
-    return True
+    graph.load_extensions()
+    return graph.execute(og.Controller())

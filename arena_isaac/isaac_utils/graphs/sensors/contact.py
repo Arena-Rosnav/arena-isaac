@@ -3,17 +3,11 @@ import xml.etree.ElementTree as ET
 
 import attrs
 import omni.graph.core as og
-from isaacsim.core.utils import extensions
-from omni.isaac.sensor import ContactSensor
+from isaacsim.sensors.physics import ContactSensor
 
 from isaac_utils.graphs import Graph
 
 from . import SensorBase
-
-extensions.enable_extension("isaacsim.ros2.bridge")
-extensions.enable_extension("omni.isaac.sensor")
-
-# Contact Sensor
 
 
 class SensorContact(SensorBase):
@@ -64,7 +58,7 @@ class SensorContact(SensorBase):
         graph = Graph(os.path.join(self.prim_path, 'ContactPublisher'))
 
         on_playback_tick = graph.node("on_playback_tick", "omni.graph.action.OnPlaybackTick")
-        read_contact_sensor = graph.node("read_contact_sensor", "omni.isaac.sensor.IsaacReadContactSensor")
+        read_contact_sensor = graph.node("read_contact_sensor", "isaacsim.sensors.physics.IsaacReadContactSensor")
         ros2_publisher = graph.node("ros2_publisher", "isaacsim.ros2.bridge.ROS2Publisher")
         get_contact_prim = graph.node('get_contact_prim', 'omni.replicator.core.OgnGetPrimAtPath')
 
@@ -83,4 +77,5 @@ class SensorContact(SensorBase):
         ros2_publisher.attribute("messagePackage", "isaacsim_msgs")
         ros2_publisher.attribute("messageName", "ContactSensor")
 
-        graph.execute(og.Controller())
+        graph.load_extensions()
+        return graph.execute(og.Controller())

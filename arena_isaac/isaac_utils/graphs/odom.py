@@ -1,11 +1,6 @@
-import os
 import omni.graph.core as og
-from isaac_utils.graphs import Graph
-from isaacsim.core.utils import extensions
 
-extensions.enable_extension("omni.graph.nodes")
-extensions.enable_extension("isaacsim.core.nodes")
-extensions.enable_extension("isaacsim.ros2.bridge")
+from isaac_utils.graphs import Graph
 
 
 def odom(
@@ -73,4 +68,5 @@ def odom(
         extract_translation.connect('translation', publish_odom_topic, 'position')
         extract_rotation.connect('quaternion', publish_odom_topic, 'orientation')
 
+    graph.load_extensions()
     return graph.execute(controller)

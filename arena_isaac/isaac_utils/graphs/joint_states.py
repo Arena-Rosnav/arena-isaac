@@ -1,4 +1,5 @@
 import omni.graph.core as og
+
 from isaac_utils.graphs import Graph
 
 
@@ -37,6 +38,5 @@ def joint_states(
     on_playback_tick.connect('tick', publish_joint_state, 'execIn')
     read_sim_time.connect('simulationTime', publish_joint_state, 'timeStamp')
 
-    graph.execute(og.Controller())
-
-    return True
+    graph.load_extensions()
+    return graph.execute(og.Controller())

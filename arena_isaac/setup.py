@@ -25,11 +25,6 @@ setup(
     entry_points={
         'console_scripts': [
             "run_isaacsim=arena_isaac.run_isaacsim:main",
-            "convert_urdf_usd=arena_isaac.convert_urdf_usd:main",
-            'navigation_controller = arena_isaac.navigation_controller:main',
-            'sdf_to_urdf=arena_isaac.SdftoUrdf:main',
-            'agent_rl=arena_isaac.agent_RL:main',
-            "client_pub_ped=arena_isaac.client_publisher:main",
         ],
     },
 )

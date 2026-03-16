@@ -23,6 +23,7 @@ parent_dir = Path(__file__).resolve().parent.parent
 sys.path.insert(0,str(parent_dir))
 
 # stdlib
+import queue
 import random
 import traceback
 
@@ -35,7 +36,8 @@ import omni.usd
 import yaml
 from isaac_utils.utils.assets import get_assets_root_path_safe
 from isaacsim.core.utils.extensions import enable_extension
-enable_extension("omni.asset.importer.urdf")
+
+enable_extension("isaacsim.asset.importer.urdf")
 from isaacsim.asset.importer.urdf import _urdf
 from omni.isaac.core import SimulationContext, World
 from isaacsim.core.utils import extensions, prims, stage
@@ -70,13 +72,12 @@ for ext_material in EXTENSIONS_MATERIAL:
     extensions.enable_extension(ext_material)
 
 import tomllib
-from isaacsim.core.utils.extensions import enable_extension
 
 def enable_extensions_from_kit(kit_path):
     with open(kit_path, "rb") as f:
         data = tomllib.load(f)
         dependencies = data.get("dependencies", {})
-        
+
         for ext_name in dependencies.keys():
             print(f"Enabling: {ext_name}")
             enable_extension(ext_name)
@@ -95,12 +96,8 @@ for _ in range(100):
 omni.usd.get_context().new_stage()
 
 extensions.enable_extension("isaacsim.ros2.bridge")
-#extensions.enable_extension("isaacsim.core.nodes")
-#extensions.enable_extension("isaacsim.ros2.bridge")
-#extensions.enable_extension("omni.isaac.sensors.rtx")
-#extensions.enable_extension("isaacsim.core.nodes")
-#simulation_app.update()
-import random
+extensions.enable_extension("isaacsim.sensors.physics")
+extensions.enable_extension("isaacsim.sensors.camera")
 
 import numpy as np
 
@@ -126,6 +123,7 @@ from isaac_utils.managers.elevator_manager import elevator_manager
 from arena_isaac.services import services
 from pedestrian.simulator.logic.people_manager import PeopleManager
 from rclpy.qos import QoSProfile
+from arena_isaac import run_after_tick_queue
 
 # fmt: on
 # ======================================Base======================================
@@ -270,6 +268,11 @@ def main(args=None):
 
     PublishTime('/World/publish_time')
     world.reset()
+
+    startup_warmup_steps = 5
+    world.play()
+    for _ in range(startup_warmup_steps):
+        world.step(render=True)
     world.pause()
 
     # set photoreal settings
@@ -283,6 +286,7 @@ def main(args=None):
     was_playing: bool = False
     try:
         while simulation_app.is_running():
+            stepped_this_iteration: bool = False
             rclpy.spin_once(controller, timeout_sec=0)
             if controller.running:
                 if not was_playing:
@@ -291,11 +295,25 @@ def main(args=None):
                 door_manager.update()
                 elevator_manager.update()
                 world.step(render=True)
+                stepped_this_iteration = True
             else:
                 if was_playing:
                     world.pause()
                     was_playing = False
                 simulation_app.update()
+
+            if stepped_this_iteration:
+                pending_actions = run_after_tick_queue.qsize()
+                for _ in range(pending_actions):
+                    try:
+                        deferred_action = run_after_tick_queue.get_nowait()
+                    except queue.Empty:
+                        break
+
+                    try:
+                        deferred_action()
+                    except Exception as e:
+                        carb.log_error(f"Deferred action failed: {e}\n{traceback.format_exc()}")
 
     except KeyboardInterrupt:
         controller.get_logger().info('Received KeyboardInterrupt, shutting down.')

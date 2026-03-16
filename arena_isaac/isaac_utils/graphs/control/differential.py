@@ -73,6 +73,5 @@ def differential(
 
     make_array.connect('array', articulation_controller, 'jointNames')
 
-    graph.execute(og.Controller())
-
-    return True
+    graph.load_extensions()
+    return graph.execute(og.Controller())

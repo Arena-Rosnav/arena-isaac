@@ -3,13 +3,11 @@ import xml.etree.ElementTree as ET
 
 import attrs
 import omni.graph.core as og
+from isaacsim.sensors.physics import IMUSensor
+
 from isaac_utils.graphs import Graph
-from isaacsim.core.utils import extensions
-from omni.isaac.sensor import IMUSensor
 
 from . import SensorBase
-
-extensions.enable_extension("isaacsim.ros2.bridge")
 
 
 class SensorIMU(SensorBase):
@@ -62,7 +60,7 @@ class SensorIMU(SensorBase):
         graph = Graph(os.path.join(self.prim_path, 'IMUPublisher'))
 
         on_playback_tick = graph.node("on_playback_tick", "omni.graph.action.OnPlaybackTick")
-        read_imu = graph.node("read_imu", "omni.isaac.sensor.IsaacReadIMU")
+        read_imu = graph.node("read_imu", "isaacsim.sensors.physics.IsaacReadIMU")
         ros2_publish_imu = graph.node("ros2_publish_imu", "isaacsim.ros2.bridge.ROS2PublishImu")
         get_imu_prim = graph.node('get_imu_prim', 'omni.replicator.core.OgnGetPrimAtPath')
 
@@ -84,4 +82,5 @@ class SensorIMU(SensorBase):
         ros2_publish_imu.attribute("publishOrientation", True)
         ros2_publish_imu.attribute("queueSize", 10)
 
-        graph.execute(og.Controller())
+        graph.load_extensions()
+        return graph.execute(og.Controller())

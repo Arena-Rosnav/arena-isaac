@@ -10,10 +10,8 @@ from .utils import Service, on_exception
 
 @on_exception(False)
 def move_prim(name: str, pose: Pose) -> bool:
-    prim_path = world_path(name)
-
     geom.move(
-        prim_path=prim_path,
+        prim_path=world_path(name),
         translation=geom.Translation.parse(pose.position),
         rotation=geom.Rotation.parse(pose.orientation),
     )

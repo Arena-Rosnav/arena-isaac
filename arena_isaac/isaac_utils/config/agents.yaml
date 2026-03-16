@@ -1,4 +1,0 @@
-number_of_agents: 17
-behaviour: 1 # REGULAR=1
-min_vel: 0.3
-max_vel: 0.8
