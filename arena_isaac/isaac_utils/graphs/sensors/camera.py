@@ -1,5 +1,6 @@
 import os
 import xml.etree.ElementTree as ET
+from collections.abc import Mapping
 
 import attrs
 import omni
@@ -107,9 +108,140 @@ class SensorCamera(SensorBase):
 
         return render_product, frame, node_namespace, queue_size, camera_topic, step_size
 
+    @staticmethod
+    def _reshape_param(value, columns: int):
+        if hasattr(value, "reshape"):
+            return value.reshape([1, columns])
+        if isinstance(value, (list, tuple)):
+            return [list(value)]
+        return value
+
+    @staticmethod
+    def _first_available(source, *keys):
+        for key in keys:
+            if isinstance(source, Mapping) and key in source:
+                return source[key]
+            if hasattr(source, key):
+                return getattr(source, key)
+        return None
+
+    @classmethod
+    def _normalize_camera_info(cls, camera_info):
+        if isinstance(camera_info, Mapping):
+            normalized = {
+                "width": cls._first_available(camera_info, "width"),
+                "height": cls._first_available(camera_info, "height"),
+                "projectionType": cls._first_available(camera_info, "projectionType", "projection_type"),
+                "k": cls._reshape_param(cls._first_available(camera_info, "k"), 9),
+                "r": cls._reshape_param(cls._first_available(camera_info, "r"), 9),
+                "p": cls._reshape_param(cls._first_available(camera_info, "p"), 12),
+                "physicalDistortionModel": cls._first_available(camera_info, "physicalDistortionModel", "physical_distortion_model", "distortionModel", "distortion_model"),
+                "physicalDistortionCoefficients": cls._first_available(camera_info, "physicalDistortionCoefficients", "physical_distortion_coefficients", "distortionCoefficients", "distortion_coefficients", "d"),
+            }
+            if normalized["projectionType"] is None:
+                normalized["projectionType"] = "pinhole"
+            return normalized
+
+        if isinstance(camera_info, (tuple, list)) and len(camera_info) >= 8:
+            width, height, projection_type, k, r, p, distortion_model, distortion_coefficients = camera_info[:8]
+            return {
+                "width": width,
+                "height": height,
+                "projectionType": projection_type,
+                "k": cls._reshape_param(k, 9),
+                "r": cls._reshape_param(r, 9),
+                "p": cls._reshape_param(p, 12),
+                "physicalDistortionModel": distortion_model,
+                "physicalDistortionCoefficients": distortion_coefficients,
+            }
+
+        if isinstance(camera_info, (tuple, list)):
+            if len(camera_info) == 1:
+                return cls._normalize_camera_info(camera_info[0])
+
+            if len(camera_info) == 2 and isinstance(camera_info[1], (Mapping, tuple, list)):
+                try:
+                    return cls._normalize_camera_info(camera_info[1])
+                except TypeError:
+                    pass
+
+            for item in camera_info:
+                try:
+                    return cls._normalize_camera_info(item)
+                except TypeError:
+                    continue
+
+        required_attrs = (
+            "width",
+            "height",
+            "projectionType",
+            "k",
+            "r",
+            "p",
+            "physicalDistortionModel",
+            "physicalDistortionCoefficients",
+        )
+        if all(hasattr(camera_info, attr) for attr in required_attrs):
+            return {
+                "width": getattr(camera_info, "width"),
+                "height": getattr(camera_info, "height"),
+                "projectionType": getattr(camera_info, "projectionType"),
+                "k": cls._reshape_param(getattr(camera_info, "k"), 9),
+                "r": cls._reshape_param(getattr(camera_info, "r"), 9),
+                "p": cls._reshape_param(getattr(camera_info, "p"), 12),
+                "physicalDistortionModel": getattr(camera_info, "physicalDistortionModel"),
+                "physicalDistortionCoefficients": getattr(camera_info, "physicalDistortionCoefficients"),
+            }
+
+        alt_required_attrs = (
+            "width",
+            "height",
+            "projection_type",
+            "k",
+            "r",
+            "p",
+            "distortion_model",
+            "distortion_coefficients",
+        )
+        if all(hasattr(camera_info, attr) for attr in alt_required_attrs):
+            return {
+                "width": getattr(camera_info, "width"),
+                "height": getattr(camera_info, "height"),
+                "projectionType": getattr(camera_info, "projection_type"),
+                "k": cls._reshape_param(getattr(camera_info, "k"), 9),
+                "r": cls._reshape_param(getattr(camera_info, "r"), 9),
+                "p": cls._reshape_param(getattr(camera_info, "p"), 12),
+                "physicalDistortionModel": getattr(camera_info, "distortion_model"),
+                "physicalDistortionCoefficients": getattr(camera_info, "distortion_coefficients"),
+            }
+
+        ros_camera_info_attrs = (
+            "width",
+            "height",
+            "k",
+            "r",
+            "p",
+            "distortion_model",
+            "d",
+        )
+        if all(hasattr(camera_info, attr) for attr in ros_camera_info_attrs):
+            return {
+                "width": getattr(camera_info, "width"),
+                "height": getattr(camera_info, "height"),
+                "projectionType": "pinhole",
+                "k": cls._reshape_param(getattr(camera_info, "k"), 9),
+                "r": cls._reshape_param(getattr(camera_info, "r"), 9),
+                "p": cls._reshape_param(getattr(camera_info, "p"), 12),
+                "physicalDistortionModel": getattr(camera_info, "distortion_model"),
+                "physicalDistortionCoefficients": getattr(camera_info, "d"),
+            }
+
+        tuple_len = len(camera_info) if isinstance(camera_info, (tuple, list)) else None
+        raise TypeError(f"Unsupported camera info format: {type(camera_info)!r}, len={tuple_len}, value={camera_info!r}")
+
     @classmethod
     def _publish_camera_info(cls, render_product: str, frame: str, node_namespace: str, queue_size: int, camera_topic: str, step_size: int):
-        camera_info = read_camera_info(render_product_path=render_product)
+        camera_info = cls._normalize_camera_info(read_camera_info(render_product_path=render_product))
 
         writer_camera_info = rep.writers.get("ROS2PublishCameraInfo")
         writer_camera_info.initialize(
@@ -120,9 +252,9 @@ class SensorCamera(SensorBase):
             width=camera_info["width"],
             height=camera_info["height"],
             projectionType=camera_info["projectionType"],
-            k=camera_info["k"].reshape([1, 9]),
-            r=camera_info["r"].reshape([1, 9]),
-            p=camera_info["p"].reshape([1, 12]),
+            k=camera_info["k"],
+            r=camera_info["r"],
+            p=camera_info["p"],
             physicalDistortionModel=camera_info["physicalDistortionModel"],
             physicalDistortionCoefficients=camera_info["physicalDistortionCoefficients"],
         )
