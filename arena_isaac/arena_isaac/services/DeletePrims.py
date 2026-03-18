@@ -1,6 +1,7 @@
 import omni.kit.commands as commands
-
 from isaac_utils.utils.path import world_path
+from isaacsim.core.experimental.prims import Prim
+
 from isaacsim_msgs.srv import DeletePrims
 
 from .utils import Service, on_exception
@@ -8,9 +9,12 @@ from .utils import Service, on_exception
 
 @on_exception(False)
 def delete_prim(name: str) -> bool:
+    target = world_path(name)
+    if not (target := Prim.resolve_paths([target])[0]):
+        return True
     commands.execute(
         "IsaacSimDestroyPrim",
-        prim_path=world_path(name),
+        prim_path=target,
     )
     return True
 
