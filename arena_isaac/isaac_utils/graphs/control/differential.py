@@ -41,6 +41,7 @@ def differential(
     break3vector_angular = graph.node('break3vector_angular', 'omni.graph.nodes.BreakVector3')
     differential_controller = graph.node('differential_controller', 'isaacsim.robot.wheeled_robots.DifferentialController')
     make_array = graph.node('make_array', 'omni.graph.nodes.ConstructArray')
+    get_target_prim = graph.node('get_target_prim', 'omni.replicator.core.OgnGetPrimAtPath')
     articulation_controller = graph.node('articulation_controller', 'isaacsim.core.nodes.IsaacArticulationController')
 
     # Set values
@@ -51,11 +52,12 @@ def differential(
     differential_controller.attribute('maxWheelSpeed', 10.0)
     differential_controller.attribute('maxLinearSpeed', max_linear_speed)
     differential_controller.attribute('maxAngularSpeed', max_angular_speed)
-    articulation_controller.attribute('targetPrim', prim_path)
+    get_target_prim.attribute('paths', [prim_path])
 
     # Connect nodes
     on_playback_tick.connect('tick', ros2_subscribe_twist, 'execIn')
     on_playback_tick.connect('tick', articulation_controller, 'execIn')
+    on_playback_tick.connect('tick', get_target_prim, 'execIn')
     ros2_subscribe_twist.connect('execOut', differential_controller, 'execIn')
     ros2_subscribe_twist.connect('linearVelocity', scale_stage_units, 'value')
     scale_stage_units.connect('result', break3vector_linear, 'tuple')
@@ -63,6 +65,7 @@ def differential(
     ros2_subscribe_twist.connect('angularVelocity', break3vector_angular, 'tuple')
     break3vector_angular.connect('z', differential_controller, 'angularVelocity')
     differential_controller.connect('velocityCommand', articulation_controller, 'velocityCommand')
+    get_target_prim.connect('prims', articulation_controller, 'targetPrim')
 
     for i, joint_name in enumerate(joint_names):
         if i > 0:

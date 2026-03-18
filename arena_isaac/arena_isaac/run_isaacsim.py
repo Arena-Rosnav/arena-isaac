@@ -247,6 +247,18 @@ class IsaacController(rclpy.node.Node):
     def running(self):
         return self._step_once or self._running
 
+    @classmethod
+    def wait_for_bridge(cls):
+        extensions.enable_extension("isaacsim.ros2.bridge")
+        simulation_app.update()
+
+        from isaacsim.ros2.bridge._ros2_bridge import acquire_ros2_bridge_interface
+        ros2_bridge = acquire_ros2_bridge_interface()
+        while not ros2_bridge.get_startup_status():
+            simulation_app.update()
+
+        carb.log_info("ROS 2 bridge started successfully!")
+
 
 # ======================================main=======================================
 
@@ -259,9 +271,10 @@ def main(args=None):
 
     sim = SimulationContext()
 
+    IsaacController.wait_for_bridge()
     rclpy.init()
-
     controller = IsaacController()
+
     door_manager = DoorManager.instance(controller)
     for service in services:
         service.create(controller, qos_profile=QoSProfile(depth=2000))
@@ -269,18 +282,15 @@ def main(args=None):
     PublishTime('/World/publish_time')
     world.reset()
 
-    startup_warmup_steps = 5
-    world.play()
-    for _ in range(startup_warmup_steps):
-        world.step(render=True)
-    world.pause()
-
     # set photoreal settings
     import isaac_utils.config.photoreal as photoreal
     if os.environ.get('RENDER_PRESET', 'photoreal') != 'boring':
         photoreal.PRESET_PHOTOREAL.apply()
     else:
         photoreal.PRESET_DEFAULT.apply()
+
+    # hard reset once
+    omni.timeline.get_timeline_interface().stop()
 
     # mainloop
     was_playing: bool = False

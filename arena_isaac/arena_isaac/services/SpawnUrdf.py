@@ -122,9 +122,6 @@ def spawn_urdf(request: SpawnUrdf.Request) -> str:
         keep_world_transform=True
     )
 
-    # debug, graphs currently crash isaac
-    return prim_path
-
     # print(usd_path)
     if request.localization:
         if not odom.odom(

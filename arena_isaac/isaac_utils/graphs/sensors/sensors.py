@@ -50,6 +50,7 @@ class Sensors:
                     rotation = Rotation.parse(pose[3:])
 
                     if sensor_type == 'gpu_lidar':
+                        continue
                         lidar = SensorLidar(
                             robot_base_frame=self.robot_base_frame,
                             parent_frame=reference,

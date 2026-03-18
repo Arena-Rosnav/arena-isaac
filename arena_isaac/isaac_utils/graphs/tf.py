@@ -38,9 +38,9 @@ def tf(
     publish_tf = graph.node('publish_tf', 'isaacsim.ros2.bridge.ROS2PublishTransformTree')
     prefix_transform = graph.node('prefix_transform', 'omni.graph.scriptnode.ScriptNode')
 
-    on_tick.connect('tick', publish_tf, 'execIn')
     on_tick.connect('tick', get_base_prim, 'execIn')
-    on_tick.connect('tick', prefix_transform, 'execIn')
+    get_base_prim.connect('execOut', publish_tf, 'execIn')
+    get_base_prim.connect('execOut', prefix_transform, 'execIn')
     read_simulation_time.connect('simulationTime', publish_tf, 'timeStamp')
 
     get_base_prim.attribute('paths', [prim_path])
