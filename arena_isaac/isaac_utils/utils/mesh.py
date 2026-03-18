@@ -1,6 +1,8 @@
 """Create simple meshes at runtime.
 """
 import omni.kit.commands
+from isaacsim.core.experimental.prims import Prim
+from pxr import UsdPhysics
 
 import isaac_utils.utils.geom as geom
 
@@ -12,6 +14,7 @@ def create_mesh(
     position: geom.Translation | None = None,
     rotation: geom.Rotation | None = None,
     scale: geom.Scale | None = None,
+    collide: bool = True,
     **kwargs,
 ):
     """Create a mesh prim of the given type.
@@ -24,6 +27,10 @@ def create_mesh(
         select_new_prim=False,
         **kwargs
     )
+    if collide:
+        prim = Prim([prim_path])
+        if prim.valid:
+            Prim.ensure_api(prim.prims, UsdPhysics.CollisionAPI)
     if position is not None:
         geom.move(
             prim_path,
@@ -47,6 +54,7 @@ def create_cube(
     position: geom.Translation | None = None,
     rotation: geom.Rotation | None = None,
     scale: geom.Scale | None = None,
+    collide: bool = True,
     **kwargs,
 ):
     """Create a cube mesh prim.
@@ -58,5 +66,6 @@ def create_cube(
         position=position,
         rotation=rotation,
         scale=scale,
+        collide=collide,
         **kwargs,
     )

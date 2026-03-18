@@ -4,14 +4,12 @@ import typing
 
 import attrs
 import geometry_msgs.msg
-import isaacsim_msgs.msg
 import numpy as np
-from omni.isaac.core.articulations import Articulation
-from isaacsim.core.prims import RigidPrim, XFormPrim
-from isaacsim.core.utils.rotations import (euler_angles_to_quat,
-                                           quat_to_euler_angles)
-from isaacsim.core.utils.stage import get_current_stage
+from isaacsim.core.experimental.prims import Prim, RigidPrim, XformPrim, Articulation
+from isaacsim.core.utils.rotations import euler_angles_to_quat, quat_to_euler_angles
 from pxr import Gf, UsdPhysics
+
+import isaacsim_msgs.msg
 
 
 @attrs.define
@@ -207,27 +205,26 @@ def move(
     rotation: Rotation | None = None,
     local: bool = False,
 ):
-    stage = get_current_stage()
-    prim = stage.GetPrimAtPath(prim_path)
+    prim = Prim([prim_path])
 
-    if not prim.IsValid():
+    if not prim.valid:
         return
 
     target = None
-    if prim.HasAPI(UsdPhysics.ArticulationRootAPI):
+    if all(p.HasAPI(UsdPhysics.ArticulationRootAPI) for p in prim.prims):
         try:
             target = Articulation(prim_path)
         except Exception:
             target = None
 
-    if target is None and prim.HasAPI(UsdPhysics.RigidBodyAPI):
+    if target is None and all(p.HasAPI(UsdPhysics.RigidBodyAPI) for p in prim.prims):
         try:
             target = RigidPrim(prim_path)
         except Exception:
             target = None
 
     if target is None:
-        target = XFormPrim(prim_path)
+        target = XformPrim(prim_path)
 
     if local:
         target.set_local_poses(
@@ -245,12 +242,11 @@ def rescale(
     prim_path: str,
     scale: Scale,
 ):
-    stage = get_current_stage()
-    prim = stage.GetPrimAtPath(prim_path)
+    prim = Prim([prim_path])
 
-    if not prim.IsValid():
+    if not prim.valid:
         return
 
-    xform_prim = XFormPrim(prim_path)
+    xform_prim = XformPrim(prim_path)
 
     xform_prim.set_local_scales(np.array(np.atleast_2d(scale.tuple())))
