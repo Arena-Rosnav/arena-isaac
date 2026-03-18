@@ -4,7 +4,6 @@ import xml.etree.ElementTree as ET
 
 import attrs
 import carb
-import numpy as np
 import omni
 import omni.graph.core as og
 import omni.kit.commands
@@ -42,9 +41,16 @@ class SensorLidar(SensorBase):
             max: float = attrs.field(converter=attrs.converters.optional(float), default=100.0)
             resolution: float = attrs.field(converter=attrs.converters.optional(float), default=1.0)
 
+        @attrs.define
+        class Noise:
+            type: str = attrs.field(converter=attrs.converters.optional(str), default='none')
+            mean: float = attrs.field(converter=attrs.converters.optional(float), default=0.0)
+            stddev: float = attrs.field(converter=attrs.converters.optional(float), default=0.0)
+
         horizontal: Dimension
         vertical: Dimension
         range: Range
+        noise: Noise
         topic: str = attrs.field(validator=attrs.validators.instance_of(str))
         update_rate: float = attrs.field(converter=attrs.converters.optional(float), default=1.0)
 
@@ -52,89 +58,109 @@ class SensorLidar(SensorBase):
         def parse(cls, config: ET.Element) -> "SensorLidar.Config":
             return cls(
                 topic=config.findtext(".//topic") or config.findtext(".//topicName") or 'lidar',
-                update_rate=config.findtext(".//update_rate"),
+                update_rate=float(config.findtext(".//update_rate") or 1.0),
                 horizontal=SensorLidar.Config.Dimension(
-                    samples=config.findtext(".//scan/horizontal/samples"),
-                    resolution=config.findtext(".//scan/horizontal/resolution"),
-                    min_angle=config.findtext(".//scan/horizontal/min_angle"),
-                    max_angle=config.findtext(".//scan/horizontal/max_angle"),
+                    samples=int(config.findtext(".//scan/horizontal/samples") or 1),
+                    resolution=float(config.findtext(".//scan/horizontal/resolution") or 1.0),
+                    min_angle=float(config.findtext(".//scan/horizontal/min_angle") or -math.pi),
+                    max_angle=float(config.findtext(".//scan/horizontal/max_angle") or +math.pi),
                 ),
                 vertical=SensorLidar.Config.Dimension(
-                    samples=config.findtext(".//scan/vertical/samples"),
-                    resolution=config.findtext(".//scan/vertical/resolution"),
-                    min_angle=config.findtext(".//scan/vertical/min_angle"),
-                    max_angle=config.findtext(".//scan/vertical/max_angle"),
+                    samples=int(config.findtext(".//scan/vertical/samples") or 1),
+                    resolution=float(config.findtext(".//scan/vertical/resolution") or 1.0),
+                    min_angle=float(config.findtext(".//scan/vertical/min_angle") or -math.pi),
+                    max_angle=float(config.findtext(".//scan/vertical/max_angle") or +math.pi),
                 ),
                 range=SensorLidar.Config.Range(
-                    min=config.findtext(".//range/min"),
-                    max=config.findtext(".//range/max"),
-                    resolution=config.findtext(".//range/resolution"),
+                    min=float(config.findtext(".//range/min") or 0.0),
+                    max=float(config.findtext(".//range/max") or 100.0),
+                    resolution=float(config.findtext(".//range/resolution") or 1.0),
+                ),
+                noise=SensorLidar.Config.Noise(
+                    type=config.findtext(".//noise/type") or 'none',
+                    mean=float(config.findtext(".//noise/mean") or 0.0),
+                    stddev=float(config.findtext(".//noise/stddev") or 0.0),
                 ),
             )
 
         def as_omnilidar_attributes(self) -> dict[str, object]:
-            azimuth_deg = np.tile(
-                np.linspace(
-                    np.degrees(self.horizontal.min_angle),
-                    np.degrees(self.horizontal.max_angle),
-                    self.horizontal.samples,
-                    endpoint=True,
-                ),
-                self.vertical.samples,
-            ).tolist()
+            horizontal_samples = int(max(1, self.horizontal.samples))
+            vertical_samples = int(max(1, self.vertical.samples))
+            scan_rate_hz = float(max(1e-3, self.update_rate))
+            report_rate_hz = int(max(1, round(scan_rate_hz * horizontal_samples)))
+            noise_type = str(self.noise.type or "none").strip().lower()
+            noise_mean = float(self.noise.mean)
+            noise_stddev = float(max(0.0, self.noise.stddev))
 
-            elevation_deg = np.repeat(
-                np.linspace(
-                    np.degrees(self.vertical.min_angle),
-                    np.degrees(self.vertical.max_angle),
-                    self.vertical.samples,
-                    endpoint=True,
-                ),
-                self.horizontal.samples,
-            ).tolist()
+            if vertical_samples == 1:
+                elevation_deg = [float(math.degrees(self.vertical.min_angle))]
+            else:
+                min_el = float(math.degrees(self.vertical.min_angle))
+                max_el = float(math.degrees(self.vertical.max_angle))
+                step = (max_el - min_el) / float(vertical_samples - 1)
+                elevation_deg = [min_el + step * index for index in range(vertical_samples)]
 
-            emitters_count = self.vertical.samples * self.horizontal.samples
-            fire_time_ns = np.linspace(
-                0,
-                1e9 / max(self.update_rate, 1e-6),
-                emitters_count,
-            ).astype(int).tolist()
+            azimuth_deg = [0.0] * vertical_samples
+            fire_time_ns = [0] * vertical_samples
+            channel_id = list(range(1, vertical_samples + 1))
 
-            return {
-                "omni:sensor:Core:scanType": "SOLID_STATE",
-                "omni:sensor:Core:intensityProcessing": "NORMALIZATION",
-                "omni:sensor:Core:rayType": "IDEALIZED",
-                "omni:sensor:Core:rotationDirection": "CW",
+            start_azimuth_deg_raw = float(math.degrees(self.horizontal.min_angle))
+            end_azimuth_deg_raw = float(math.degrees(self.horizontal.max_angle))
+
+            span_deg_raw = end_azimuth_deg_raw - start_azimuth_deg_raw
+            span_deg = span_deg_raw
+            while span_deg <= 0.0:
+                span_deg += 360.0
+
+            if span_deg >= 359.999:
+                valid_start_azimuth_deg = 0.0
+                valid_end_azimuth_deg = 360.0
+            else:
+                valid_start_azimuth_deg = start_azimuth_deg_raw
+                valid_end_azimuth_deg = end_azimuth_deg_raw
+
+            attributes: dict[str, object] = {
                 "omni:sensor:Core:nearRangeM": float(self.range.min),
                 "omni:sensor:Core:farRangeM": float(self.range.max),
                 "omni:sensor:Core:rangeResolutionM": float(self.range.resolution),
-                "omni:sensor:Core:rangeAccuracyM": 0.025,
-                "omni:sensor:Core:waveLengthNm": 1550.0,
-                "omni:sensor:Core:maxReturns": 2,
-                "omni:sensor:Core:reportRateBaseHz": int(max(1, round(self.update_rate))),
-                "omni:sensor:Core:scanRateBaseHz": int(max(1, round(self.update_rate))),
-                "omni:sensor:Core:numberOfEmitters": int(emitters_count),
-                "omni:sensor:Core:numberOfChannels": int(emitters_count),
-                "omni:sensor:Core:numLines": int(self.vertical.samples),
-                "omni:sensor:Core:numRaysPerLine": [int(self.horizontal.samples)] * int(self.vertical.samples),
-                "omni:sensor:Core:rangeCount": 1,
-                "omni:sensor:Core:rangesMinM": [float(self.range.min)],
-                "omni:sensor:Core:rangesMaxM": [float(self.range.max)],
-                "omni:sensor:Core:validStartAzimuthDeg": float(np.degrees(self.horizontal.min_angle)),
-                "omni:sensor:Core:validEndAzimuthDeg": float(np.degrees(self.horizontal.max_angle)),
-                "omni:sensor:Core:intensityMappingType": "LINEAR",
-                "OmniSensorGenericLidarCoreEmitterStateAPI:s001:azimuthDeg": azimuth_deg,
-                "OmniSensorGenericLidarCoreEmitterStateAPI:s001:elevationDeg": elevation_deg,
-                "OmniSensorGenericLidarCoreEmitterStateAPI:s001:fireTimeNs": fire_time_ns,
+                "omni:sensor:Core:maxReturns": 1,
+                "omni:sensor:Core:reportRateBaseHz": report_rate_hz,
+                "omni:sensor:Core:scanRateBaseHz": int(max(1, round(scan_rate_hz))),
+                "omni:sensor:Core:numberOfChannels": vertical_samples,
+                "omni:sensor:Core:numberOfEmitters": vertical_samples,
+                "omni:sensor:Core:numLines": vertical_samples,
+                "omni:sensor:Core:numRaysPerLine": [horizontal_samples] * vertical_samples,
+                "omni:sensor:Core:validStartAzimuthDeg": valid_start_azimuth_deg,
+                "omni:sensor:Core:validEndAzimuthDeg": valid_end_azimuth_deg,
+                "OmniSensorGenericLidarCoreEmitterStateAPI:s000:azimuthDeg": azimuth_deg,
+                "OmniSensorGenericLidarCoreEmitterStateAPI:s000:elevationDeg": elevation_deg,
+                "OmniSensorGenericLidarCoreEmitterStateAPI:s000:fireTimeNs": fire_time_ns,
+                "OmniSensorGenericLidarCoreEmitterStateAPI:s000:channelId": channel_id,
             }
+
+            if noise_type == "gaussian":
+                attributes["omni:sensor:Core:rangeAccuracyM"] = noise_stddev
+
+            return attributes
 
     _ARRAY_ATTRIBUTE_KEYS = {
         "omni:sensor:Core:numRaysPerLine",
-        "omni:sensor:Core:rangesMinM",
-        "omni:sensor:Core:rangesMaxM",
-        "OmniSensorGenericLidarCoreEmitterStateAPI:s001:azimuthDeg",
-        "OmniSensorGenericLidarCoreEmitterStateAPI:s001:elevationDeg",
-        "OmniSensorGenericLidarCoreEmitterStateAPI:s001:fireTimeNs",
+        "OmniSensorGenericLidarCoreEmitterStateAPI:s000:azimuthDeg",
+        "OmniSensorGenericLidarCoreEmitterStateAPI:s000:elevationDeg",
+        "OmniSensorGenericLidarCoreEmitterStateAPI:s000:fireTimeNs",
+        "OmniSensorGenericLidarCoreEmitterStateAPI:s000:channelId",
+    }
+    _EMITTER_STATE_ARRAY_KEYS: set[str] = {
+        "OmniSensorGenericLidarCoreEmitterStateAPI:s000:azimuthDeg",
+        "OmniSensorGenericLidarCoreEmitterStateAPI:s000:elevationDeg",
+        "OmniSensorGenericLidarCoreEmitterStateAPI:s000:fireTimeNs",
+        "OmniSensorGenericLidarCoreEmitterStateAPI:s000:channelId",
+    }
+    _EMITTER_STATE_REQUIRED_KEYS: set[str] = {
+        "OmniSensorGenericLidarCoreEmitterStateAPI:s000:azimuthDeg",
+        "OmniSensorGenericLidarCoreEmitterStateAPI:s000:elevationDeg",
+        "OmniSensorGenericLidarCoreEmitterStateAPI:s000:fireTimeNs",
+        "OmniSensorGenericLidarCoreEmitterStateAPI:s000:channelId",
     }
 
     def __init__(
@@ -165,6 +191,51 @@ class SensorLidar(SensorBase):
 
         self.prim_path: str | None = None
 
+    def _set_prim_attribute(self, prim, prim_path: str, key: str, value: object) -> bool:
+        candidate_keys = [key]
+        if key.startswith("OmniSensorGenericLidarCoreEmitterStateAPI:s000:"):
+            field = key.rsplit(":", 1)[-1]
+            candidate_keys.extend(
+                [
+                    f"omni:sensor:Core:emitterState:s001:{field}",
+                    f"omni:sensor:Core:emitterState:s000:{field}",
+                ]
+            )
+
+        for candidate_key in candidate_keys:
+            attr = prim.GetAttribute(candidate_key)
+            if not attr.IsValid():
+                continue
+            try:
+                attr.Set(value)
+                return True
+            except Exception as error:
+                carb.log_warn(
+                    f"Failed to set lidar attribute '{candidate_key}' on '{prim_path}': {error}"
+                )
+                return False
+
+        carb.log_warn(
+            f"Lidar attribute '{key}' not found on '{prim_path}' (checked {candidate_keys}), skipping."
+        )
+        return False
+
+    def _apply_prim_attributes(
+        self,
+        prim,
+        prim_path: str,
+        attributes: dict[str, object],
+        required_keys: set[str] | None = None,
+    ) -> bool:
+        required_keys = required_keys or set()
+        required_ok = True
+        for key, value in attributes.items():
+            if self._set_prim_attribute(prim, prim_path, key, value):
+                continue
+            if key in required_keys:
+                required_ok = False
+        return required_ok
+
     def simulate(self, base_prim: str):
         """
         Simulates the lidar sensor in Isaac Sim.
@@ -173,12 +244,15 @@ class SensorLidar(SensorBase):
             translation(Translation): The translation of the lidar sensor relative to the base prim.
             rotation(Rotation): The rotation of the lidar sensor relative to the base prim.
         """
-        base_prim_path = f"/{str(base_prim).strip('/')}"
-        parent_frame_path = str(self.parent_frame).strip('/')
-        sensor_name = str(self.name).strip('/').split('/')[-1]
+        carb.log_warn(
+            f"[LIDAR DEBUG] simulate() entered for '{self.name}' parent='{self.parent_frame}' base='{base_prim}'"
+        )
 
-        parent_prim_path = f"{base_prim_path}/{parent_frame_path}" if parent_frame_path else base_prim_path
-        prim_path = f"{parent_prim_path}/{sensor_name}"
+        parent_frame_path = str(self.parent_frame).strip('/')
+
+        parent_prim_path = os.path.join(base_prim, parent_frame_path) if parent_frame_path else base_prim
+        prim_path = os.path.join(parent_prim_path, self.name)
+
         sensor_attributes = self.config.as_omnilidar_attributes()
         scalar_attributes = {
             key: value
@@ -191,13 +265,21 @@ class SensorLidar(SensorBase):
             if key in self._ARRAY_ATTRIBUTE_KEYS
         }
 
+        deferred_scalar_attributes: dict[str, object] = {}
+        for deferred_key in (
+            "omni:sensor:Core:numberOfEmitters",
+            "omni:sensor:Core:numberOfChannels",
+        ):
+            if deferred_key in scalar_attributes:
+                deferred_scalar_attributes[deferred_key] = scalar_attributes.pop(deferred_key)
+
         try:
             ensure_path(parent_prim_path)
 
             _, lidar = omni.kit.commands.execute(
                 "IsaacSensorCreateRtxLidar",
-                path=prim_path,
-                parent=None,
+                path=os.path.basename(prim_path),
+                parent=os.path.dirname(prim_path),
                 config=None,
                 translation=self.translation.tuple(),
                 orientation=self.rotation.Quatd(),
@@ -241,18 +323,23 @@ class SensorLidar(SensorBase):
             )
             return
 
-        for key, value in array_attributes.items():
-            attr = prim.GetAttribute(key)
-            if not attr.IsValid():
-                carb.log_warn(
-                    f"Lidar attribute '{key}' not found on '{prim_path}', skipping."
+        emitter_arrays_set_ok = self._apply_prim_attributes(
+            prim,
+            prim_path,
+            array_attributes,
+            required_keys=self._EMITTER_STATE_REQUIRED_KEYS,
+        )
+
+        if deferred_scalar_attributes:
+            if emitter_arrays_set_ok:
+                self._apply_prim_attributes(
+                    prim,
+                    prim_path,
+                    deferred_scalar_attributes,
                 )
-                continue
-            try:
-                attr.Set(value)
-            except Exception as error:
+            else:
                 carb.log_warn(
-                    f"Failed to set lidar attribute '{key}' on '{prim_path}': {error}"
+                    f"Skipped emitter count overrides on '{prim_path}' because emitter-state arrays were not fully set."
                 )
 
         self.prim_path = prim_path
@@ -273,14 +360,14 @@ class SensorLidar(SensorBase):
         graph = Graph(os.path.join(self.prim_path, "LidarPublisher"))
 
         on_playback_tick = graph.node("on_playback_tick", "omni.graph.action.OnPlaybackTick")
+        run_one_frame = graph.node("run_one_frame", "isaacsim.core.nodes.OgnIsaacRunOneSimulationFrame")
+        get_lidar_prim = graph.node("get_lidar_prim", "omni.replicator.core.OgnGetPrimAtPath")
         render_product = graph.node("render_product", "isaacsim.core.nodes.IsaacCreateRenderProduct")
         lidar_publisher = graph.node("lidar_publisher", "isaacsim.ros2.bridge.ROS2RtxLidarHelper")
         lidar_publisher_points = graph.node("lidar_publisher_points", "isaacsim.ros2.bridge.ROS2RtxLidarHelper")
 
-        # ReadSimTime = graph.node("readSimTime", "isaacsim.core.nodes.IsaacReadSimulationTime")
-        # publishTF = graph.node("publishTF", "isaacsim.ros2.bridge.ROS2PublishTransformTree")
+        get_lidar_prim.attribute("paths", [self.prim_path])
 
-        render_product.attribute("cameraPrim", self.prim_path)
         render_product.attribute("width", 1)
         render_product.attribute("height", 1)
 
@@ -292,11 +379,19 @@ class SensorLidar(SensorBase):
         lidar_publisher_points.attribute("frameId", os.path.join(self.robot_base_frame, self.parent_frame))
         lidar_publisher_points.attribute("type", 'point_cloud')
 
-        # publishTF.attribute("targetPrims", [self.prim_path, os.path.join(self.prim_path, self.frame)])
+        full_scan_queue_size = 1
+        lidar_publisher.attribute("fullScan", True)
+        lidar_publisher.attribute("frameSkipCount", 0)
+        lidar_publisher.attribute("queueSize", full_scan_queue_size)
 
-        on_playback_tick.connect("tick", render_product, "execIn")
-        # OnPlaybackTick.connect("tick", publishTF, "execIn")
-        # ReadSimTime.connect("simulationTime", publishTF, "timeStamp")
+        lidar_publisher_points.attribute("fullScan", True)
+        lidar_publisher_points.attribute("frameSkipCount", 0)
+        lidar_publisher_points.attribute("queueSize", full_scan_queue_size)
+
+        on_playback_tick.connect("tick", run_one_frame, "execIn")
+        run_one_frame.connect("step", get_lidar_prim, "execIn")
+        get_lidar_prim.connect("execOut", render_product, "execIn")
+        get_lidar_prim.connect("prims", render_product, "cameraPrim")
         render_product.connect("execOut", lidar_publisher, "execIn")
         render_product.connect("renderProductPath", lidar_publisher, "renderProductPath")
         render_product.connect("execOut", lidar_publisher_points, "execIn")
