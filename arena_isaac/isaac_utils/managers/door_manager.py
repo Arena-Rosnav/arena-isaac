@@ -131,7 +131,9 @@ class DoorManager:
         # TODO auto subscribe to task generator reset and update robots list
         # derive robot name from prim path: /World/<robot_name>/...
         try:
+
             topic = odom_topic or f'/task_generator_node/{prim_path.split("/")[2]}/odom'
+            carb.log_error(f'Add robot in DoorManager {prim_path.split("/")[2]}')
             if Odometry is not None:
                 try:
                     sub = self._controller.create_subscription(
@@ -149,7 +151,7 @@ class DoorManager:
         except Exception as e:
             carb.log_verbose(f'_ensure_robot_subscription error: {e}')
 
-    def _odom_cb(self, msg: Odometry, prim_path: str):
+    def _odom_cb(self, msg: Odometry, prim_path: str): 
         try:
             pos = msg.pose.pose.position
             self._robot_poses[prim_path] = np.array([pos.x, pos.y, pos.z])

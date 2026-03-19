@@ -1,4 +1,5 @@
 import omni.kit.commands as commands
+from isaac_utils.utils import geom
 from isaac_utils.utils.path import world_path
 from isaacsim.core.experimental.prims import Prim
 
@@ -12,6 +13,7 @@ def delete_prim(name: str) -> bool:
     target = world_path(name)
     if not (target := Prim.resolve_paths([target])[0]):
         return True
+    geom.unregister_robot(target)
     commands.execute(
         "IsaacSimDestroyPrim",
         prim_path=target,

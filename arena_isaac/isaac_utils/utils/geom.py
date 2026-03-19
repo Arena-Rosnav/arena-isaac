@@ -1,15 +1,53 @@
 from __future__ import annotations
 
+import threading
 import typing
 
 import attrs
+import carb
 import geometry_msgs.msg
 import numpy as np
 from isaacsim.core.experimental.prims import Prim, RigidPrim, XformPrim, Articulation
 from isaacsim.core.utils.rotations import euler_angles_to_quat, quat_to_euler_angles
-from pxr import Gf, UsdPhysics
+from pxr import Gf, Usd, UsdGeom, UsdPhysics
 
 import isaacsim_msgs.msg
+
+
+_robot_articulation_registry: dict[str, str] = {}
+_robot_articulation_registry_lock = threading.RLock()
+
+
+def _normalize_prim_path(prim_path: str) -> str:
+    return prim_path.rstrip('/') or '/'
+
+
+def register_robot(robot_prim_path: str, articulation_prim_path: str):
+    robot_path = _normalize_prim_path(robot_prim_path)
+    articulation_path = _normalize_prim_path(articulation_prim_path)
+
+    with _robot_articulation_registry_lock:
+        _robot_articulation_registry[robot_path] = articulation_path
+
+
+def unregister_robot(prim_path: str):
+    normalized_path = _normalize_prim_path(prim_path)
+
+    with _robot_articulation_registry_lock:
+        _robot_articulation_registry.pop(normalized_path, None)
+        to_remove = [
+            robot_path for robot_path, articulation_path in _robot_articulation_registry.items()
+            if articulation_path == normalized_path
+        ]
+        for robot_path in to_remove:
+            _robot_articulation_registry.pop(robot_path, None)
+
+
+def _resolve_robot(prim_path: str) -> str:
+    normalized_path = _normalize_prim_path(prim_path)
+
+    with _robot_articulation_registry_lock:
+        return _robot_articulation_registry.get(normalized_path, normalized_path)
 
 
 @attrs.define
@@ -205,6 +243,7 @@ def move(
     rotation: Rotation | None = None,
     local: bool = False,
 ):
+    prim_path = _resolve_robot(prim_path)
     prim = Prim([prim_path])
 
     if not prim.valid:
@@ -236,6 +275,21 @@ def move(
             np.array(np.atleast_2d(translation.tuple())) if translation is not None else None,
             np.array(np.atleast_2d(rotation.quat())) if rotation is not None else None
         )
+
+
+def get_world_translation(prim_path: str) -> Translation | None:
+    prim_path = _resolve_robot(prim_path)
+    prim = Prim([prim_path])
+
+    if not prim.valid or not prim.prims:
+        return None
+
+    try:
+        transform = UsdGeom.Xformable(prim.prims[0]).ComputeLocalToWorldTransform(Usd.TimeCode.Default())
+        translation = transform.ExtractTranslation()
+        return Translation(float(translation[0]), float(translation[1]), float(translation[2]))
+    except Exception:
+        return None
 
 
 def rescale(

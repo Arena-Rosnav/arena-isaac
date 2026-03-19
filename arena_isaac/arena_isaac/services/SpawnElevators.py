@@ -1,7 +1,6 @@
 from isaac_utils.managers.elevator_manager import elevator_manager
 import os
 
-import omni
 from rclpy.qos import QoSProfile
 
 from isaac_utils.utils import geom
@@ -14,8 +13,6 @@ from isaacsim_msgs.srv import SpawnElevators
 
 from .utils import Service, on_exception
 
-profile = QoSProfile(depth=2000)
-
 
 @on_exception(False)
 def spawn_elevator(elevator: Elevator) -> bool:
@@ -23,7 +20,6 @@ def spawn_elevator(elevator: Elevator) -> bool:
     pos = geom.Translation.parse(elevator.position)
     size = geom.Scale.parse(elevator.size)
     material = elevator.material
-
     # Ensure parent path exists
     parent_path = os.path.dirname(prim_path)
     ensure_path(parent_path)
@@ -33,7 +29,6 @@ def spawn_elevator(elevator: Elevator) -> bool:
         position=pos,
         scale=size,
     )
-
     if (material := Material.from_msg(elevator.material)):
         try:
             material.bind_to(prim_path)
@@ -42,7 +37,6 @@ def spawn_elevator(elevator: Elevator) -> bool:
 
     # Register elevator with elevator_manager
     elevator_manager.add_elevator(elevator, getattr(elevator, 'destination', None))
-
     return True
 
 

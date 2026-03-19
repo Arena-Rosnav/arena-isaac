@@ -34,6 +34,6 @@ def generate_launch_description():
                 run_isaacsim_path,
                 '--log-level', logger.substitution
             ],
-            output='log',
+            output='screen',
         ),
     ])
