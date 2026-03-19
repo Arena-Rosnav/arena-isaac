@@ -241,6 +241,7 @@ def main(args=None):
 
     controller = IsaacController()
     door_manager = DoorManager.instance(controller)
+    elevator_manager.register_node(controller)  # Register controller for odom subscriptions
     for service in services:
         service.create(controller, qos_profile=QoSProfile(depth=2000))
 

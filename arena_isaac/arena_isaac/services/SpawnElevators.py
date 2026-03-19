@@ -13,17 +13,21 @@ from isaacsim_msgs.msg import Elevator
 from isaacsim_msgs.srv import SpawnElevators
 
 from .utils import Service, on_exception
-
+import logging
 profile = QoSProfile(depth=2000)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+)
 
-
+log = logging.getLogger(__name__)
+#Note Error
 @on_exception(False)
 def spawn_elevator(elevator: Elevator) -> bool:
     prim_path = world_path(elevator.name)
     pos = geom.Translation.parse(elevator.position)
     size = geom.Scale.parse(elevator.size)
     material = elevator.material
-
     # Ensure parent path exists
     parent_path = os.path.dirname(prim_path)
     ensure_path(parent_path)
@@ -33,7 +37,7 @@ def spawn_elevator(elevator: Elevator) -> bool:
         position=pos,
         scale=size,
     )
-
+    log.info("SpawnElevators")
     if (material := Material.from_msg(elevator.material)):
         try:
             material.bind_to(prim_path)
@@ -42,7 +46,6 @@ def spawn_elevator(elevator: Elevator) -> bool:
 
     # Register elevator with elevator_manager
     elevator_manager.add_elevator(elevator, getattr(elevator, 'destination', None))
-
     return True
 
 

@@ -10,6 +10,7 @@ import isaac_utils.graphs.tf as tf
 import omni.kit.commands as commands
 from isaac_utils.graphs import control
 from isaac_utils.managers.door_manager import DoorManager
+from isaac_utils.managers.elevator_manager import ElevatorManager
 from isaac_utils.utils import geom
 from isaac_utils.utils.path import world_path
 from isaac_utils.utils.prim import ensure_path
@@ -100,14 +101,18 @@ def spawn_urdf(request: SpawnUrdf.Request) -> str:
             base_topic=os.path.dirname(request.cmd_vel_topic)
         ).parse_gazebo(f.read())
 
+    # Spawn robot at (1, 1, 0)
     geom.move(
         prim_path=prim_path,
-        translation=geom.Translation.parse(request.pose.position),
+        translation=geom.Translation(2.0, 2.0, 0.0),
         rotation=geom.Rotation.parse(request.pose.orientation),
     )
 
     DoorManager.instance().add_robot(prim_path, request.odom_topic)
-
+    carb.log_error(f"Prim path of robot: {str(prim_path)}")
+    carb.log_info(f"Added robot: {prim_path}")
+    ElevatorManager.instance().add_robot(prim_path)
+    carb.log_error(f"Check robot in ElevatorManager: {str(ElevatorManager.instance().get_robots())}")
     return prim_path
 
 
