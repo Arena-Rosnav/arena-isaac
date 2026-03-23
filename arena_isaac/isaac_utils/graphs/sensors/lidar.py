@@ -35,6 +35,16 @@ class SensorLidar(SensorBase):
             min_angle: float = attrs.field(converter=attrs.converters.optional(float), default=-math.pi)
             max_angle: float = attrs.field(converter=attrs.converters.optional(float), default=+math.pi)
 
+            def sampled_angles_rad(self) -> list[float]:
+                sample_count = int(max(1, self.samples))
+                if sample_count == 1:
+                    return [float(self.min_angle)]
+
+                min_angle = float(self.min_angle)
+                max_angle = float(self.max_angle)
+                step = (max_angle - min_angle) / float(sample_count - 1)
+                return [min_angle + step * index for index in range(sample_count)]
+
         @attrs.define
         class Range:
             min: float = attrs.field(converter=attrs.converters.optional(float), default=0.0)
@@ -83,6 +93,9 @@ class SensorLidar(SensorBase):
                 ),
             )
 
+        def vertical_elevation_angles_rad(self) -> list[float]:
+            return self.vertical.sampled_angles_rad()
+
         def as_omnilidar_attributes(self) -> dict[str, object]:
             horizontal_samples = int(max(1, self.horizontal.samples))
             vertical_samples = int(max(1, self.vertical.samples))
@@ -92,13 +105,9 @@ class SensorLidar(SensorBase):
             noise_mean = float(self.noise.mean)
             noise_stddev = float(max(0.0, self.noise.stddev))
 
-            if vertical_samples == 1:
-                elevation_deg = [float(math.degrees(self.vertical.min_angle))]
-            else:
-                min_el = float(math.degrees(self.vertical.min_angle))
-                max_el = float(math.degrees(self.vertical.max_angle))
-                step = (max_el - min_el) / float(vertical_samples - 1)
-                elevation_deg = [min_el + step * index for index in range(vertical_samples)]
+            elevation_deg = [
+                float(math.degrees(angle_rad)) for angle_rad in self.vertical_elevation_angles_rad()
+            ]
 
             azimuth_deg = [0.0] * vertical_samples
             fire_time_ns = [0] * vertical_samples
@@ -189,7 +198,8 @@ class SensorLidar(SensorBase):
         self.translation: Translation = translation
         self.rotation: Rotation = rotation
 
-        self.prim_path: str | None = None
+        self.prim_path_points: str | None = None
+        self.prim_path_scan: str | None = None
 
     def _set_prim_attribute(self, prim, prim_path: str, key: str, value: object) -> bool:
         candidate_keys = [key]
@@ -236,24 +246,52 @@ class SensorLidar(SensorBase):
                 required_ok = False
         return required_ok
 
-    def simulate(self, base_prim: str):
-        """
-        Simulates the lidar sensor in Isaac Sim.
-        Args:
-            base_prim(str): The base prim path for the robot.
-            translation(Translation): The translation of the lidar sensor relative to the base prim.
-            rotation(Rotation): The rotation of the lidar sensor relative to the base prim.
-        """
-        carb.log_warn(
-            f"[LIDAR DEBUG] simulate() entered for '{self.name}' parent='{self.parent_frame}' base='{base_prim}'"
-        )
+    def _flat_lidar_attributes(self, elevation_rad: float) -> dict[str, object]:
+        horizontal_samples = int(max(1, self.config.horizontal.samples))
+        scan_rate_hz = float(max(1e-3, self.config.update_rate))
+        report_rate_hz = int(max(1, round(scan_rate_hz * horizontal_samples)))
+        start_azimuth_deg_raw = float(math.degrees(self.config.horizontal.min_angle))
+        end_azimuth_deg_raw = float(math.degrees(self.config.horizontal.max_angle))
 
-        parent_frame_path = str(self.parent_frame).strip('/')
+        span_deg_raw = end_azimuth_deg_raw - start_azimuth_deg_raw
+        span_deg = span_deg_raw
+        while span_deg <= 0.0:
+            span_deg += 360.0
 
-        parent_prim_path = os.path.join(base_prim, parent_frame_path) if parent_frame_path else base_prim
-        prim_path = os.path.join(parent_prim_path, self.name)
+        if span_deg >= 359.999:
+            valid_start_azimuth_deg = 0.0
+            valid_end_azimuth_deg = 360.0
+        else:
+            valid_start_azimuth_deg = start_azimuth_deg_raw
+            valid_end_azimuth_deg = end_azimuth_deg_raw
 
-        sensor_attributes = self.config.as_omnilidar_attributes()
+        attributes: dict[str, object] = {
+            "omni:sensor:Core:nearRangeM": float(self.config.range.min),
+            "omni:sensor:Core:farRangeM": float(self.config.range.max),
+            "omni:sensor:Core:rangeResolutionM": float(self.config.range.resolution),
+            "omni:sensor:Core:maxReturns": 1,
+            "omni:sensor:Core:reportRateBaseHz": report_rate_hz,
+            "omni:sensor:Core:scanRateBaseHz": int(max(1, round(scan_rate_hz))),
+            "omni:sensor:Core:numberOfChannels": 1,
+            "omni:sensor:Core:numberOfEmitters": 1,
+            "omni:sensor:Core:numLines": 1,
+            "omni:sensor:Core:numRaysPerLine": [horizontal_samples],
+            "omni:sensor:Core:validStartAzimuthDeg": valid_start_azimuth_deg,
+            "omni:sensor:Core:validEndAzimuthDeg": valid_end_azimuth_deg,
+            "OmniSensorGenericLidarCoreEmitterStateAPI:s000:azimuthDeg": [0.0],
+            "OmniSensorGenericLidarCoreEmitterStateAPI:s000:elevationDeg": [float(math.degrees(elevation_rad))],
+            "OmniSensorGenericLidarCoreEmitterStateAPI:s000:fireTimeNs": [0],
+            "OmniSensorGenericLidarCoreEmitterStateAPI:s000:channelId": [1],
+        }
+
+        noise_type = str(self.config.noise.type or "none").strip().lower()
+        noise_stddev = float(max(0.0, self.config.noise.stddev))
+        if noise_type == "gaussian":
+            attributes["omni:sensor:Core:rangeAccuracyM"] = noise_stddev
+
+        return attributes
+
+    def _create_lidar_prim(self, prim_path: str, sensor_attributes: dict[str, object]) -> str | None:
         scalar_attributes = {
             key: value
             for key, value in sensor_attributes.items()
@@ -274,8 +312,6 @@ class SensorLidar(SensorBase):
                 deferred_scalar_attributes[deferred_key] = scalar_attributes.pop(deferred_key)
 
         try:
-            ensure_path(parent_prim_path)
-
             _, lidar = omni.kit.commands.execute(
                 "IsaacSensorCreateRtxLidar",
                 path=os.path.basename(prim_path),
@@ -287,18 +323,16 @@ class SensorLidar(SensorBase):
                 **scalar_attributes,
             )
         except Exception as error:
-            self.prim_path = None
             carb.log_warn(
                 f"Lidar simulate failed for '{self.name}' at '{prim_path}': {error}"
             )
-            return
+            return None
 
         if not lidar:
-            self.prim_path = None
             carb.log_warn(
                 f"Lidar simulate returned no prim for '{self.name}' at '{prim_path}'."
             )
-            return
+            return None
 
         created_prim_path = None
         try:
@@ -307,21 +341,16 @@ class SensorLidar(SensorBase):
             created_prim_path = None
 
         if created_prim_path:
-            if created_prim_path != prim_path:
-                carb.log_warn(
-                    f"Lidar prim path remapped from '{prim_path}' to '{created_prim_path}' for '{self.name}'."
-                )
             prim_path = created_prim_path
 
         stage = get_current_stage()
         prim = stage.GetPrimAtPath(prim_path) if stage is not None else None
 
         if prim is None or not prim.IsValid():
-            self.prim_path = None
             carb.log_warn(
                 f"Lidar prim '{prim_path}' is invalid after creation for '{self.name}'."
             )
-            return
+            return None
 
         emitter_arrays_set_ok = self._apply_prim_attributes(
             prim,
@@ -342,7 +371,46 @@ class SensorLidar(SensorBase):
                     f"Skipped emitter count overrides on '{prim_path}' because emitter-state arrays were not fully set."
                 )
 
-        self.prim_path = prim_path
+        return prim_path
+
+    def simulate(self, base_prim: str):
+        """
+        Simulates the lidar sensor in Isaac Sim.
+        Args:
+            base_prim(str): The base prim path for the robot.
+            translation(Translation): The translation of the lidar sensor relative to the base prim.
+            rotation(Rotation): The rotation of the lidar sensor relative to the base prim.
+        """
+
+        parent_frame_path = str(self.parent_frame).strip('/')
+
+        parent_prim_path = os.path.join(base_prim, parent_frame_path) if parent_frame_path else base_prim
+        points_prim_path = os.path.join(parent_prim_path, f"{self.name}_points")
+        scan_prim_path = os.path.join(parent_prim_path, f"{self.name}_scan")
+
+        try:
+            ensure_path(parent_prim_path)
+        except Exception as error:
+            self.prim_path_points = None
+            self.prim_path_scan = None
+            carb.log_warn(
+                f"Lidar simulate failed to ensure path '{parent_prim_path}' for '{self.name}': {error}"
+            )
+            return
+
+        points_attributes = self.config.as_omnilidar_attributes()
+        scan_attributes = self._flat_lidar_attributes(0.0)
+
+        created_points = self._create_lidar_prim(points_prim_path, points_attributes)
+        created_scan = self._create_lidar_prim(scan_prim_path, scan_attributes)
+
+        if created_points is None or created_scan is None:
+            self.prim_path_points = None
+            self.prim_path_scan = None
+            return
+
+        self.prim_path_points = created_points
+        self.prim_path_scan = created_scan
 
     def publish(self, base_topic: str):
         """
@@ -351,51 +419,65 @@ class SensorLidar(SensorBase):
             base_topic(str): The base topic path for the robot.
         """
 
-        if self.prim_path is None:
+        if self.prim_path_points is None or self.prim_path_scan is None:
             carb.log_warn(
-                f"Lidar publish skipped for '{self.name}': sensor not simulated (prim_path is None)."
+                f"Lidar publish skipped for '{self.name}': sensor not simulated (points/scan prim paths missing)."
             )
             return False
 
-        graph = Graph(os.path.join(self.prim_path, "LidarPublisher"))
+        graph = Graph(os.path.join(self.prim_path_points, "LidarPublisher"))
 
         on_playback_tick = graph.node("on_playback_tick", "omni.graph.action.OnPlaybackTick")
         run_one_frame = graph.node("run_one_frame", "isaacsim.core.nodes.OgnIsaacRunOneSimulationFrame")
-        get_lidar_prim = graph.node("get_lidar_prim", "omni.replicator.core.OgnGetPrimAtPath")
-        render_product = graph.node("render_product", "isaacsim.core.nodes.IsaacCreateRenderProduct")
-        lidar_publisher = graph.node("lidar_publisher", "isaacsim.ros2.bridge.ROS2RtxLidarHelper")
+        get_lidar_prim_points = graph.node("get_lidar_prim_points", "omni.replicator.core.OgnGetPrimAtPath")
+        get_lidar_prim_scan = graph.node("get_lidar_prim_scan", "omni.replicator.core.OgnGetPrimAtPath")
+        render_product_points = graph.node("render_product_points", "isaacsim.core.nodes.IsaacCreateRenderProduct")
+        render_product_scan = graph.node("render_product_scan", "isaacsim.core.nodes.IsaacCreateRenderProduct")
         lidar_publisher_points = graph.node("lidar_publisher_points", "isaacsim.ros2.bridge.ROS2RtxLidarHelper")
+        lidar_publisher_scan = graph.node("lidar_publisher_scan", "isaacsim.ros2.bridge.ROS2RtxLidarHelper")
 
-        get_lidar_prim.attribute("paths", [self.prim_path])
+        points_prim_path = self.prim_path_points
+        scan_prim_path = self.prim_path_scan
 
-        render_product.attribute("width", 1)
-        render_product.attribute("height", 1)
+        get_lidar_prim_points.attribute("paths", [points_prim_path])
+        get_lidar_prim_scan.attribute("paths", [scan_prim_path])
 
-        lidar_publisher.attribute("topicName", os.path.join(base_topic, self.config.topic))
-        lidar_publisher.attribute("frameId", os.path.join(self.robot_base_frame, self.parent_frame))
-        lidar_publisher.attribute("type", 'laser_scan')
+        render_product_points.attribute("width", 1)
+        render_product_points.attribute("height", 1)
+        render_product_scan.attribute("width", 1)
+        render_product_scan.attribute("height", 1)
 
-        lidar_publisher_points.attribute("topicName", os.path.join(base_topic, self.config.topic, 'points'))
-        lidar_publisher_points.attribute("frameId", os.path.join(self.robot_base_frame, self.parent_frame))
+        scan_topic = os.path.join(base_topic, self.config.topic)
+        points_topic = os.path.join(base_topic, self.config.topic, 'points')
+        frame_id = os.path.join(self.robot_base_frame, self.parent_frame)
+
+        lidar_publisher_points.attribute("topicName", points_topic)
+        lidar_publisher_points.attribute("frameId", frame_id)
         lidar_publisher_points.attribute("type", 'point_cloud')
-
-        full_scan_queue_size = 1
-        lidar_publisher.attribute("fullScan", True)
-        lidar_publisher.attribute("frameSkipCount", 0)
-        lidar_publisher.attribute("queueSize", full_scan_queue_size)
-
         lidar_publisher_points.attribute("fullScan", True)
         lidar_publisher_points.attribute("frameSkipCount", 0)
-        lidar_publisher_points.attribute("queueSize", full_scan_queue_size)
+        lidar_publisher_points.attribute("queueSize", 1)
+
+        lidar_publisher_scan.attribute("topicName", scan_topic)
+        lidar_publisher_scan.attribute("frameId", frame_id)
+        lidar_publisher_scan.attribute("type", 'laser_scan')
+        lidar_publisher_scan.attribute("fullScan", False)
+        lidar_publisher_scan.attribute("frameSkipCount", 0)
+        lidar_publisher_scan.attribute("queueSize", 1)
 
         on_playback_tick.connect("tick", run_one_frame, "execIn")
-        run_one_frame.connect("step", get_lidar_prim, "execIn")
-        get_lidar_prim.connect("execOut", render_product, "execIn")
-        get_lidar_prim.connect("prims", render_product, "cameraPrim")
-        render_product.connect("execOut", lidar_publisher, "execIn")
-        render_product.connect("renderProductPath", lidar_publisher, "renderProductPath")
-        render_product.connect("execOut", lidar_publisher_points, "execIn")
-        render_product.connect("renderProductPath", lidar_publisher_points, "renderProductPath")
+        run_one_frame.connect("step", get_lidar_prim_points, "execIn")
+        run_one_frame.connect("step", get_lidar_prim_scan, "execIn")
+
+        get_lidar_prim_points.connect("execOut", render_product_points, "execIn")
+        get_lidar_prim_points.connect("prims", render_product_points, "cameraPrim")
+        get_lidar_prim_scan.connect("execOut", render_product_scan, "execIn")
+        get_lidar_prim_scan.connect("prims", render_product_scan, "cameraPrim")
+
+        render_product_points.connect("execOut", lidar_publisher_points, "execIn")
+        render_product_points.connect("renderProductPath", lidar_publisher_points, "renderProductPath")
+        render_product_scan.connect("execOut", lidar_publisher_scan, "execIn")
+        render_product_scan.connect("renderProductPath", lidar_publisher_scan, "renderProductPath")
 
         graph.load_extensions()
         return graph.execute(og.Controller())

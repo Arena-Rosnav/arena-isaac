@@ -104,6 +104,5 @@ class Sensors:
                         camera.simulate(self.prim_path)
                         camera.publish(self.robot_base_topic)
 
-                except Exception as e:
+                except Exception:
                     raise
-                    pass
