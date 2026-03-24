@@ -1,5 +1,6 @@
 import math
 import os
+import typing
 import xml.etree.ElementTree as ET
 
 import attrs
@@ -7,7 +8,7 @@ import carb
 import omni
 import omni.graph.core as og
 import omni.kit.commands
-from isaacsim.core.utils.stage import get_current_stage
+from isaacsim.core.experimental.prims import Prim
 
 from isaac_utils.graphs import Graph
 from isaac_utils.utils.geom import Rotation, Translation
@@ -292,6 +293,7 @@ class SensorLidar(SensorBase):
         return attributes
 
     def _create_lidar_prim(self, prim_path: str, sensor_attributes: dict[str, object]) -> str | None:
+        requested_prim_path = prim_path
         scalar_attributes = {
             key: value
             for key, value in sensor_attributes.items()
@@ -314,8 +316,8 @@ class SensorLidar(SensorBase):
         try:
             _, lidar = omni.kit.commands.execute(
                 "IsaacSensorCreateRtxLidar",
-                path=os.path.basename(prim_path),
-                parent=os.path.dirname(prim_path),
+                path=os.path.basename(requested_prim_path),
+                parent=os.path.dirname(requested_prim_path),
                 config=None,
                 translation=self.translation.tuple(),
                 orientation=self.rotation.Quatd(),
@@ -343,10 +345,30 @@ class SensorLidar(SensorBase):
         if created_prim_path:
             prim_path = created_prim_path
 
-        stage = get_current_stage()
-        prim = stage.GetPrimAtPath(prim_path) if stage is not None else None
+        if prim_path != requested_prim_path:
+            existing_target = Prim.resolve_paths([requested_prim_path])[0]
+            if existing_target:
+                omni.kit.commands.execute(
+                    "IsaacSimDestroyPrim",
+                    prim_path=existing_target,
+                )
+            try:
+                omni.kit.commands.execute(
+                    "MovePrim",
+                    path_from=prim_path,
+                    path_to=requested_prim_path,
+                    keep_world_transform=True,
+                )
+                prim_path = requested_prim_path
+            except Exception as error:
+                carb.log_warn(
+                    f"Failed to move lidar prim from '{prim_path}' to '{requested_prim_path}': {error}"
+                )
 
-        if prim is None or not prim.IsValid():
+        prim_wrapper = Prim([prim_path])
+        prim = prim_wrapper.prims[0] if prim_wrapper.valid and prim_wrapper.prims else None
+
+        if prim is None:
             carb.log_warn(
                 f"Lidar prim '{prim_path}' is invalid after creation for '{self.name}'."
             )
@@ -412,6 +434,47 @@ class SensorLidar(SensorBase):
         self.prim_path_points = created_points
         self.prim_path_scan = created_scan
 
+    def _create_lidar_publish_graph(
+        self,
+        *,
+        prim_path: str,
+        topic_name: str,
+        frame_id: str,
+        publish_type: typing.Literal['point_cloud', 'laser_scan'],
+        graph_name: str,
+    ) -> bool:
+        graph = Graph(os.path.join(prim_path, graph_name))
+
+        on_playback_tick = graph.node("on_playback_tick", "omni.graph.action.OnPlaybackTick")
+        run_one_frame = graph.node("run_one_frame", "isaacsim.core.nodes.OgnIsaacRunOneSimulationFrame")
+        get_lidar_prim = graph.node("get_lidar_prim", "omni.replicator.core.OgnGetPrimAtPath")
+        render_product = graph.node("render_product", "isaacsim.core.nodes.IsaacCreateRenderProduct")
+        lidar_publisher = graph.node("lidar_publisher", "isaacsim.ros2.bridge.ROS2RtxLidarHelper")
+
+        get_lidar_prim.attribute("paths", [prim_path])
+
+        render_product.attribute("width", 1)
+        render_product.attribute("height", 1)
+
+        lidar_publisher.attribute("topicName", topic_name)
+        lidar_publisher.attribute("frameId", frame_id)
+        lidar_publisher.attribute("type", publish_type)
+        lidar_publisher.attribute("fullScan", publish_type == 'point_cloud')
+        lidar_publisher.attribute("frameSkipCount", 0)
+        lidar_publisher.attribute("queueSize", 1)
+
+        on_playback_tick.connect("tick", run_one_frame, "execIn")
+        run_one_frame.connect("step", get_lidar_prim, "execIn")
+
+        get_lidar_prim.connect("execOut", render_product, "execIn")
+        get_lidar_prim.connect("prims", render_product, "cameraPrim")
+
+        render_product.connect("execOut", lidar_publisher, "execIn")
+        render_product.connect("renderProductPath", lidar_publisher, "renderProductPath")
+
+        graph.load_extensions()
+        return bool(graph.execute(og.Controller()))
+
     def publish(self, base_topic: str):
         """
         Publishes the lidar sensor to ros2.
@@ -425,59 +488,26 @@ class SensorLidar(SensorBase):
             )
             return False
 
-        graph = Graph(os.path.join(self.prim_path_points, "LidarPublisher"))
-
-        on_playback_tick = graph.node("on_playback_tick", "omni.graph.action.OnPlaybackTick")
-        run_one_frame = graph.node("run_one_frame", "isaacsim.core.nodes.OgnIsaacRunOneSimulationFrame")
-        get_lidar_prim_points = graph.node("get_lidar_prim_points", "omni.replicator.core.OgnGetPrimAtPath")
-        get_lidar_prim_scan = graph.node("get_lidar_prim_scan", "omni.replicator.core.OgnGetPrimAtPath")
-        render_product_points = graph.node("render_product_points", "isaacsim.core.nodes.IsaacCreateRenderProduct")
-        render_product_scan = graph.node("render_product_scan", "isaacsim.core.nodes.IsaacCreateRenderProduct")
-        lidar_publisher_points = graph.node("lidar_publisher_points", "isaacsim.ros2.bridge.ROS2RtxLidarHelper")
-        lidar_publisher_scan = graph.node("lidar_publisher_scan", "isaacsim.ros2.bridge.ROS2RtxLidarHelper")
-
         points_prim_path = self.prim_path_points
         scan_prim_path = self.prim_path_scan
-
-        get_lidar_prim_points.attribute("paths", [points_prim_path])
-        get_lidar_prim_scan.attribute("paths", [scan_prim_path])
-
-        render_product_points.attribute("width", 1)
-        render_product_points.attribute("height", 1)
-        render_product_scan.attribute("width", 1)
-        render_product_scan.attribute("height", 1)
 
         scan_topic = os.path.join(base_topic, self.config.topic)
         points_topic = os.path.join(base_topic, self.config.topic, 'points')
         frame_id = os.path.join(self.robot_base_frame, self.parent_frame)
 
-        lidar_publisher_points.attribute("topicName", points_topic)
-        lidar_publisher_points.attribute("frameId", frame_id)
-        lidar_publisher_points.attribute("type", 'point_cloud')
-        lidar_publisher_points.attribute("fullScan", True)
-        lidar_publisher_points.attribute("frameSkipCount", 0)
-        lidar_publisher_points.attribute("queueSize", 1)
+        points_ok = self._create_lidar_publish_graph(
+            prim_path=points_prim_path,
+            topic_name=points_topic,
+            frame_id=frame_id,
+            publish_type='point_cloud',
+            graph_name='LidarPointsPublisher',
+        )
+        scan_ok = self._create_lidar_publish_graph(
+            prim_path=scan_prim_path,
+            topic_name=scan_topic,
+            frame_id=frame_id,
+            publish_type='laser_scan',
+            graph_name='LidarScanPublisher',
+        )
 
-        lidar_publisher_scan.attribute("topicName", scan_topic)
-        lidar_publisher_scan.attribute("frameId", frame_id)
-        lidar_publisher_scan.attribute("type", 'laser_scan')
-        lidar_publisher_scan.attribute("fullScan", False)
-        lidar_publisher_scan.attribute("frameSkipCount", 0)
-        lidar_publisher_scan.attribute("queueSize", 1)
-
-        on_playback_tick.connect("tick", run_one_frame, "execIn")
-        run_one_frame.connect("step", get_lidar_prim_points, "execIn")
-        run_one_frame.connect("step", get_lidar_prim_scan, "execIn")
-
-        get_lidar_prim_points.connect("execOut", render_product_points, "execIn")
-        get_lidar_prim_points.connect("prims", render_product_points, "cameraPrim")
-        get_lidar_prim_scan.connect("execOut", render_product_scan, "execIn")
-        get_lidar_prim_scan.connect("prims", render_product_scan, "cameraPrim")
-
-        render_product_points.connect("execOut", lidar_publisher_points, "execIn")
-        render_product_points.connect("renderProductPath", lidar_publisher_points, "renderProductPath")
-        render_product_scan.connect("execOut", lidar_publisher_scan, "execIn")
-        render_product_scan.connect("renderProductPath", lidar_publisher_scan, "renderProductPath")
-
-        graph.load_extensions()
-        return graph.execute(og.Controller())
+        return points_ok and scan_ok
