@@ -16,21 +16,13 @@ def navigate_pedestrian(goal: PedestrianGoal) -> bool:
     person = PeopleManager.get_people_manager().get_person(usd_path)
     if not isinstance(person, Person):
         return False
-    inav = nav.acquire_interface()
-    navmesh = inav.get_navmesh()
-    if navmesh:
-        navmesh_path = navmesh.query_shortest_path(
-            person.last_waypoint.tolist(), [goal.position.x, goal.position.y, goal.position.z]
-        )
-        if navmesh_path:
-            path_points = navmesh_path.get_points()
-            person.update_target_positions(path_points, goal.velocity)
-            return True
-
-    return False
+    person.update_target_goal(goal)
+    return True
 
 
-def navigate_pedestrians_callback(request: NavigatePedestrians.Request, response: NavigatePedestrians.Response):
+def navigate_pedestrians_callback(
+    request: NavigatePedestrians.Request, response: NavigatePedestrians.Response
+):
     response.ret = list(map(navigate_pedestrian, request.goals))
     return response
 
@@ -38,7 +30,7 @@ def navigate_pedestrians_callback(request: NavigatePedestrians.Request, response
 navigate_pedestrians_service = Service(
     srv_type=NavigatePedestrians,
     srv_name="isaac/NavigatePedestrians",
-    callback=navigate_pedestrians_callback
+    callback=navigate_pedestrians_callback,
 )
 
-__all__ = ['navigate_pedestrians_service']
+__all__ = ["navigate_pedestrians_service"]
