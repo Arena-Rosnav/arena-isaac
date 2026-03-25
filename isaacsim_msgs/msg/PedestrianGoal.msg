@@ -1,3 +1,3 @@
 string name
-geometry_msgs/Point position
-float32 velocity
+geometry_msgs/Pose pose
+geometry_msgs/Twist twist

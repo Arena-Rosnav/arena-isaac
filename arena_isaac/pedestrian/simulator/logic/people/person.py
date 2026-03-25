@@ -2,6 +2,8 @@
 import os
 from collections import deque
 
+from geometry_msgs.msg import Twist
+
 import carb
 import numpy as np
 import omni.anim.graph.core as ag
@@ -14,6 +16,8 @@ from omni.isaac.core.utils import prims
 from omni.usd import get_stage_next_free_path
 from pxr import Gf, Sdf
 from scipy.spatial.transform import Rotation
+
+from isaacsim_msgs.msg import PedestrianGoal
 
 from pedestrian.simulator.logic.people.person_controller import PersonController
 from pedestrian.simulator.logic.people_manager import PeopleManager
@@ -40,7 +44,7 @@ class Person:
         assets_root_path = people_asset_folder
     else:
         root_path = get_assets_root_path_safe()
-        assets_root_path = os.path.join(root_path, 'Isaac/People/Characters')
+        assets_root_path = os.path.join(root_path, "Isaac/People/Characters")
 
     character_skel_root_stage_path: str
 
@@ -52,7 +56,7 @@ class Person:
         init_pos=[0.0, 0.0, 0.0],
         init_yaw=0.0,
         controller: PersonController | None = None,
-        backend=None
+        backend=None,
     ):
         """Initializes the person object
 
@@ -71,11 +75,12 @@ class Person:
         # Variable that will hold the current state of the vehicle
         self._state = State()
         self._state.position = np.array(init_pos)
-        self._state.orientation = Rotation.from_euler('z', init_yaw, degrees=False).as_quat()
+        self._state.orientation = Rotation.from_euler(
+            "z", init_yaw, degrees=False
+        ).as_quat()
 
         # Set the target position for the character
-        self._target_positions = deque[np.ndarray]()
-        self._target_speed = 0.0
+        self._target_goals = deque[PedestrianGoal]()
 
         # Save the name with which the vehicle will appear in the stage
         # and the character model that will be loaded into the simulator
@@ -101,19 +106,25 @@ class Person:
             self._backend.initialize(self)
 
         # Add a callback to the physics engine to update the current state of the person
-        if not self._world.physics_callback_exists(cb_path := self._stage_prefix + "/state"):
+        if not self._world.physics_callback_exists(
+            cb_path := self._stage_prefix + "/state"
+        ):
             self._world.add_physics_callback(cb_path, self.update_state)
 
         # Add the update method to the physics callback if the world was received
         # so that we can apply the new references to be tracked by the person
-        if not self._world.physics_callback_exists(cb_path := self._stage_prefix + "/update"):
+        if not self._world.physics_callback_exists(
+            cb_path := self._stage_prefix + "/update"
+        ):
             self._world.add_physics_callback(cb_path, self.update)
 
         # Set the flag that signals if the simulation is running or not
         self._sim_running = False
 
         # Add a callback to start/stop of the simulation once the play/stop button is hit
-        if not self._world.timeline_callback_exists(cb_path := self._stage_prefix + "/start_stop_sim"):
+        if not self._world.timeline_callback_exists(
+            cb_path := self._stage_prefix + "/start_stop_sim"
+        ):
             self._world.add_timeline_callback(cb_path, self.sim_start_stop)
 
         self._character_graph = None
@@ -127,7 +138,9 @@ class Person:
         """
         if self._character_graph is None:
             self.add_animation_graph_to_agent()
-            self._character_graph = ag.get_character(self.character_skel_root_stage_path)
+            self._character_graph = ag.get_character(
+                self.character_skel_root_stage_path
+            )
         return self._character_graph
 
     @property
@@ -187,20 +200,24 @@ class Person:
         if self._controller:
             self._controller.update(dt)
 
-        THRESHOLD_DISTANCE = 0.3  # m
-        while self._target_positions and np.linalg.norm(self._target_position - self._state.position) < THRESHOLD_DISTANCE:
-            # set next target
-            self._target_positions.popleft()
+        THRESHOLD_DISTANCE = 0.10  # m
+        THRESHOLD_VELOCITY = 1e-2  # m/s
 
-        if self._target_positions:
-            # targets not empty
-            extended_target = self._target_position + ((self._target_position - self._state.position) / np.linalg.norm(self._target_position - self._state.position)) * THRESHOLD_DISTANCE
-            self.character_graph.set_variable("PathPoints", [carb.Float3(self._state.position), carb.Float3(extended_target)])
+        if self._target_velocity > THRESHOLD_VELOCITY:
+            distance = np.linalg.norm(self._target_position - self._state.position)
+            n_interpolated_points = max(2, int(distance / THRESHOLD_DISTANCE))
+            interpolated_points = np.linspace(
+                self._state.position, self._target_position, n_interpolated_points
+            )
+            self.character_graph.set_variable(
+                "PathPoints",
+                [carb.Float3(*p) for p in interpolated_points],
+            )
             self.character_graph.set_variable("Action", "Walk")
-            self.character_graph.set_variable("Walk", self._target_speed)
-
+            self.character_graph.set_variable("Walk", self._target_velocity)
         else:
             # at target position, stop moving
+            self.character_graph.set_variable("PathPoints", [])
             self.character_graph.set_variable("Walk", 0.0)
             self.character_graph.set_variable("Action", "Idle")
 
@@ -211,15 +228,14 @@ class Person:
         # if self.character_skel_root_stage_path is not None:
         #     PeopleManager.get_people_manager().add_person(self.character_skel_root_stage_path, self)
 
-    def update_target_positions(self, positions, walk_speed=1.0):
+    def update_target_goal(self, goal: PedestrianGoal):
         """
         Method that updates the target position of the person to which it will move towards.
 
         Args:
             position (list): A list with the x, y, z coordinates of the target position.
         """
-        self._target_positions.extend(positions)
-        self._target_speed = walk_speed
+        self._target_goals.append(goal)
 
     def update_state(self, dt: float):
         """
@@ -248,52 +264,75 @@ class Person:
             self._controller.update_state(self._state)
 
     def spawn_agent(self, usd_file, stage_name, init_pos, init_yaw):
-
         # If there is no XForm primitive in the stage to hold all the people, create one
         if not self._current_stage.GetPrimAtPath(Person.character_root_prim_path):
             prims.create_prim(Person.character_root_prim_path, "Xform")
 
         # If the base biped character is not present in the stage, spawn it
-        if not self._current_stage.GetPrimAtPath(Person.character_root_prim_path + "/Biped_Setup"):
-            prim = prims.create_prim(Person.character_root_prim_path + "/Biped_Setup", "Xform", usd_path=Person.assets_root_path + "/Biped_Setup.usd")
+        if not self._current_stage.GetPrimAtPath(
+            Person.character_root_prim_path + "/Biped_Setup"
+        ):
+            prim = prims.create_prim(
+                Person.character_root_prim_path + "/Biped_Setup",
+                "Xform",
+                usd_path=Person.assets_root_path + "/Biped_Setup.usd",
+            )
             prim.GetAttribute("visibility").Set("invisible")
 
         # Spawn the person in the world
         self.prim = prims.create_prim(stage_name, "Xform", usd_path=usd_file)
 
         # Set the initial position and orientation of the person
-        self.prim.GetAttribute("xformOp:translate").Set(Gf.Vec3d(float(init_pos[0]), float(init_pos[1]), float(init_pos[2])))
+        self.prim.GetAttribute("xformOp:translate").Set(
+            Gf.Vec3d(float(init_pos[0]), float(init_pos[1]), float(init_pos[2]))
+        )
 
         if type(self.prim.GetAttribute("xformOp:orient").Get()) == Gf.Quatf:
-            self.prim.GetAttribute("xformOp:orient").Set(Gf.Quatf(Gf.Rotation(Gf.Vec3d(0, 0, 1), float(init_yaw)).GetQuat()))
+            self.prim.GetAttribute("xformOp:orient").Set(
+                Gf.Quatf(Gf.Rotation(Gf.Vec3d(0, 0, 1), float(init_yaw)).GetQuat())
+            )
         else:
-            self.prim.GetAttribute("xformOp:orient").Set(Gf.Rotation(Gf.Vec3d(0, 0, 1), float(init_yaw)).GetQuat())
+            self.prim.GetAttribute("xformOp:orient").Set(
+                Gf.Rotation(Gf.Vec3d(0, 0, 1), float(init_yaw)).GetQuat()
+            )
 
         # Get the Skeleton root of the character
-        self.character_skel_root, root_path = Person._transverse_prim(self._current_stage, self._stage_prefix)
+        self.character_skel_root, root_path = Person._transverse_prim(
+            self._current_stage, self._stage_prefix
+        )
         if root_path is None:
-            raise RuntimeError(f"Could not find SkelRoot for character {self._character_name} at stage prefix {self._stage_prefix}")
+            raise RuntimeError(
+                f"Could not find SkelRoot for character {self._character_name} at stage prefix {self._stage_prefix}"
+            )
         self.character_skel_root_stage_path = root_path
 
         # Add the current person to the person manager
         PeopleManager.get_people_manager().add_person(self._stage_prefix, self)
 
     def add_animation_graph_to_agent(self):
-
         # Get the animation graph that we are going to add to the person
-        animation_graph = self._current_stage.GetPrimAtPath(Person.character_root_prim_path + "/Biped_Setup/CharacterAnimation/AnimationGraph")
+        animation_graph = self._current_stage.GetPrimAtPath(
+            Person.character_root_prim_path
+            + "/Biped_Setup/CharacterAnimation/AnimationGraph"
+        )
 
         # Remove the animation graph attribute if it exists
         if self.character_skel_root is not None:
-            omni.kit.commands.execute("RemoveAnimationGraphAPICommand", paths=[Sdf.Path(self.character_skel_root.GetPrimPath())])
+            omni.kit.commands.execute(
+                "RemoveAnimationGraphAPICommand",
+                paths=[Sdf.Path(self.character_skel_root.GetPrimPath())],
+            )
 
         # Add the animation graph to the character
         if self.character_skel_root is not None:
-            omni.kit.commands.execute("ApplyAnimationGraphAPICommand", paths=[Sdf.Path(self.character_skel_root.GetPrimPath())], animation_graph_path=Sdf.Path(animation_graph.GetPrimPath()))
+            omni.kit.commands.execute(
+                "ApplyAnimationGraphAPICommand",
+                paths=[Sdf.Path(self.character_skel_root.GetPrimPath())],
+                animation_graph_path=Sdf.Path(animation_graph.GetPrimPath()),
+            )
 
     @staticmethod
     def _transverse_prim(stage, stage_prefix):
-
         # Check if the prim is the one we are looking for
         prim = stage.GetPrimAtPath(stage_prefix)
 
@@ -310,7 +349,9 @@ class Person:
 
         # Recursively look through the children to get the SkelRoot
         for child in children:
-            prim_child, child_stage_prefix = Person._transverse_prim(stage, stage_prefix + "/" + child.GetName())
+            prim_child, child_stage_prefix = Person._transverse_prim(
+                stage, stage_prefix + "/" + child.GetName()
+            )
 
             if prim_child is not None:
                 return prim_child, child_stage_prefix
@@ -323,25 +364,32 @@ class Person:
         result, folder_list = omni.client.list("{}/".format(Person.assets_root_path))
 
         if result != omni.client.Result.OK:
-            carb.log_error("Unable to get character assets from provided asset root path.")
+            carb.log_error(
+                "Unable to get character assets from provided asset root path."
+            )
             return
 
         # Prune items from folder list that are not directories.
-        pruned_folder_list = [folder.relative_path for folder in folder_list
-                              if (folder.flags & omni.client.ItemFlags.CAN_HAVE_CHILDREN) and not folder.relative_path.startswith(".")]
+        pruned_folder_list = [
+            folder.relative_path
+            for folder in folder_list
+            if (folder.flags & omni.client.ItemFlags.CAN_HAVE_CHILDREN)
+            and not folder.relative_path.startswith(".")
+        ]
 
         return pruned_folder_list
 
     @staticmethod
     def get_path_for_character_prim(agent_name):
-
         # Check if a folder with agent_name exists. If exists we load the character, else we load a random character
         agent_folder = os.path.join(Person.assets_root_path, agent_name)
         result, properties = omni.client.stat(agent_folder)
 
         # Attempt to load the character if it exists, otherwise load a random character
         if result != omni.client.Result.OK:
-            carb.log_error(f"Character folder does not exist: {agent_name}. Available: {Person.get_character_asset_list()}")
+            carb.log_error(
+                f"Character folder does not exist: {agent_name}. Available: {Person.get_character_asset_list()}"
+            )
             return None
 
         # Get the usd present in the character folder
@@ -356,14 +404,22 @@ class Person:
         result, folder_list = omni.client.list(character_folder_path)
 
         if result != omni.client.Result.OK:
-            carb.log_error("Unable to read character folder path at {}".format(character_folder_path))
+            carb.log_error(
+                "Unable to read character folder path at {}".format(
+                    character_folder_path
+                )
+            )
             return
 
         for item in folder_list:
             if item.relative_path.endswith(".usd"):
                 return item.relative_path
 
-        carb.log_error("Unable to file a .usd file in {} character folder".format(character_folder_path))
+        carb.log_error(
+            "Unable to file a .usd file in {} character folder".format(
+                character_folder_path
+            )
+        )
 
     def destroy(self):
         """
@@ -390,15 +446,35 @@ class Person:
 
     @property
     def _target_position(self) -> np.ndarray:
-        if not self._target_positions:
+        if not self._target_goals:
             return np.array(self._state.position)
-        return np.array(self._target_positions[0])
+        position = self._target_goals[-1].pose.position
+        return np.array([position.x, position.y, position.z])
+
+    @property
+    def _target_orientation(self) -> np.ndarray:
+        if not self._target_goals:
+            orientation = self._state.orientation
+            return np.array(
+                [orientation.x, orientation.y, orientation.z, orientation.w]
+            )
+        orientation = self._target_goals[-1].pose.orientation
+        return np.array([orientation.x, orientation.y, orientation.z, orientation.w])
+
+    @property
+    def _target_velocity(self) -> float:
+        if not self._target_goals:
+            return 0.0
+        velocity = self._target_goals[-1].twist.linear
+        velocity = np.array([velocity.x, velocity.y])
+        return np.linalg.norm(velocity)
 
     @property
     def last_waypoint(self) -> np.ndarray:
-        if not self._target_positions:
+        if not self._target_goals:
             return np.array(self._state.position)
-        return np.array(self._target_positions[-1])
+        position = self._target_goals[-1].pose.position
+        return np.array([position.x, position.y, position.z])
 
     @property
     def path(self) -> str:
