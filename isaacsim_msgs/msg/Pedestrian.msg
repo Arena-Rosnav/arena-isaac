@@ -1,4 +1,0 @@
-string name
-string character_name
-geometry_msgs/Pose pose
-bool controller_stats

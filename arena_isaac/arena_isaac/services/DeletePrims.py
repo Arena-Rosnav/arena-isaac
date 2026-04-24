@@ -1,3 +1,4 @@
+import carb
 import omni.kit.commands as commands
 from isaac_utils.utils import geom
 from isaac_utils.utils.path import world_path
@@ -11,13 +12,14 @@ from .utils import Service, on_exception
 @on_exception(False)
 def delete_prim(name: str) -> bool:
     target = world_path(name)
-    if not (target := Prim.resolve_paths([target])[0]):
+    if not (targets := Prim.resolve_paths([target])[0]):
         return True
-    geom.unregister_robot(target)
-    commands.execute(
-        "IsaacSimDestroyPrim",
-        prim_path=target,
-    )
+    for target in targets:
+        geom.unregister_robot(target)
+        commands.execute(
+            "IsaacSimDestroyPrim",
+            prim_path=target,
+        )
     return True
 
 

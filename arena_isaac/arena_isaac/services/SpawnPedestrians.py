@@ -6,21 +6,14 @@ from pedestrian.simulator.logic.people.person import Person
 
 from isaac_utils.utils.path import world_path
 from isaac_utils.utils.prim import ensure_path
-from isaacsim_msgs.msg import Pedestrian
-from isaacsim_msgs.srv import SpawnPedestrians
+from arena_people_msgs.msg import Pedestrian
+from arena_people_msgs.srv import SpawnPedestrians
 
 from .utils import Service, on_exception
 
-# simple logger helpers
-try:
-    from rclpy.logging import get_logger
-    _LOGGER = get_logger('isaac_spawn_ped')
-except Exception:
-    _LOGGER = None
 
-
-@on_exception(False)
-def spawn_pedestrian(pedestrian: Pedestrian) -> bool:
+@on_exception(SpawnPedestrians.Response.FAILED_CREATE)
+def spawn_pedestrian(pedestrian: Pedestrian, character_name: str) -> int:
     world = World.instance()
 
     position = [pedestrian.pose.position.x, pedestrian.pose.position.y, pedestrian.pose.position.z]
@@ -28,16 +21,16 @@ def spawn_pedestrian(pedestrian: Pedestrian) -> bool:
 
     usd_path = world_path(pedestrian.name)
     ensure_path(os.path.dirname(usd_path))
-    if not pedestrian.controller_stats:
-        Person(world, usd_path, pedestrian.character_name, position, orientation)
-    else:
-        Person(world, usd_path, pedestrian.character_name, position, orientation, pedestrian.controller_name)
+    Person(world, usd_path, character_name, position, orientation)
 
-    return True
+    return SpawnPedestrians.Response.SUCCESS
 
 
 def spawn_pedestrians_callback(request: SpawnPedestrians.Request, response: SpawnPedestrians.Response):
-    response.ret = list(map(spawn_pedestrian, request.pedestrians))
+    response.results = [
+        spawn_pedestrian(item.pedestrian, item.model_ref)
+        for item in request.pedestrians
+    ]
     return response
 
 

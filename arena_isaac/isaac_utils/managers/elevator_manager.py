@@ -74,6 +74,10 @@ class ElevatorManager:
         robot_name = robot_prim_path.split("/")[-1]
         self._robots[robot_name] = robot_prim_path
 
+    def reset_environment(self) -> None:
+        self._elevators.clear()
+        self._pairs.clear()
+
     def get_robot_pose(self, robot_prim_path: str) -> tuple[float, float, float] | None:
         position = geom.get_world_translation(robot_prim_path)
         if position is None:

@@ -166,9 +166,10 @@ def spawn_urdf(request: SpawnUrdf.Request) -> str:
             base_topic=os.path.dirname(request.cmd_vel_topic),
         ).parse_gazebo(f.read())
 
+    articulation_path = os.path.join(prim_path, request.base_frame)
     geom.register_robot(
         robot_prim_path=prim_path,
-        articulation_prim_path=os.path.join(prim_path, request.base_frame),
+        articulation_prim_path=articulation_path,
     )
 
     # Spawn robot at (1, 1, 0)
@@ -179,10 +180,8 @@ def spawn_urdf(request: SpawnUrdf.Request) -> str:
     )
 
     DoorManager.instance().add_robot(prim_path, request.odom_topic)
-    carb.log_error(f"Prim path of robot: {str(prim_path)}")
     carb.log_info(f"Added robot: {prim_path}")
     ElevatorManager.instance().add_robot(prim_path)
-    carb.log_error(f"Check robot in ElevatorManager: {str(ElevatorManager.instance().get_robots())}")
     return prim_path
 
 

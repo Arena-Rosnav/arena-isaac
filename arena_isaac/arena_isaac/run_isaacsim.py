@@ -203,7 +203,7 @@ simulation_app.update()
 class IsaacController(rclpy.node.Node):
     def __init__(self, *args, **kwargs):
         super().__init__(node_name="isaac", *args, **kwargs)
-        self._running = False
+        self._running = True
         self._should_step_once = False
 
         self.__pause_srv = self.create_service(
@@ -309,7 +309,7 @@ def main(args=None):
                 stepped_this_iteration = True
             else:
                 if was_playing:
-                    world.pause()
+                    world.stop()
                     was_playing = False
                 simulation_app.update()
 

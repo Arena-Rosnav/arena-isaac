@@ -221,6 +221,29 @@ class Person:
         self._target_positions.extend(positions)
         self._target_speed = walk_speed
 
+    def set_world_pose(self, position, orientation):
+        """
+        Teleport the person to an absolute pose and clear any pending waypoints.
+
+        Args:
+            position: (x, y, z) world-space position.
+            orientation: (x, y, z, w) quaternion (ROS convention).
+        """
+        self.prim.GetAttribute("xformOp:translate").Set(
+            Gf.Vec3d(float(position[0]), float(position[1]), float(position[2]))
+        )
+        quat = Gf.Quatd(float(orientation[3]), float(orientation[0]), float(orientation[1]), float(orientation[2]))
+        orient_attr = self.prim.GetAttribute("xformOp:orient")
+        if type(orient_attr.Get()) == Gf.Quatf:
+            orient_attr.Set(Gf.Quatf(quat))
+        else:
+            orient_attr.Set(quat)
+
+        self._target_positions.clear()
+        self._target_speed = 0.0
+        self._state.position = np.array(position)
+        self._state.orientation = np.array(orientation)
+
     def update_state(self, dt: float):
         """
         Method that is called at every physics step to retrieve and update the current state of the person, i.e., get

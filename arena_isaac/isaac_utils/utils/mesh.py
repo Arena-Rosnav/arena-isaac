@@ -1,10 +1,13 @@
 """Create simple meshes at runtime.
 """
+import os
+
 import omni.kit.commands
 from isaacsim.core.experimental.prims import Prim
 from pxr import UsdPhysics
 
 import isaac_utils.utils.geom as geom
+from isaac_utils.utils.prim import ensure_path
 
 
 def create_mesh(
@@ -20,6 +23,7 @@ def create_mesh(
     """Create a mesh prim of the given type.
     """
 
+    ensure_path(os.path.dirname(prim_path))
     omni.kit.commands.execute(
         "CreateMeshPrimWithDefaultXform",
         prim_type=mesh_type,

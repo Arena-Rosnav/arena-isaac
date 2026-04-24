@@ -2,32 +2,28 @@ from isaac_utils.managers.door_manager import DoorManager
 from isaac_utils.utils.path import world_path
 from pedestrian.simulator.logic.people_manager import PeopleManager
 
-from isaacsim_msgs.srv import DeletePrims
+from arena_people_msgs.srv import DeletePedestrians
 
 from .utils import Service, on_exception
 
 
-@on_exception(False)
-def remove_person(stage_prefix: str) -> bool:
+@on_exception(DeletePedestrians.Response.NOT_FOUND)
+def remove_person(stage_prefix: str) -> int:
     person = PeopleManager.get_people_manager().get_person(world_path(stage_prefix))
     if person is None:
-        raise ValueError(f"Person with stage prefix {stage_prefix} does not exist.")
+        return DeletePedestrians.Response.NOT_FOUND
     person.destroy()
-    return True
+    return DeletePedestrians.Response.SUCCESS
 
 
-@on_exception(False)
-def delete_pedestrians_callback(request: DeletePrims.Request, response: DeletePrims.Response):
-    results = []
-    for path in request.names:
-        results.append(remove_person(path))
-    response.ret = results
+def delete_pedestrians_callback(request: DeletePedestrians.Request, response: DeletePedestrians.Response):
+    response.results = [remove_person(name) for name in request.names]
     DoorManager.instance().reset_peds()
     return response
 
 
 delete_pedestrians_service = Service(
-    srv_type=DeletePrims,
+    srv_type=DeletePedestrians,
     srv_name='isaac/DeletePedestrians',
     callback=delete_pedestrians_callback
 )

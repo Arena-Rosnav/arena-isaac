@@ -346,8 +346,8 @@ class SensorLidar(SensorBase):
             prim_path = created_prim_path
 
         if prim_path != requested_prim_path:
-            existing_target = Prim.resolve_paths([requested_prim_path])[0]
-            if existing_target:
+            existing_paths, _ = Prim.resolve_paths([requested_prim_path])
+            for existing_target in existing_paths:
                 omni.kit.commands.execute(
                     "IsaacSimDestroyPrim",
                     prim_path=existing_target,

@@ -233,6 +233,9 @@ class DoorManager:
         for door in self._doors.values():
             self._close_door(door)
 
+    def reset_environment(self):
+        self._doors.clear()
+
     def _update_peds_from_people_manager(self):
         from pedestrian.simulator.logic.people_manager import PeopleManager
         mgr = PeopleManager.get_people_manager()
