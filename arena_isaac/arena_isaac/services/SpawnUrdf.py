@@ -172,10 +172,9 @@ def spawn_urdf(request: SpawnUrdf.Request) -> str:
         articulation_prim_path=articulation_path,
     )
 
-    # Spawn robot at (1, 1, 0)
     geom.move(
         prim_path=prim_path,
-        translation=geom.Translation(2.0, 2.0, 0.0),
+        translation=geom.Translation.parse(request.pose.position),
         rotation=geom.Rotation.parse(request.pose.orientation),
     )
 
