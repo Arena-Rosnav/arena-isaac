@@ -1,9 +1,33 @@
 import os
 
 import arena_robots.Robot
+import omni.usd
+from pxr import UsdPhysics
 
 from .differential import differential
+from .joint_controller import joint_controller
 from .mecanum import mecanum
+
+_ARM_CONTROLLER_TYPES = frozenset({
+    'joint_trajectory_controller/JointTrajectoryController',
+    'position_controllers/JointGroupPositionController',
+    'forward_command_controller/ForwardCommandController',
+})
+
+# Position-drive defaults for arm/lift joints. URDF import leaves stiffness at
+# 0, so gravity wins and the chain sags; these values let the articulation
+# actually track a position setpoint.
+_ARM_DRIVE_STIFFNESS = 4.0e5
+_ARM_DRIVE_DAMPING = 4.0e4
+
+
+def _set_position_drive(joint_prim, stiffness: float, damping: float) -> None:
+    for axis in ('angular', 'linear'):
+        drive = UsdPhysics.DriveAPI(joint_prim, axis)
+        stiffness_attr = drive.GetStiffnessAttr()
+        if stiffness_attr.IsValid():
+            stiffness_attr.Set(stiffness)
+            drive.GetDampingAttr().Set(damping)
 
 
 class Control:
@@ -39,6 +63,10 @@ class Control:
             elif ctype == 'mecanum_drive_controller/MecanumDriveController':
                 if not self._parse_mecanum(controller_name, robot.control[controller_name]['ros__parameters']):
                     return False
+            elif ctype in _ARM_CONTROLLER_TYPES:
+                arm_config = robot.control[controller_name]['ros__parameters']
+                if not self._parse_arm(controller_name, arm_config):
+                    return False
 
         return True
 
@@ -72,6 +100,27 @@ class Control:
             ):
                 return False
         return True
+
+    def _parse_arm(
+        self,
+        controller_name: str,
+        arm_config: dict,
+    ):
+        # Single JointState command topic per controller; the Isaac graph
+        # forwards inbound joint names verbatim to the articulation, so users
+        # publish only the joints they want to drive.
+        stage = omni.usd.get_context().get_stage()
+        for joint_name in arm_config.get('joints', []):
+            joint_prim = stage.GetPrimAtPath(f"{self.prim_path}/joints/{joint_name}")
+            if joint_prim.IsValid():
+                _set_position_drive(joint_prim, _ARM_DRIVE_STIFFNESS, _ARM_DRIVE_DAMPING)
+
+        return joint_controller(
+            graph_path=os.path.join(self.prim_path, controller_name),
+            prim_path=self.target_prim_path,
+            state_topic=f"{controller_name}/joint_states",
+            command_topic=f"{controller_name}/joint_state_command",
+        )
 
     def _parse_mecanum(
         self,
