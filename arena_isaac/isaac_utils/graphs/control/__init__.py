@@ -3,6 +3,7 @@ import os
 import arena_robots.Robot
 
 from .differential import differential
+from .mecanum import mecanum
 
 
 class Control:
@@ -29,8 +30,14 @@ class Control:
         robot = arena_robots.Robot.RobotIdentifier(robot_model).resolve_sync()
 
         for controller_name, config in robot.control['controller_manager']['ros__parameters'].items():
-            if isinstance(config, dict) and config.get('type') == 'diff_drive_controller/DiffDriveController':
+            if not isinstance(config, dict):
+                continue
+            ctype = config.get('type')
+            if ctype == 'diff_drive_controller/DiffDriveController':
                 if not self._parse_differential(controller_name, robot.control[controller_name]['ros__parameters']):
+                    return False
+            elif ctype == 'mecanum_drive_controller/MecanumDriveController':
+                if not self._parse_mecanum(controller_name, robot.control[controller_name]['ros__parameters']):
                     return False
 
         return True
@@ -65,6 +72,37 @@ class Control:
             ):
                 return False
         return True
+
+    def _parse_mecanum(
+        self,
+        controller_name: str,
+        mecanum_config: dict,
+    ):
+        # The ros2_control mecanum_drive_controller exposes per-corner joints
+        # by explicit name keys; prefer those so wheel order is unambiguous.
+        joint_names = [
+            mecanum_config['front_left_wheel_command_joint_name'],
+            mecanum_config['rear_left_wheel_command_joint_name'],
+            mecanum_config['rear_right_wheel_command_joint_name'],
+            mecanum_config['front_right_wheel_command_joint_name'],
+        ]
+        wheel_radius = mecanum_config['kinematics.wheels_radius']
+        wheel_base_sum = mecanum_config['kinematics.sum_of_robot_center_projection_on_X_Y_axis']
+        max_linear_speed = mecanum_config['linear.x.max_velocity']
+        max_lateral_speed = mecanum_config['linear.y.max_velocity']
+        max_angular_speed = mecanum_config['angular.z.max_velocity']
+
+        return mecanum(
+            graph_path=os.path.join(self.prim_path, controller_name),
+            prim_path=self.target_prim_path,
+            cmd_vel_topic=self.cmd_vel_topic,
+            joint_names=joint_names,
+            wheel_radius=wheel_radius,
+            wheel_base_sum=wheel_base_sum,
+            max_linear_speed=max_linear_speed,
+            max_lateral_speed=max_lateral_speed,
+            max_angular_speed=max_angular_speed,
+        )
 
 
 __all__ = ['Control']

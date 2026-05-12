@@ -39,13 +39,24 @@ class _Node:
         return self._type
 
     def create_attribute(self, attribute: str, type_: str):
-        self._master.add_action(
-            lambda: og.Controller.create_attribute(
-                self.path,
-                attribute,
-                type_
+        if attribute.startswith('outputs:'):
+            attr_name = attribute[len('outputs:'):]
+            self._master.add_action(
+                lambda: og.Controller.create_attribute(
+                    self.path,
+                    attr_name,
+                    type_,
+                    og.AttributePortType.ATTRIBUTE_PORT_TYPE_OUTPUT,
+                )
             )
-        )
+        else:
+            self._master.add_action(
+                lambda: og.Controller.create_attribute(
+                    self.path,
+                    attribute,
+                    type_
+                )
+            )
 
     def attribute(self, input_: str, value: typing.Any):
         self._master.add_action(
