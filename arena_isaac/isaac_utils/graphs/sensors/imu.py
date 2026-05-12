@@ -76,7 +76,7 @@ class SensorIMU(SensorBase):
 
         # Set the node parameters
         ros2_publish_imu.attribute("topicName", os.path.join(base_topic, self.config.topic))  # ROS2 topic name
-        ros2_publish_imu.attribute("frameId", os.path.join(self.robot_base_frame, self.parent_frame))
+        ros2_publish_imu.attribute("frameId", f'{self.robot_base_frame}{self.parent_frame}')
         ros2_publish_imu.attribute("publishAngularVelocity", True)
         ros2_publish_imu.attribute("publishLinearAcceleration", True)
         ros2_publish_imu.attribute("publishOrientation", True)

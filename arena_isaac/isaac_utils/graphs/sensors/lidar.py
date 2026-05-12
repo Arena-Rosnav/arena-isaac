@@ -493,7 +493,7 @@ class SensorLidar(SensorBase):
 
         scan_topic = os.path.join(base_topic, self.config.topic)
         points_topic = os.path.join(base_topic, self.config.topic, 'points')
-        frame_id = os.path.join(self.robot_base_frame, self.parent_frame)
+        frame_id = f'{self.robot_base_frame}{self.parent_frame}'
 
         points_ok = self._create_lidar_publish_graph(
             prim_path=points_prim_path,

@@ -8,8 +8,9 @@ import carb
 import isaac_utils.graphs.joint_states as joint_states
 import isaac_utils.graphs.odom as odom
 import isaac_utils.graphs.sensors.sensors as sensors
-import isaac_utils.graphs.tf as tf
 import omni.kit.commands as commands
+import omni.usd
+from pxr import UsdPhysics
 from isaac_utils.graphs import control
 from isaac_utils.managers.door_manager import DoorManager
 from isaac_utils.managers.elevator_manager import ElevatorManager
@@ -24,6 +25,61 @@ from typing import Dict
 
 parent_dir = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(parent_dir))
+
+
+def _resolve_articulation_prim(prim_path: str, base_frame: str) -> str:
+    """Return the prim that joint_states / IsaacArticulationController target.
+
+    These need any prim inside the articulation (the controller walks up to
+    the root). Prefers `<prim_path>/<base_frame>`; falls back to the first
+    descendant with ArticulationRootAPI; finally to prim_path itself.
+    """
+    stage = omni.usd.get_context().get_stage()
+    if stage is None:
+        return os.path.join(prim_path, base_frame)
+
+    explicit = os.path.join(prim_path, base_frame)
+    if stage.GetPrimAtPath(explicit).IsValid():
+        return explicit
+
+    root = stage.GetPrimAtPath(prim_path)
+    if root.IsValid():
+        for prim in root.GetAllChildren():
+            if prim.HasAPI(UsdPhysics.ArticulationRootAPI):
+                return str(prim.GetPath())
+            for grandchild in prim.GetAllChildren():
+                if grandchild.HasAPI(UsdPhysics.ArticulationRootAPI):
+                    return str(grandchild.GetPath())
+
+    return prim_path
+
+
+def _resolve_body_prim(prim_path: str, base_frame: str) -> str:
+    """Return the prim whose world transform tracks the robot body.
+
+    odom.odom reads this prim's world transform to publish odom -> base.
+    Prefers `<prim_path>/<base_frame>` (e.g. base_link); falls back to the
+    first descendant with RigidBodyAPI (the first physics body, which is
+    the chassis for our robots); finally to prim_path itself.
+    """
+    stage = omni.usd.get_context().get_stage()
+    if stage is None:
+        return os.path.join(prim_path, base_frame)
+
+    explicit = os.path.join(prim_path, base_frame)
+    if stage.GetPrimAtPath(explicit).IsValid():
+        return explicit
+
+    root = stage.GetPrimAtPath(prim_path)
+    if root.IsValid():
+        for prim in root.GetAllChildren():
+            if prim.HasAPI(UsdPhysics.RigidBodyAPI):
+                return str(prim.GetPath())
+            for grandchild in prim.GetAllChildren():
+                if grandchild.HasAPI(UsdPhysics.RigidBodyAPI):
+                    return str(grandchild.GetPath())
+
+    return prim_path
 
 
 def sanitize_urdf_for_isaac(urdf_path: str) -> str:
@@ -69,13 +125,16 @@ def sanitize_urdf_for_isaac(urdf_path: str) -> str:
             if not original_abs_path:
                 continue
 
+            if original_abs_path.startswith('file://'):
+                original_abs_path = original_abs_path[len('file://'):]
+
             filename = os.path.basename(original_abs_path)
 
             if '-' in filename:
                 sanitized_filename = filename.replace('-', '_')
                 symlink_path = os.path.join(tmp_mesh_dir_path, sanitized_filename)
 
-                if not os.path.exists(symlink_path):
+                if not os.path.lexists(symlink_path):
                     os.symlink(original_abs_path, symlink_path)
 
                 tag.attrib['filename'] = symlink_path
@@ -123,28 +182,26 @@ def spawn_urdf(request: SpawnUrdf.Request) -> str:
         keep_world_transform=True
     )
 
-    # print(usd_path)
+    articulation_path = _resolve_articulation_prim(prim_path, request.base_frame)
+    body_path = _resolve_body_prim(prim_path, request.base_frame)
+
     if request.localization:
         if not odom.odom(
             os.path.join(prim_path, 'odom_publisher'),
-            prim_path=os.path.join(prim_path, request.base_frame),
-            base_frame_id=os.path.join(request.tf_prefix, request.base_frame),
-            odom_frame_id=os.path.join(request.tf_prefix, request.odom_frame),
+            prim_path=body_path,
+            base_frame_id=f'{request.tf_prefix}{request.base_frame}',
+            odom_frame_id=f'{request.tf_prefix}{request.odom_frame}',
             odom_topic=request.odom_topic,
         ):
             carb.log_error("Failed to create odom graph")
 
-    if not tf.tf(
-        os.path.join(prim_path, 'tf_publisher'),
-        prim_path=os.path.join(prim_path, request.base_frame),
-        tf_prefix=request.tf_prefix,
-    ):
-        carb.log_error("Failed to create tf graph")
+    # Joint TF (base_link -> wheel/sensor links) comes from robot_state_publisher
+    # launched on the arena_runtime side. Isaac only owns world-pose TF (odom.odom).
 
     if request.joint_states_topic:
         if not joint_states.joint_states(
             os.path.join(prim_path, 'joint_states_publisher'),
-            prim_path=os.path.join(prim_path, request.base_frame),
+            prim_path=articulation_path,
             joint_states_topic=request.joint_states_topic,
         ):
             carb.log_error("Failed to create joint_states graph")
@@ -152,8 +209,9 @@ def spawn_urdf(request: SpawnUrdf.Request) -> str:
     if request.cmd_vel_topic:
         if not control.Control(
             prim_path=prim_path,
-            target_prim_path=os.path.join(prim_path, request.base_frame),
+            target_prim_path=articulation_path,
             cmd_vel_topic=request.cmd_vel_topic,
+            urdf_path=request.urdf_path,
         ).parse(
             robot_model=robot_model,
         ):
@@ -166,7 +224,6 @@ def spawn_urdf(request: SpawnUrdf.Request) -> str:
             base_topic=os.path.dirname(request.cmd_vel_topic),
         ).parse_gazebo(f.read())
 
-    articulation_path = os.path.join(prim_path, request.base_frame)
     geom.register_robot(
         robot_prim_path=prim_path,
         articulation_prim_path=articulation_path,

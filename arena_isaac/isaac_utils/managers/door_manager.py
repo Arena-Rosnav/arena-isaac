@@ -133,7 +133,7 @@ class DoorManager:
         try:
 
             topic = odom_topic or f'/task_generator_node/{prim_path.split("/")[2]}/odom'
-            carb.log_error(f'Add robot in DoorManager {prim_path.split("/")[2]}')
+            carb.log_info(f'Add robot in DoorManager {prim_path.split("/")[2]}')
             if Odometry is not None:
                 try:
                     sub = self._controller.create_subscription(
