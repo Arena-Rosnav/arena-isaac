@@ -5,7 +5,7 @@ import omni
 from isaacsim.core.utils.rotations import euler_angles_to_quat
 
 from isaac_utils.utils.geom import Rotation, Scale, Translation
-from isaac_utils.utils.material import Material
+from isaac_utils.utils.material import Material, PhysicsParams
 from isaac_utils.utils.mesh import create_cube
 from isaac_utils.utils.path import world_path
 from isaacsim_msgs.msg import Wall
@@ -40,6 +40,17 @@ def wall_spawner(wall: Wall) -> bool:
 
     if (material := Material.from_msg(wall.material)):
         material.bind_to(prim_path)
+
+    Material.physics(
+        parent_prim_path=world_path(),
+        key='ground_default',
+        params=PhysicsParams(
+            static_friction=1.0,
+            dynamic_friction=1.0,
+            restitution=0.0,
+            combine_mode='min',
+        ),
+    ).bind_to(prim_path)
 
     return True
 

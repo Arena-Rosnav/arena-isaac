@@ -1,14 +1,80 @@
 from __future__ import annotations
 
 import functools
+import os
 import re
 from pathlib import Path
 import tempfile
 
+import attrs
+import carb
 import omni
-from isaac_utils.utils.path import world_path
+from pxr import PhysxSchema, UsdPhysics, UsdShade
+
+from isaac_utils.utils.path import sanitize_path_component, world_path
+from isaac_utils.utils.prim import ensure_path
 
 from isaacsim_msgs.msg import Material as MaterialMsg
+from isaacsim_msgs.msg import PhysicsParams as PhysicsParamsMsg
+
+
+_COMBINE_FROM_UINT: dict[int, str | None] = {
+    PhysicsParamsMsg.COMBINE_DEFAULT: None,
+    PhysicsParamsMsg.COMBINE_MIN: 'min',
+    PhysicsParamsMsg.COMBINE_MULTIPLY: 'multiply',
+    PhysicsParamsMsg.COMBINE_MAX: 'max',
+}
+
+
+@attrs.frozen
+class PhysicsParams:
+    static_friction: float
+    dynamic_friction: float
+    restitution: float = 0.0
+    combine_mode: str | None = None
+
+
+def _params_from_msg(msg: PhysicsParamsMsg) -> PhysicsParams:
+    return PhysicsParams(
+        static_friction=msg.static_friction,
+        dynamic_friction=msg.dynamic_friction,
+        restitution=msg.restitution,
+        combine_mode=_COMBINE_FROM_UINT.get(msg.combine_mode),
+    )
+
+
+def _params_intern_key(params: PhysicsParams) -> str:
+    sf = round(params.static_friction * 1000)
+    df = round(params.dynamic_friction * 1000)
+    r = round(params.restitution * 1000)
+    cm = params.combine_mode or 'def'
+    return f'msg_{sf}_{df}_{r}_{cm}'
+
+
+def _apply_physics_apis(material_prim_path: str, params: PhysicsParams) -> None:
+    """Apply UsdPhysics.MaterialAPI and PhysxSchema.PhysxMaterialAPI to the prim.
+
+    Args:
+        material_prim_path: Path of an existing UsdShade.Material prim.
+        params: Friction, restitution, combine_mode values to write.
+    """
+    stage = omni.usd.get_context().get_stage()
+    prim = stage.GetPrimAtPath(material_prim_path)
+
+    # tripwire, physics material must never carry collider/body apis
+    assert not prim.HasAPI(UsdPhysics.CollisionAPI), \
+        f'physics material {material_prim_path} unexpectedly has CollisionAPI'
+    assert not prim.HasAPI(UsdPhysics.RigidBodyAPI), \
+        f'physics material {material_prim_path} unexpectedly has RigidBodyAPI'
+
+    usd_phys = UsdPhysics.MaterialAPI.Apply(prim)
+    usd_phys.CreateStaticFrictionAttr().Set(params.static_friction)
+    usd_phys.CreateDynamicFrictionAttr().Set(params.dynamic_friction)
+    usd_phys.CreateRestitutionAttr().Set(params.restitution)
+
+    if params.combine_mode is not None:
+        physx = PhysxSchema.PhysxMaterialAPI.Apply(prim)
+        physx.CreateFrictionCombineModeAttr().Set(params.combine_mode)
 
 
 class MdlPreprocessor:
@@ -57,23 +123,66 @@ class MdlPreprocessor:
 
 class Material:
     _path: str
+    _purposes: frozenset[str]
 
     @classmethod
     def from_msg(cls, msg: MaterialMsg) -> Material | None:
+        """Create a Material from a MaterialMsg.
+
+        Visual fields (path, name) and the optional physics array are
+        independent. Both set yields a single prim at the visual MDL location
+        with physics APIs applied; only one set yields the corresponding
+        single-purpose Material. Returns None if neither block is populated.
+
+        Args:
+            msg: Material msg, possibly carrying 0 or 1 PhysicsParams entries.
+
+        Returns:
+            Material with the appropriate _purposes set, or None.
         """
-        Create a material from a MaterialMsg.
-        :param msg: The msg to create the material from.
-        :return: The created material, or None if the material could not be created.
-        """
-        return cls.load(path=Path(msg.path), name=msg.name) if msg.path and msg.name else None
+        has_visual = bool(msg.path and msg.name)
+        physics_entries = list(msg.physics)
+
+        if len(physics_entries) > 1:
+            carb.log_warn(
+                f'MaterialMsg carries {len(physics_entries)} PhysicsParams entries, '
+                'expected at most 1, using the first.'
+            )
+        has_physics = len(physics_entries) >= 1
+
+        if not has_visual and not has_physics:
+            return None
+
+        material: Material | None = None
+        if has_visual:
+            material = cls.load(path=Path(msg.path), name=msg.name)
+            if material is None:
+                return None
+
+        if has_physics:
+            params = _params_from_msg(physics_entries[0])
+            if material is not None:
+                _apply_physics_apis(material._path, params)
+                material._purposes = frozenset({'', 'physics'})
+            else:
+                material = cls.physics(
+                    parent_prim_path=world_path(),
+                    key=_params_intern_key(params),
+                    params=params,
+                )
+
+        return material
 
     @classmethod
     def load(cls, path: Path, name: str) -> Material | None:
-        """
-        Load a material from an MDL path.
-        :param path: The MDL path of the material to load.
-        :param name: The name of the material to load.
-        :return: The loaded material, or None if the material could not be loaded.
+        """Load a visual MDL material at the world-scoped Looks/Material path.
+
+        Args:
+            path: MDL file path, optionally with a `::ref` suffix.
+            name: MDL material name within the file.
+
+        Returns:
+            Material with _purposes = {""}, or None on creation failure.
         """
         material_path = world_path('Looks', 'Material', f'{name}_{str(hash(path))[8:16]}')
 
@@ -96,6 +205,44 @@ class Material:
 
         obj = cls()
         obj._path = material_path
+        obj._purposes = frozenset({''})
+        return obj
+
+    @classmethod
+    def physics(cls, parent_prim_path: str, key: str, params: PhysicsParams) -> Material:
+        """Create or fetch an interned physics-only Material under a parent prim.
+
+        The material prim lives at `<parent_prim_path>/Looks/Physics/<sanitized key>`,
+        making its lifecycle follow the parent (CLAUDE.md WORLD vs INUSE layer).
+        Idempotent: a second call with the same parent and key returns the
+        existing prim without overwriting its attributes.
+
+        Args:
+            parent_prim_path: USD prim path whose lifecycle the material follows.
+            key: Intern key, sanitized to a valid USD identifier.
+            params: Friction, restitution, combine_mode to write on creation.
+
+        Returns:
+            Material with _purposes = {"physics"}.
+        """
+        material_path = os.path.join(
+            parent_prim_path,
+            'Looks',
+            'Physics',
+            sanitize_path_component(key),
+        )
+
+        stage = omni.usd.get_context().get_stage()
+        existing = stage.GetPrimAtPath(material_path)
+
+        if not (existing and existing.IsValid()):
+            ensure_path(os.path.dirname(material_path))
+            UsdShade.Material.Define(stage, material_path)
+            _apply_physics_apis(material_path, params)
+
+        obj = cls()
+        obj._path = material_path
+        obj._purposes = frozenset({'physics'})
         return obj
 
     @property
@@ -103,13 +250,22 @@ class Material:
         return self._path
 
     def bind_to(self, prim_path: str) -> bool:
+        """Bind this material to a prim across every purpose it carries.
+
+        Args:
+            prim_path: USD prim path to bind to.
+
+        Returns:
+            True if every purpose bound successfully, False otherwise.
         """
-        Bind this material to a prim.
-        :param prim_path: The path of the prim to bind the material to.
-        :return: True if the material was successfully bound, False otherwise.
-        """
-        return omni.kit.commands.execute(
-            'BindMaterialCommand',
-            prim_path=prim_path,
-            material_path=self._path
-        )
+        ok = True
+        for purpose in sorted(self._purposes):
+            kwargs: dict[str, str] = {
+                'prim_path': prim_path,
+                'material_path': self._path,
+            }
+            if purpose:
+                kwargs['material_purpose'] = purpose
+            result = omni.kit.commands.execute('BindMaterialCommand', **kwargs)
+            ok = ok and bool(result)
+        return ok

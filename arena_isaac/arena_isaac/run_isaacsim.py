@@ -118,6 +118,8 @@ import std_srvs.srv
 from isaac_utils.graphs.time import PublishTime
 from isaac_utils.managers.door_manager import DoorManager
 from isaac_utils.managers.elevator_manager import elevator_manager
+from isaac_utils.utils.material import Material, PhysicsParams
+from isaac_utils.utils.path import world_path
 
 #Import services
 from arena_isaac.services import services
@@ -137,6 +139,16 @@ plane_material_paths = [
 ]
 world = World()
 world.scene.add_ground_plane(size=100, z_position=0.0)
+Material.physics(
+    parent_prim_path=world_path(),
+    key='ground_default',
+    params=PhysicsParams(
+        static_friction=1.0,
+        dynamic_friction=1.0,
+        restitution=0.0,
+        combine_mode='min',
+    ),
+).bind_to('/World/groundPlane/collisionPlane')
 _stage = omni.usd.get_context().get_stage()
 plane_mdl_path = random.choice(plane_material_paths)
 plane_mtl_name = plane_mdl_path.split('/')[-1][:-4]

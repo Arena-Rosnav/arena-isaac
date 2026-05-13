@@ -1,8 +1,9 @@
-import xml.etree.ElementTree as ET
-import tempfile
 import os
 import sys
+import tempfile
+import xml.etree.ElementTree as ET
 from pathlib import Path
+from typing import Dict
 
 import carb
 import isaac_utils.graphs.joint_states as joint_states
@@ -10,18 +11,18 @@ import isaac_utils.graphs.odom as odom
 import isaac_utils.graphs.sensors.sensors as sensors
 import omni.kit.commands as commands
 import omni.usd
-from pxr import UsdPhysics
 from isaac_utils.graphs import control
 from isaac_utils.managers.door_manager import DoorManager
 from isaac_utils.managers.elevator_manager import ElevatorManager
 from isaac_utils.utils import geom
+from isaac_utils.utils.material import Material, PhysicsParams
 from isaac_utils.utils.path import world_path
 from isaac_utils.utils.prim import ensure_path
+from pxr import UsdPhysics
 
 from isaacsim_msgs.srv import SpawnUrdf
 
 from .utils import Service, on_exception
-from typing import Dict
 
 parent_dir = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(parent_dir))
@@ -139,10 +140,116 @@ def sanitize_urdf_for_isaac(urdf_path: str) -> str:
 
                 tag.attrib['filename'] = symlink_path
 
+    for link in root.iter('link'):
+        link_name = link.attrib.get('name', '')
+        inertial = link.find('inertial')
+        if inertial is None:
+            continue
+
+        mass_el = inertial.find('mass')
+        inertia_el = inertial.find('inertia')
+        if mass_el is None or inertia_el is None:
+            continue
+
+        try:
+            mass = float(mass_el.attrib.get('value', '0'))
+        except ValueError:
+            continue
+
+        try:
+            ixx = float(inertia_el.attrib.get('ixx', '0'))
+            ixy = float(inertia_el.attrib.get('ixy', '0'))
+            ixz = float(inertia_el.attrib.get('ixz', '0'))
+            iyy = float(inertia_el.attrib.get('iyy', '0'))
+            iyz = float(inertia_el.attrib.get('iyz', '0'))
+            izz = float(inertia_el.attrib.get('izz', '0'))
+        except ValueError:
+            continue
+
+        det = (
+            ixx * (iyy * izz - iyz * iyz)
+            - ixy * (ixy * izz - iyz * ixz)
+            + ixz * (ixy * iyz - iyy * ixz)
+        )
+
+        degenerate = (
+            mass < 1e-6
+            or ixx < 1e-6
+            or iyy < 1e-6
+            or izz < 1e-6
+            or det < 1e-12
+        )
+
+        if degenerate:
+            link.remove(inertial)
+
     tmp_urdf = tempfile.NamedTemporaryFile(delete=False, suffix="_sanitized.urdf", mode='w')
     tree.write(tmp_urdf.name, encoding='unicode', xml_declaration=True)
 
     return tmp_urdf.name
+
+
+def _extract_gazebo_physics(urdf_path: str) -> dict[str, PhysicsParams]:
+    """Parse <gazebo reference="X"> mu1/mu2 blocks into PhysicsParams per link."""
+    tree = ET.parse(urdf_path)
+    root = tree.getroot()
+
+    mu1_per_link: dict[str, float] = {}
+    mu2_per_link: dict[str, float] = {}
+
+    for gazebo in root.iter('gazebo'):
+        ref = gazebo.attrib.get('reference')
+        if not ref:
+            continue
+
+        for child in gazebo:
+            if child.tag not in ('mu1', 'mu2'):
+                continue
+            raw = child.attrib.get('value')
+            if raw is None:
+                raw = child.text
+            if raw is None:
+                continue
+            raw = raw.strip()
+            try:
+                val = float(raw)
+            except ValueError:
+                continue
+            if child.tag == 'mu1':
+                mu1_per_link[ref] = val
+            else:
+                mu2_per_link[ref] = val
+
+    all_links = set(mu1_per_link) | set(mu2_per_link)
+    warned_asymmetric = False
+    result: dict[str, PhysicsParams] = {}
+
+    for link_name in all_links:
+        mu1 = mu1_per_link.get(link_name)
+        mu2 = mu2_per_link.get(link_name)
+
+        if mu1 is None and mu2 is None:
+            continue
+
+        mu = ((mu1 or 0.0) + (mu2 or 0.0)) / (
+            (1 if mu1 is not None else 0) + (1 if mu2 is not None else 0)
+        )
+
+        if not warned_asymmetric and mu1 is not None and mu2 is not None and mu1 != mu2:
+            carb.log_warn(
+                f'{urdf_path}: anisotropic friction (mu1 != mu2) is not supported '
+                'in USD-PhysX, collapsing to the mean'
+            )
+            warned_asymmetric = True
+
+        result[link_name] = PhysicsParams(
+            static_friction=mu,
+            dynamic_friction=mu,
+            restitution=0.0,
+            combine_mode=None,
+        )
+
+    return result
 
 
 @on_exception('')
@@ -158,7 +265,7 @@ def spawn_urdf(request: SpawnUrdf.Request) -> str:
     status, import_config = commands.execute("URDFCreateImportConfig")
     import_config.set_merge_fixed_joints(False)
     import_config.set_convex_decomp(False)
-    import_config.set_import_inertia_tensor(False)
+    import_config.set_import_inertia_tensor(True)
     import_config.set_make_default_prim(False)
     import_config.set_distance_scale(1.0)
     import_config.set_fix_base(False)
@@ -181,6 +288,17 @@ def spawn_urdf(request: SpawnUrdf.Request) -> str:
         path_to=prim_path,
         keep_world_transform=True
     )
+
+    friction_params = _extract_gazebo_physics(urdf_path)
+    stage = omni.usd.get_context().get_stage()
+    for link_name, params in friction_params.items():
+        collider_root = f'/colliders/{link_name}'
+        if not stage.GetPrimAtPath(collider_root).IsValid():
+            continue
+        key = f'wheel_{round(params.static_friction * 1000):d}_{round(params.dynamic_friction * 1000):d}_{round(params.restitution * 1000):d}_{params.combine_mode or "def"}'
+        material = Material.physics(parent_prim_path=world_path(), key=key, params=params)
+        if not material.bind_to(collider_root):
+            carb.log_error(f'failed to bind physx material at {collider_root}')
 
     articulation_path = _resolve_articulation_prim(prim_path, request.base_frame)
     body_path = _resolve_body_prim(prim_path, request.base_frame)
