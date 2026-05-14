@@ -16,6 +16,11 @@ def generate_launch_description():
         description='Logging level',
     )
 
+    headless = LaunchArgument(
+        name='headless',
+        default_value='False',
+    )
+
     run_isaacsim_path = ExecutableInPackage(
         executable='run_isaacsim',
         package='arena_isaac',
@@ -32,7 +37,8 @@ def generate_launch_description():
             cmd=[
                 PathJoinSubstitution([EnvironmentVariable('ISAAC_PATH'), 'python.sh']),
                 run_isaacsim_path,
-                '--log-level', logger.substitution
+                '--log-level', logger.substitution,
+                '--headless', headless.substitution,
             ],
             output='screen',
         ),

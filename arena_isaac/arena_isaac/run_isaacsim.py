@@ -3,19 +3,29 @@
 
 # preload attrs
 import os
+import sys
 import arena_simulation_setup
 import arena_simulation_setup.utils.cattrs
 
 # Use the isaacsim to import SimulationApp
 from isaacsim import SimulationApp
 
-# Setting the config for simulation and make an simulation.
+def _arg_bool(name: str, default: bool) -> bool:
+    if name in sys.argv:
+        i = sys.argv.index(name)
+        if i + 1 < len(sys.argv):
+            return sys.argv[i + 1].lower() in ("true", "1")
+    prefix = f"{name.lstrip('-')}:="
+    for arg in sys.argv:
+        if arg.startswith(prefix):
+            return arg[len(prefix):].lower() in ("true", "1")
+    return default
+
 CONFIG = {
     "renderer": "Wireframe",
-    "headless": False,
+    "headless": _arg_bool("--headless", False),
 }
 #import parent directory
-import sys
 from pathlib import Path
 
 simulation_app = SimulationApp(CONFIG)
@@ -44,27 +54,31 @@ from isaacsim.core.utils import extensions, prims, stage
 from pxr import Sdf
 
 EXTENSIONS_PEOPLE = [
-    'omni.anim.people', 
-    'omni.anim.navigation.bundle', 
+    'omni.anim.people',
+    'omni.anim.navigation.bundle',
     'omni.anim.timeline',
-    'omni.anim.graph.bundle', 
-    'omni.anim.graph.core', 
-    'omni.anim.graph.ui',
-    'omni.anim.retarget.bundle', 
+    'omni.anim.graph.bundle',
+    'omni.anim.graph.core',
+    'omni.anim.retarget.bundle',
     'omni.anim.retarget.core',
-    'omni.anim.retarget.ui', 
     'omni.kit.scripting',
     'omni.graph.nodes',
     'omni.anim.curve.core',
-    'omni.anim.navigation.core'
+    'omni.anim.navigation.core',
 ]
 
 EXTENSIONS_MATERIAL = [
     'omni.kit.material.library',
-    'omni.kit.browser.material',
-    'omni.kit.browser.asset',
-    'omni.kit.window.material'
 ]
+
+if not CONFIG["headless"]:
+    EXTENSIONS_PEOPLE += ['omni.anim.graph.ui', 'omni.anim.retarget.ui']
+    EXTENSIONS_MATERIAL += [
+        'omni.kit.browser.material',
+        'omni.kit.browser.asset',
+        'omni.kit.window.material',
+    ]
+
 for ext_people in EXTENSIONS_PEOPLE:
     extensions.enable_extension(ext_people)
 
@@ -82,8 +96,11 @@ def enable_extensions_from_kit(kit_path):
             print(f"Enabling: {ext_name}")
             enable_extension(ext_name)
 
-# --- In your main code ---
-KIT_FILE_PATH = "/isaac-sim/apps/isaacsim.exp.full.kit"
+KIT_FILE_PATH = (
+    "/isaac-sim/apps/isaacsim.exp.base.kit"
+    if CONFIG["headless"]
+    else "/isaac-sim/apps/isaacsim.exp.full.kit"
+)
 enable_extensions_from_kit(KIT_FILE_PATH)
 
 # Update the simulation app with the new extensions
@@ -284,7 +301,7 @@ def main(args=None):
     sim = SimulationContext()
 
     IsaacController.wait_for_bridge()
-    rclpy.init()
+    rclpy.init(args=[])
     controller = IsaacController()
 
     door_manager = DoorManager.instance(controller)
