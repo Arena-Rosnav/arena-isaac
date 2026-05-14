@@ -7,11 +7,10 @@ from collections.abc import Sequence
 import attrs
 import carb
 import omni
-import omni.graph.core as og
 import omni.kit.commands
+import omni.replicator.core as rep
 from isaacsim.core.experimental.prims import Prim
 
-from isaac_utils.graphs import Graph
 from isaac_utils.utils.geom import Rotation, Translation
 from isaac_utils.utils.prim import ensure_path
 
@@ -202,6 +201,10 @@ class SensorLidar(SensorBase):
 
         self.prim_path_points: str | None = None
         self.prim_path_scan: str | None = None
+
+        # Render products and writers we own, for symmetric teardown.
+        self._render_products: list = []
+        self._writers: list = []
 
     def _set_prim_attribute(self, prim, prim_path: str, key: str, value: object) -> bool:
         candidate_keys = [key]
@@ -435,56 +438,61 @@ class SensorLidar(SensorBase):
         self.prim_path_points = created_points
         self.prim_path_scan = created_scan
 
-    def _create_lidar_publish_graph(
+    def _create_lidar_publisher(
         self,
         *,
         prim_path: str,
         topic_name: str,
         frame_id: str,
         publish_type: typing.Literal['point_cloud', 'laser_scan'],
-        graph_name: str,
     ) -> bool:
-        graph = Graph(os.path.join(prim_path, graph_name))
+        # Render product + writer owned in Python so teardown can call writer.detach + rp.destroy.
+        try:
+            render_product = rep.create.render_product(prim_path, [1, 1])
+        except Exception as error:
+            carb.log_warn(f"Lidar render_product create failed for '{prim_path}': {error}")
+            return False
 
-        on_playback_tick = graph.node("on_playback_tick", "omni.graph.action.OnPlaybackTick")
-        run_one_frame = graph.node("run_one_frame", "isaacsim.core.nodes.OgnIsaacRunOneSimulationFrame")
-        get_lidar_prim = graph.node("get_lidar_prim", "omni.replicator.core.OgnGetPrimAtPath")
-        render_product = graph.node("render_product", "isaacsim.core.nodes.IsaacCreateRenderProduct")
-        lidar_publisher = graph.node("lidar_publisher", "isaacsim.ros2.bridge.ROS2RtxLidarHelper")
+        writer_name = (
+            "RtxLidarROS2PublishPointCloud"
+            if publish_type == 'point_cloud'
+            else "RtxLidarROS2PublishLaserScan"
+        )
+        try:
+            writer = rep.writers.get(writer_name)
+            writer.initialize(topicName=topic_name, frameId=frame_id, queueSize=1)
+            writer.attach([render_product])
+        except Exception as error:
+            carb.log_warn(f"Lidar writer {writer_name} attach failed for '{prim_path}': {error}")
+            try:
+                render_product.destroy()
+            except Exception:
+                pass
+            return False
 
-        get_lidar_prim.attribute("paths", [prim_path])
-
-        render_product.attribute("width", 1)
-        render_product.attribute("height", 1)
-
-        lidar_publisher.attribute("topicName", topic_name)
-        lidar_publisher.attribute("frameId", frame_id)
-        lidar_publisher.attribute("type", publish_type)
-        lidar_publisher.attribute("fullScan", publish_type == 'point_cloud')
-        lidar_publisher.attribute("frameSkipCount", 0)
-        lidar_publisher.attribute("queueSize", 1)
-
-        on_playback_tick.connect("tick", run_one_frame, "execIn")
-        run_one_frame.connect("step", get_lidar_prim, "execIn")
-
-        get_lidar_prim.connect("execOut", render_product, "execIn")
-        get_lidar_prim.connect("prims", render_product, "cameraPrim")
-
-        render_product.connect("execOut", lidar_publisher, "execIn")
-        render_product.connect("renderProductPath", lidar_publisher, "renderProductPath")
-
-        graph.load_extensions()
-        return bool(graph.execute(og.Controller()))
+        self._render_products.append(render_product)
+        self._writers.append(writer)
+        return True
 
     def paths(self) -> Sequence[str]:
         if self.prim_path_points is None or self.prim_path_scan is None:
             return ()
-        return (
-            self.prim_path_points,
-            self.prim_path_scan,
-            os.path.join(self.prim_path_points, 'LidarPointsPublisher'),
-            os.path.join(self.prim_path_scan, 'LidarScanPublisher'),
-        )
+        return (self.prim_path_points, self.prim_path_scan)
+
+    def destroy(self) -> None:
+        # Canonical NVIDIA inverse: detach writers, then destroy render products. Prims handled by caller.
+        for writer in self._writers:
+            try:
+                writer.detach()
+            except Exception as error:
+                carb.log_warn(f"SensorLidar writer.detach raised: {error}")
+        for render_product in self._render_products:
+            try:
+                render_product.destroy()
+            except Exception as error:
+                carb.log_warn(f"SensorLidar render_product.destroy raised: {error}")
+        self._writers.clear()
+        self._render_products.clear()
 
     def publish(self, base_topic: str):
         """
@@ -506,19 +514,17 @@ class SensorLidar(SensorBase):
         points_topic = os.path.join(base_topic, self.config.topic, 'points')
         frame_id = f'{self.robot_base_frame}{self.parent_frame}'
 
-        points_ok = self._create_lidar_publish_graph(
+        points_ok = self._create_lidar_publisher(
             prim_path=points_prim_path,
             topic_name=points_topic,
             frame_id=frame_id,
             publish_type='point_cloud',
-            graph_name='LidarPointsPublisher',
         )
-        scan_ok = self._create_lidar_publish_graph(
+        scan_ok = self._create_lidar_publisher(
             prim_path=scan_prim_path,
             topic_name=scan_topic,
             frame_id=frame_id,
             publish_type='laser_scan',
-            graph_name='LidarScanPublisher',
         )
 
         return points_ok and scan_ok
