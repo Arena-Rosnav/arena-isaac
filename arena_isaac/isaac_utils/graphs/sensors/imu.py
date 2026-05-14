@@ -1,5 +1,6 @@
 import os
 import xml.etree.ElementTree as ET
+from collections.abc import Sequence
 
 import attrs
 import omni.graph.core as og
@@ -52,6 +53,11 @@ class SensorIMU(SensorBase):
         if imu_sensor:
             imu_sensor.initialize()
             self.prim_path = imu_sensor.prim_path
+
+    def paths(self) -> Sequence[str]:
+        if not self.prim_path:
+            return ()
+        return (self.prim_path, os.path.join(self.prim_path, 'IMUPublisher'))
 
     def publish(self, base_topic: str):
         if not self.prim_path:

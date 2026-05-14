@@ -1,6 +1,6 @@
 import os
 import xml.etree.ElementTree as ET
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 
 import attrs
 import omni
@@ -90,6 +90,11 @@ class SensorCamera(SensorBase):
             camera.initialize()
             self.prim_path = camera.prim_path
             self.camera = camera
+
+    def paths(self) -> Sequence[str]:
+        if self.prim_path is None:
+            return ()
+        return (self.prim_path,)
 
     def publish(self, base_topic: str):
         if self.prim_path is None or self.camera is None:

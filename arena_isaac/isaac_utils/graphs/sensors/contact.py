@@ -1,5 +1,6 @@
 import os
 import xml.etree.ElementTree as ET
+from collections.abc import Sequence
 
 import attrs
 import omni.graph.core as og
@@ -50,6 +51,11 @@ class SensorContact(SensorBase):
         if contact_sensor:
             contact_sensor.initialize()
             self.prim_path = contact_sensor.prim_path
+
+    def paths(self) -> Sequence[str]:
+        if self.prim_path is None:
+            return ()
+        return (self.prim_path, os.path.join(self.prim_path, 'ContactPublisher'))
 
     def publish(self, base_topic: str):
         if self.prim_path is None:

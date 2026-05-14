@@ -1,3 +1,4 @@
+from isaac_utils.managers import entity_lifecycle
 from isaac_utils.managers.elevator_manager import elevator_manager
 import os
 
@@ -36,7 +37,8 @@ def spawn_elevator(elevator: Elevator) -> bool:
             print(f"[Elevator] Failed to bind material '{elevator.material}' to '{prim_path}': {e}")
 
     # Register elevator with elevator_manager
-    elevator_manager.add_elevator(elevator, getattr(elevator, 'destination', None))
+    elevator_manager.add_elevator(elevator, elevator.destination)
+    entity_lifecycle.register_elevator(elevator.name, prim_path)
     return True
 
 

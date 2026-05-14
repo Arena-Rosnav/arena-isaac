@@ -151,13 +151,25 @@ class DoorManager:
         except Exception as e:
             carb.log_verbose(f'_ensure_robot_subscription error: {e}')
 
-    def _odom_cb(self, msg: Odometry, prim_path: str): 
+    def _odom_cb(self, msg: Odometry, prim_path: str):
         try:
             pos = msg.pose.pose.position
             self._robot_poses[prim_path] = np.array([pos.x, pos.y, pos.z])
             carb.log_verbose(f'odom update for {prim_path}: {self._robot_poses[prim_path]}')
         except Exception as e:
             carb.log_verbose(f'odom_cb error: {e}')
+
+    def remove_robot(self, prim_path: str) -> None:
+        sub = self._robot_subs.pop(prim_path, None)
+        if sub is not None:
+            try:
+                self._controller.destroy_subscription(sub)
+            except Exception as e:
+                carb.log_warn(f'DoorManager.remove_robot: destroy_subscription failed for {prim_path}: {e}')
+        self._robot_poses.pop(prim_path, None)
+
+    def remove_door(self, prim_path: str) -> None:
+        self._doors.pop(prim_path, None)
 
     def _people_cb(self, msg: ArenaPedestrians):
         """Handle incoming pedestrian poses from ROS topic.

@@ -5,6 +5,7 @@ import carb
 import numpy as np
 import omni
 
+from isaac_utils.managers import entity_lifecycle
 from isaac_utils.managers.door_manager import DoorManager
 from isaac_utils.utils.geom import Rotation, Scale, Translation
 from isaac_utils.utils.material import Material
@@ -85,6 +86,7 @@ def spawn_door(door: Door) -> bool:
     try:
         carb.log_info(f"DEBUG SpawnDoor: registering door prim with DoorManager: {door_prim_path}")
         DoorManager.instance().register_door(door_prim_path, kind, start, end)
+        entity_lifecycle.register_door(door_prim_path)
     except Exception as e:
         import traceback
         carb.log_error(f"SpawnDoor: failed to register door: {e}\n{traceback.format_exc()}")

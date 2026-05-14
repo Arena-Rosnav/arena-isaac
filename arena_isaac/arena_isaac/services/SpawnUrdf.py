@@ -12,6 +12,7 @@ import isaac_utils.graphs.sensors.sensors as sensors
 import omni.kit.commands as commands
 import omni.usd
 from isaac_utils.graphs import control
+from isaac_utils.managers import entity_lifecycle
 from isaac_utils.managers.door_manager import DoorManager
 from isaac_utils.managers.elevator_manager import ElevatorManager
 from isaac_utils.utils import geom
@@ -289,8 +290,9 @@ def spawn_urdf(request: SpawnUrdf.Request) -> str:
         keep_world_transform=True
     )
 
-    friction_params = _extract_gazebo_physics(urdf_path)
     stage = omni.usd.get_context().get_stage()
+
+    friction_params = _extract_gazebo_physics(urdf_path)
     for link_name, params in friction_params.items():
         collider_root = f'/colliders/{link_name}'
         if not stage.GetPrimAtPath(collider_root).IsValid():
@@ -303,26 +305,34 @@ def spawn_urdf(request: SpawnUrdf.Request) -> str:
     articulation_path = _resolve_articulation_prim(prim_path, request.base_frame)
     body_path = _resolve_body_prim(prim_path, request.base_frame)
 
+    manifest = entity_lifecycle.register_robot(prim_path, articulation_path)
+
     if request.localization:
+        odom_graph_path = os.path.join(prim_path, 'odom_publisher')
         if not odom.odom(
-            os.path.join(prim_path, 'odom_publisher'),
+            odom_graph_path,
             prim_path=body_path,
             base_frame_id=f'{request.tf_prefix}{request.base_frame}',
             odom_frame_id=f'{request.tf_prefix}{request.odom_frame}',
             odom_topic=request.odom_topic,
         ):
             carb.log_error("Failed to create odom graph")
+        else:
+            manifest.graph_paths.append(odom_graph_path)
 
     # Joint TF (base_link -> wheel/sensor links) comes from robot_state_publisher
     # launched on the arena_runtime side. Isaac only owns world-pose TF (odom.odom).
 
     if request.joint_states_topic:
+        joint_states_graph_path = os.path.join(prim_path, 'joint_states_publisher')
         if not joint_states.joint_states(
-            os.path.join(prim_path, 'joint_states_publisher'),
+            joint_states_graph_path,
             prim_path=articulation_path,
             joint_states_topic=request.joint_states_topic,
         ):
             carb.log_error("Failed to create joint_states graph")
+        else:
+            manifest.graph_paths.append(joint_states_graph_path)
 
     if request.cmd_vel_topic:
         if not control.Control(
@@ -334,13 +344,17 @@ def spawn_urdf(request: SpawnUrdf.Request) -> str:
             robot_model=robot_model,
         ):
             carb.log_error("Failed to create control graph")
+        else:
+            manifest.graph_paths.append(os.path.join(prim_path, 'topic_bridge'))
 
     with open(request.urdf_path, 'r') as f:
-        sensors.Sensors(
-            prim_path=prim_path,
-            base_frame=request.tf_prefix,
-            base_topic=os.path.dirname(request.cmd_vel_topic),
-        ).parse_gazebo(f.read())
+        manifest.sensors.extend(
+            sensors.Sensors(
+                prim_path=prim_path,
+                base_frame=request.tf_prefix,
+                base_topic=os.path.dirname(request.cmd_vel_topic),
+            ).parse_gazebo(f.read())
+        )
 
     geom.register_robot(
         robot_prim_path=prim_path,

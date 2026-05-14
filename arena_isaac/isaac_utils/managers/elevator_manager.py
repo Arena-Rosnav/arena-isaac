@@ -74,6 +74,18 @@ class ElevatorManager:
         robot_name = robot_prim_path.split("/")[-1]
         self._robots[robot_name] = robot_prim_path
 
+    def remove_robot(self, prim_path: str) -> None:
+        # TODO key _robots by prim_path so recycled envs with same robot name don't collide.
+        robot_prim_path = prim_path.rstrip('/')
+        robot_name = robot_prim_path.split("/")[-1]
+        self._robots.pop(robot_name, None)
+        for pair in self._pairs:
+            pair.cooldown.pop(robot_prim_path, None)
+
+    def remove_elevator(self, name: str) -> None:
+        self._elevators.pop(name, None)
+        self._pairs = [pair for pair in self._pairs if pair.a.name != name and pair.b.name != name]
+
     def reset_environment(self) -> None:
         self._elevators.clear()
         self._pairs.clear()

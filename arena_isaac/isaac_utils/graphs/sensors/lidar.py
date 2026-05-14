@@ -2,6 +2,7 @@ import math
 import os
 import typing
 import xml.etree.ElementTree as ET
+from collections.abc import Sequence
 
 import attrs
 import carb
@@ -349,8 +350,8 @@ class SensorLidar(SensorBase):
             existing_paths, _ = Prim.resolve_paths([requested_prim_path])
             for existing_target in existing_paths:
                 omni.kit.commands.execute(
-                    "IsaacSimDestroyPrim",
-                    prim_path=existing_target,
+                    "DeletePrims",
+                    paths=[existing_target],
                 )
             try:
                 omni.kit.commands.execute(
@@ -474,6 +475,16 @@ class SensorLidar(SensorBase):
 
         graph.load_extensions()
         return bool(graph.execute(og.Controller()))
+
+    def paths(self) -> Sequence[str]:
+        if self.prim_path_points is None or self.prim_path_scan is None:
+            return ()
+        return (
+            self.prim_path_points,
+            self.prim_path_scan,
+            os.path.join(self.prim_path_points, 'LidarPointsPublisher'),
+            os.path.join(self.prim_path_scan, 'LidarScanPublisher'),
+        )
 
     def publish(self, base_topic: str):
         """
