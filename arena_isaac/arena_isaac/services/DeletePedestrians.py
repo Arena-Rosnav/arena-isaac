@@ -1,4 +1,3 @@
-from isaac_utils.managers.door_manager import DoorManager
 from isaac_utils.utils.path import world_path
 from pedestrian.simulator.logic.people_manager import PeopleManager
 
@@ -18,7 +17,6 @@ def remove_person(stage_prefix: str) -> int:
 
 def delete_pedestrians_callback(request: DeletePedestrians.Request, response: DeletePedestrians.Response):
     response.results = [remove_person(name) for name in request.names]
-    DoorManager.instance().reset_peds()
     return response
 
 

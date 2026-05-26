@@ -13,8 +13,6 @@ import omni.kit.commands as commands
 import omni.usd
 from isaac_utils.graphs import control
 from isaac_utils.managers import entity_lifecycle
-from isaac_utils.managers.door_manager import DoorManager
-from isaac_utils.managers.elevator_manager import ElevatorManager
 from isaac_utils.utils import geom
 from isaac_utils.utils.material import Material, PhysicsParams
 from isaac_utils.utils.path import world_path
@@ -367,9 +365,7 @@ def spawn_urdf(request: SpawnUrdf.Request) -> str:
         rotation=geom.Rotation.parse(request.pose.orientation),
     )
 
-    DoorManager.instance().add_robot(prim_path, request.odom_topic)
     carb.log_info(f"Added robot: {prim_path}")
-    ElevatorManager.instance().add_robot(prim_path)
     return prim_path
 
 

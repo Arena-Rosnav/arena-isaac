@@ -133,8 +133,6 @@ import std_srvs.srv
 
 # graphs
 from isaac_utils.graphs.time import PublishTime
-from isaac_utils.managers.door_manager import DoorManager
-from isaac_utils.managers.elevator_manager import elevator_manager
 from isaac_utils.utils.material import Material, PhysicsParams
 from isaac_utils.utils.path import world_path
 
@@ -304,8 +302,6 @@ def main(args=None):
     rclpy.init(args=[])
     controller = IsaacController()
 
-    door_manager = DoorManager.instance(controller)
-    elevator_manager.register_node(controller)  # Register controller for odom subscriptions
     for service in services:
         service.create(controller, qos_profile=QoSProfile(depth=2000))
 
@@ -332,8 +328,6 @@ def main(args=None):
                 if not was_playing:
                     world.play()
                     was_playing = True
-                door_manager.update()
-                elevator_manager.update()
                 world.step(render=True)
                 stepped_this_iteration = True
             else:
