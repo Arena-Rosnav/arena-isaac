@@ -188,16 +188,21 @@ class Person:
             self._controller.update(dt)
 
         THRESHOLD_DISTANCE = 0.3  # m
+        CATCHUP_WINDOW = 0.15
+        MAX_WALK = 2.5
         while self._target_positions and np.linalg.norm(self._target_position - self._state.position) < THRESHOLD_DISTANCE:
             # set next target
             self._target_positions.popleft()
 
         if self._target_positions:
             # targets not empty
-            extended_target = self._target_position + ((self._target_position - self._state.position) / np.linalg.norm(self._target_position - self._state.position)) * THRESHOLD_DISTANCE
+            offset = self._target_position - self._state.position
+            dist = np.linalg.norm(offset)
+            extended_target = self._target_position + (offset / dist) * THRESHOLD_DISTANCE
             self.character_graph.set_variable("PathPoints", [carb.Float3(self._state.position), carb.Float3(extended_target)])
             self.character_graph.set_variable("Action", "Walk")
-            self.character_graph.set_variable("Walk", self._target_speed)
+            walk = min(self._target_speed + max(0.0, dist - THRESHOLD_DISTANCE) / CATCHUP_WINDOW, MAX_WALK)
+            self.character_graph.set_variable("Walk", walk)
 
         else:
             # at target position, stop moving
