@@ -73,3 +73,26 @@ def create_cube(
         collide=collide,
         **kwargs,
     )
+
+
+def create_plane(
+    prim_path: str,
+    *,
+    position: geom.Translation | None = None,
+    rotation: geom.Rotation | None = None,
+    scale: geom.Scale | None = None,
+    collide: bool = True,
+    **kwargs,
+):
+    """Create a plane mesh prim.
+    """
+
+    return create_mesh(
+        prim_path,
+        "Plane",
+        position=position,
+        rotation=rotation,
+        scale=scale,
+        collide=collide,
+        **kwargs,
+    )
