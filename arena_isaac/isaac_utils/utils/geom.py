@@ -7,11 +7,12 @@ import attrs
 import carb
 import geometry_msgs.msg
 import numpy as np
-from isaacsim.core.experimental.prims import Prim, RigidPrim, XformPrim, Articulation
+from isaacsim.core.experimental.prims import RigidPrim, XformPrim, Articulation
 from isaacsim.core.utils.rotations import euler_angles_to_quat, quat_to_euler_angles
 from pxr import Gf, Usd, UsdGeom, UsdPhysics
 
 import isaacsim_msgs.msg
+from isaac_utils.utils.prim import resolve_paths, resolve_prim
 
 
 _robot_articulation_registry: dict[str, str] = {}
@@ -244,9 +245,8 @@ def move(
     local: bool = False,
 ):
     prim_path = _resolve_robot(prim_path)
-    prim = Prim([prim_path])
-
-    if not prim.valid:
+    prim = resolve_prim(prim_path)
+    if prim is None:
         return
 
     target = None
@@ -279,9 +279,8 @@ def move(
 
 def get_world_translation(prim_path: str) -> Translation | None:
     prim_path = _resolve_robot(prim_path)
-    prim = Prim([prim_path])
-
-    if not prim.valid or not prim.prims:
+    prim = resolve_prim(prim_path)
+    if prim is None:
         return None
 
     try:
@@ -296,9 +295,7 @@ def rescale(
     prim_path: str,
     scale: Scale,
 ):
-    prim = Prim([prim_path])
-
-    if not prim.valid:
+    if not resolve_paths(prim_path):
         return
 
     xform_prim = XformPrim(prim_path)

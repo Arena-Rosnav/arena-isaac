@@ -7,7 +7,7 @@ from isaacsim.core.experimental.prims import Prim
 from pxr import UsdPhysics
 
 import isaac_utils.utils.geom as geom
-from isaac_utils.utils.prim import ensure_path
+from isaac_utils.utils.prim import ensure_path, resolve_prim
 
 
 def create_mesh(
@@ -32,8 +32,8 @@ def create_mesh(
         **kwargs
     )
     if collide:
-        prim = Prim([prim_path])
-        if prim.valid:
+        prim = resolve_prim(prim_path)
+        if prim is not None:
             Prim.ensure_api(prim.prims, UsdPhysics.CollisionAPI)
     if position is not None:
         geom.move(

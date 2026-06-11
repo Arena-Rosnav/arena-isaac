@@ -10,7 +10,7 @@ import carb
 import omni.kit.commands
 import omni.usd
 from isaac_utils.utils import geom
-from isaacsim.core.experimental.prims import Prim
+from isaac_utils.utils.prim import resolve_paths
 
 if typing.TYPE_CHECKING:
     from isaac_utils.graphs.sensors import SensorBase
@@ -49,7 +49,7 @@ def register_robot(prim_path: str, articulation_path: str) -> RobotManifest:
 
 
 def _destroy_prim(prim_path: str) -> bool:
-    paths, _ = Prim.resolve_paths([prim_path])
+    paths = resolve_paths(prim_path)
     if not paths:
         return False
     stage = omni.usd.get_context().get_stage()

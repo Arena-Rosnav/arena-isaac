@@ -4,7 +4,7 @@ import omni.usd
 from isaac_utils.managers import entity_lifecycle
 from isaac_utils.utils import geom
 from isaac_utils.utils.path import world_path
-from isaacsim.core.experimental.prims import Prim
+from isaac_utils.utils.prim import resolve_paths
 from isaacsim_msgs.srv import DeletePrims
 
 from .utils import Service, on_exception
@@ -16,7 +16,7 @@ def delete_prim(name: str) -> bool:
 
     entity_lifecycle.destroy_under(target)
 
-    paths, _ = Prim.resolve_paths([target])
+    paths = resolve_paths(target)
     stage = omni.usd.get_context().get_stage()
     for path in paths:
         geom.unregister_robot(path)

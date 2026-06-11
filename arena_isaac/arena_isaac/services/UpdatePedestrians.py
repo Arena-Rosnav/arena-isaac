@@ -1,5 +1,3 @@
-import math
-
 from pedestrian.simulator.logic.people.person import Person
 from pedestrian.simulator.logic.people_manager import PeopleManager
 
@@ -18,11 +16,10 @@ def update_pedestrian(pedestrian: Pedestrian) -> int:
     if not isinstance(person, Person):
         return UpdatePedestrians.Response.NOT_FOUND
 
-    target = [pedestrian.pose.position.x, pedestrian.pose.position.y, pedestrian.pose.position.z]
-    speed = math.hypot(pedestrian.twist.linear.x, pedestrian.twist.linear.y)
-
-    person._target_positions.clear()
-    person.update_target_positions([target], speed)
+    person.update_command(
+        (pedestrian.pose.position.x, pedestrian.pose.position.y, pedestrian.pose.position.z),
+        (pedestrian.twist.linear.x, pedestrian.twist.linear.y),
+    )
     return UpdatePedestrians.Response.SUCCESS
 
 

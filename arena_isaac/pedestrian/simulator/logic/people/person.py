@@ -1,6 +1,5 @@
 # Low level APIs
 import os
-from collections import deque
 
 import carb
 import numpy as np
@@ -73,9 +72,10 @@ class Person:
         self._state.position = np.array(init_pos)
         self._state.orientation = Rotation.from_euler('z', init_yaw, degrees=False).as_quat()
 
-        # Set the target position for the character
-        self._target_positions = deque[np.ndarray]()
-        self._target_speed = 0.0
+        # Commanded kinematic state of the character
+        self._command_position: np.ndarray | None = None
+        self._command_velocity = np.zeros(3)
+        self._command_age = 0.0
 
         # Save the name with which the vehicle will appear in the stage
         # and the character model that will be loaded into the simulator
@@ -187,27 +187,37 @@ class Person:
         if self._controller:
             self._controller.update(dt)
 
-        THRESHOLD_DISTANCE = 0.3  # m
-        CATCHUP_WINDOW = 0.15
-        MAX_WALK = 2.5
-        while self._target_positions and np.linalg.norm(self._target_position - self._state.position) < THRESHOLD_DISTANCE:
-            # set next target
-            self._target_positions.popleft()
+        MAX_EXTRAPOLATION = 0.5  # s, stop dead-reckoning if commands cease
+        HEADING_DISTANCE = 1.0  # m
 
-        if self._target_positions:
-            # targets not empty
-            offset = self._target_position - self._state.position
-            dist = np.linalg.norm(offset)
-            extended_target = self._target_position + (offset / dist) * THRESHOLD_DISTANCE
-            self.character_graph.set_variable("PathPoints", [carb.Float3(self._state.position), carb.Float3(extended_target)])
-            self.character_graph.set_variable("Action", "Walk")
-            walk = min(self._target_speed + max(0.0, dist - THRESHOLD_DISTANCE) / CATCHUP_WINDOW, MAX_WALK)
-            self.character_graph.set_variable("Walk", walk)
-
-        else:
-            # at target position, stop moving
+        if self._command_position is None:
+            # no command, stand still
             self.character_graph.set_variable("Walk", 0.0)
             self.character_graph.set_variable("Action", "Idle")
+        else:
+            # the graph owns the character root in Fabric, so the commanded pose must
+            # be written through the graph API, USD prim transforms never reach the
+            # rendered character, the graph only contributes gait and heading
+            self._command_age += dt
+            position = self._state.position
+            desired = self._command_position + self._command_velocity * min(self._command_age, MAX_EXTRAPOLATION)
+            desired[2] = position[2]
+
+            speed = float(np.linalg.norm(self._command_velocity))
+            if speed > 0.05:
+                look = desired + (self._command_velocity / speed) * HEADING_DISTANCE
+                self.character_graph.set_variable("PathPoints", [carb.Float3(desired), carb.Float3(look)])
+                self.character_graph.set_variable("Action", "Walk")
+                self.character_graph.set_variable("Walk", speed)
+            else:
+                self.character_graph.set_variable("Walk", 0.0)
+                self.character_graph.set_variable("Action", "Idle")
+
+            rot = self._state.orientation
+            self.character_graph.set_world_transform(
+                carb.Float3(float(desired[0]), float(desired[1]), float(desired[2])),
+                carb.Float4(float(rot[0]), float(rot[1]), float(rot[2]), float(rot[3])),
+            )
 
         # If we have a backend, update the state of the person
         if self._backend:
@@ -216,15 +226,18 @@ class Person:
         # if self.character_skel_root_stage_path is not None:
         #     PeopleManager.get_people_manager().add_person(self.character_skel_root_stage_path, self)
 
-    def update_target_positions(self, positions, walk_speed=1.0):
+    def update_command(self, position, velocity):
         """
-        Method that updates the target position of the person to which it will move towards.
+        Set the commanded planar pose and velocity. The position is tracked exactly,
+        the velocity dead-reckons the character between command updates.
 
         Args:
-            position (list): A list with the x, y, z coordinates of the target position.
+            position: (x, y, z) commanded world position, z is ignored.
+            velocity: (x, y) commanded world velocity.
         """
-        self._target_positions.extend(positions)
-        self._target_speed = walk_speed
+        self._command_position = np.array([position[0], position[1], self._state.position[2]])
+        self._command_velocity = np.array([velocity[0], velocity[1], 0.0])
+        self._command_age = 0.0
 
     def set_world_pose(self, position, orientation):
         """
@@ -244,8 +257,17 @@ class Person:
         else:
             orient_attr.Set(quat)
 
-        self._target_positions.clear()
-        self._target_speed = 0.0
+        # once the graph is attached it owns the character root, USD writes alone
+        # no longer reach the rendered character
+        if self._character_graph:
+            self._character_graph.set_world_transform(
+                carb.Float3(float(position[0]), float(position[1]), float(position[2])),
+                carb.Float4(float(orientation[0]), float(orientation[1]), float(orientation[2]), float(orientation[3])),
+            )
+
+        self._command_position = None
+        self._command_velocity = np.zeros(3)
+        self._command_age = 0.0
         self._state.position = np.array(position)
         self._state.orientation = np.array(orientation)
 
@@ -415,18 +437,6 @@ class Person:
     @property
     def position(self) -> np.ndarray:
         return self._state.position
-
-    @property
-    def _target_position(self) -> np.ndarray:
-        if not self._target_positions:
-            return np.array(self._state.position)
-        return np.array(self._target_positions[0])
-
-    @property
-    def last_waypoint(self) -> np.ndarray:
-        if not self._target_positions:
-            return np.array(self._state.position)
-        return np.array(self._target_positions[-1])
 
     @property
     def path(self) -> str:

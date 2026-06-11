@@ -1,10 +1,25 @@
 import os
 from pxr import Usd, UsdGeom
+from isaacsim.core.experimental.prims import Prim
 from isaacsim.core.utils.prims import create_prim
 from typing import Optional
 
 import omni.usd
 stage = omni.usd.get_context().get_stage()
+
+
+def resolve_paths(prim_path: str) -> list[str]:
+    """Existing prim paths matching prim_path, [] if none."""
+    paths, _ = Prim.resolve_paths([prim_path])
+    return paths
+
+
+def resolve_prim(prim_path: str) -> Prim | None:
+    """Wrap existing prims at prim_path, None if nothing matches."""
+    paths = resolve_paths(prim_path)
+    if not paths:
+        return None
+    return Prim(paths, resolve_paths=False)
 
 
 def get_default_prim(stage: Usd.Stage) -> Optional[Usd.Prim]:

@@ -31,6 +31,11 @@ class PeopleManager:
         Constructor for the people manager class.
         """
 
+        # __init__ re-runs on every get_people_manager() call, only configure once
+        if PeopleManager._is_initialized:
+            return
+        PeopleManager._is_initialized = True
+
         # Rebuild the navigation mesh using the standard settings
         self.rebuild_nav_mesh()
 

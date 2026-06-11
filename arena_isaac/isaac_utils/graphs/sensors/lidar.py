@@ -9,10 +9,9 @@ import carb
 import omni
 import omni.kit.commands
 import omni.replicator.core as rep
-from isaacsim.core.experimental.prims import Prim
 
 from isaac_utils.utils.geom import Rotation, Translation
-from isaac_utils.utils.prim import ensure_path
+from isaac_utils.utils.prim import ensure_path, resolve_paths, resolve_prim
 
 from . import SensorBase
 
@@ -350,8 +349,7 @@ class SensorLidar(SensorBase):
             prim_path = created_prim_path
 
         if prim_path != requested_prim_path:
-            existing_paths, _ = Prim.resolve_paths([requested_prim_path])
-            for existing_target in existing_paths:
+            for existing_target in resolve_paths(requested_prim_path):
                 omni.kit.commands.execute(
                     "DeletePrims",
                     paths=[existing_target],
@@ -369,8 +367,8 @@ class SensorLidar(SensorBase):
                     f"Failed to move lidar prim from '{prim_path}' to '{requested_prim_path}': {error}"
                 )
 
-        prim_wrapper = Prim([prim_path])
-        prim = prim_wrapper.prims[0] if prim_wrapper.valid and prim_wrapper.prims else None
+        prim_wrapper = resolve_prim(prim_path)
+        prim = prim_wrapper.prims[0] if prim_wrapper is not None and prim_wrapper.prims else None
 
         if prim is None:
             carb.log_warn(
