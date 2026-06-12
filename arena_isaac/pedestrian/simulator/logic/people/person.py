@@ -77,6 +77,10 @@ class Person:
         self._command_velocity = np.zeros(3)
         self._command_age = 0.0
 
+        # Currently seeded locomotion path, refreshed only on heading change
+        self._path_heading = np.zeros(3)
+        self._path_look: np.ndarray | None = None
+
         # Save the name with which the vehicle will appear in the stage
         # and the character model that will be loaded into the simulator
         self._stage_prefix = stage_prefix
@@ -189,9 +193,12 @@ class Person:
 
         MAX_EXTRAPOLATION = 0.5  # s, stop dead-reckoning if commands cease
         HEADING_DISTANCE = 1.0  # m
+        RESEED_DISTANCE = 0.5  # m, refresh the path before the look point is reached
+        RESEED_COS = np.cos(np.radians(5.0))
 
         if self._command_position is None:
             # no command, stand still
+            self._path_look = None
             self.character_graph.set_variable("Walk", 0.0)
             self.character_graph.set_variable("Action", "Idle")
         else:
@@ -205,11 +212,21 @@ class Person:
 
             speed = float(np.linalg.norm(self._command_velocity))
             if speed > 0.05:
-                look = desired + (self._command_velocity / speed) * HEADING_DISTANCE
-                self.character_graph.set_variable("PathPoints", [carb.Float3(desired), carb.Float3(look)])
+                heading = self._command_velocity / speed
+                # re-seeding PathPoints restarts the locomotion blend, so only
+                # refresh the path on turns or when the look point is nearly reached
+                if (
+                    self._path_look is None
+                    or float(np.dot(heading, self._path_heading)) < RESEED_COS
+                    or float(np.linalg.norm(self._path_look - desired)) < RESEED_DISTANCE
+                ):
+                    self._path_heading = heading
+                    self._path_look = desired + heading * HEADING_DISTANCE
+                    self.character_graph.set_variable("PathPoints", [carb.Float3(desired), carb.Float3(self._path_look)])
                 self.character_graph.set_variable("Action", "Walk")
                 self.character_graph.set_variable("Walk", speed)
             else:
+                self._path_look = None
                 self.character_graph.set_variable("Walk", 0.0)
                 self.character_graph.set_variable("Action", "Idle")
 
@@ -271,6 +288,7 @@ class Person:
         self._command_position = None
         self._command_velocity = np.zeros(3)
         self._command_age = 0.0
+        self._path_look = None
         self._state.position = np.array(position)
         self._state.orientation = np.array(orientation)
 
