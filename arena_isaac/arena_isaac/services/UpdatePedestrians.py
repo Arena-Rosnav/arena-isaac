@@ -9,7 +9,7 @@ from .utils import Service, on_exception
 
 
 @on_exception(UpdatePedestrians.Response.NOT_FOUND)
-def update_pedestrian(pedestrian: Pedestrian) -> int:
+def update_pedestrian(pedestrian: Pedestrian, stamp_sec: float) -> int:
     usd_path = world_path(pedestrian.name)
 
     person = PeopleManager.get_people_manager().get_person(usd_path)
@@ -19,12 +19,14 @@ def update_pedestrian(pedestrian: Pedestrian) -> int:
     person.update_command(
         (pedestrian.pose.position.x, pedestrian.pose.position.y, pedestrian.pose.position.z),
         (pedestrian.twist.linear.x, pedestrian.twist.linear.y),
+        stamp_sec,
     )
     return UpdatePedestrians.Response.SUCCESS
 
 
 def update_pedestrians_callback(request: UpdatePedestrians.Request, response: UpdatePedestrians.Response):
-    response.results = list(map(update_pedestrian, request.pedestrians))
+    stamp_sec = request.stamp.sec + request.stamp.nanosec * 1e-9
+    response.results = [update_pedestrian(pedestrian, stamp_sec) for pedestrian in request.pedestrians]
     return response
 
 

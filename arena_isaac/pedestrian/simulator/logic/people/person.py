@@ -226,7 +226,7 @@ class Person:
         # if self.character_skel_root_stage_path is not None:
         #     PeopleManager.get_people_manager().add_person(self.character_skel_root_stage_path, self)
 
-    def update_command(self, position, velocity):
+    def update_command(self, position, velocity, stamp_sec=0.0):
         """
         Set the commanded planar pose and velocity. The position is tracked exactly,
         the velocity dead-reckons the character between command updates.
@@ -234,10 +234,13 @@ class Person:
         Args:
             position: (x, y, z) commanded world position, z is ignored.
             velocity: (x, y) commanded world velocity.
+            stamp_sec: sim time the command was computed at, zero = unstamped.
         """
         self._command_position = np.array([position[0], position[1], self._state.position[2]])
         self._command_velocity = np.array([velocity[0], velocity[1], 0.0])
-        self._command_age = 0.0
+        # seed the dead-reckoning age with the pipeline latency, otherwise every
+        # arrival rewinds the character by velocity times the transport delay
+        self._command_age = max(0.0, self._world.current_time - stamp_sec) if stamp_sec > 0.0 else 0.0
 
     def set_world_pose(self, position, orientation):
         """
