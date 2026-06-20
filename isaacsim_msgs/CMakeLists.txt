@@ -11,14 +11,27 @@ find_package(rosidl_default_generators REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 
-file(GLOB MSG_FILES RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} "msg/*.msg")
-file(GLOB SRV_FILES RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} "srv/*.srv")
-file(GLOB ACTION_FILES RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} "action/*.action")
-
 rosidl_generate_interfaces(${PROJECT_NAME}
-  ${MSG_FILES}
-  ${SRV_FILES}
-  ${ACTION_FILES}
+  msg/Ceiling.msg
+  msg/ContactSensor.msg
+  msg/Door.msg
+  msg/Elevator.msg
+  msg/Floor.msg
+  msg/Material.msg
+  msg/PhysicsParams.msg
+  msg/Prim.msg
+  msg/Scale.msg
+  msg/Wall.msg
+  srv/DeletePrims.srv
+  srv/EditPrims.srv
+  srv/GetPrims.srv
+  srv/ResetWorld.srv
+  srv/SpawnCeilings.srv
+  srv/SpawnFloors.srv
+  srv/SpawnPrims.srv
+  srv/SpawnUrdf.srv
+  srv/SpawnUsd.srv
+  srv/SpawnWalls.srv
   DEPENDENCIES std_msgs geometry_msgs
 )
 # uncomment the following section in order to fill in
