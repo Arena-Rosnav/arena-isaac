@@ -8,7 +8,6 @@ import omni.anim.graph.core as ag
 # High level Isaac sim APIs
 import omni.client
 from isaac_utils.utils.assets import get_assets_root_path_safe
-from omni.anim.people import PeopleSettings
 from isaacsim.core.utils import prims
 from omni.usd import get_stage_next_free_path
 from pxr import Gf, Sdf
@@ -26,20 +25,9 @@ class Person:
     Class that implements a person in the simulation world. The person can be controlled by a controller that inherits from the PersonController class.
     """
 
-    # Get root assets path from setting, if not set, get the Isaac-Sim asset path
-    setting_dict = carb.settings.get_settings()
-    people_asset_folder = setting_dict.get(PeopleSettings.CHARACTER_ASSETS_PATH)
-    character_root_prim_path = setting_dict.get(PeopleSettings.CHARACTER_PRIM_PATH)
-    assets_root_path = None
-
-    if not character_root_prim_path:
-        character_root_prim_path = "/World/Characters"
-
-    if people_asset_folder:
-        assets_root_path = people_asset_folder
-    else:
-        root_path = get_assets_root_path_safe()
-        assets_root_path = os.path.join(root_path, 'Isaac/People/Characters')
+    # Character assets live under the Isaac-Sim asset root
+    character_root_prim_path = "/World/Characters"
+    assets_root_path = os.path.join(get_assets_root_path_safe(), 'Isaac/People/Characters')
 
     character_skel_root_stage_path: str
 

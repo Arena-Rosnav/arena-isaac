@@ -8,7 +8,7 @@ from isaacsim.sensors.physics import IMUSensor
 
 from isaac_utils.graphs import Graph
 
-from . import SensorBase
+from . import SensorBase, resolve_link_prim
 
 
 class SensorIMU(SensorBase):
@@ -42,8 +42,9 @@ class SensorIMU(SensorBase):
         self.prim_path: str | None = None
 
     def simulate(self, base_prim: str):
+        link_prim = resolve_link_prim(base_prim, self.parent_frame, require_rigid_body=True)
         imu_sensor = IMUSensor(
-            prim_path=os.path.join(base_prim, self.parent_frame),
+            prim_path=os.path.join(link_prim, self.name),
             name=self.name,
             # frequency=self.config.update_rate, # api is broken
             linear_acceleration_filter_size=10,

@@ -100,7 +100,7 @@ class PeopleManager:
                 person.destroy()
 
     @classmethod
-    def rebuild_nav_mesh(cls, height=1.5, radius=35.0, auto_rebake_on_changes=False, auto_rebake_delay_seconds=4, exclude_rigid_bodies=False, view_nav_mesh=False, dynamic_avoidance_enabled=True, navmesh_enabled=True):
+    def rebuild_nav_mesh(cls, height=1.5, radius=35.0, auto_rebake_on_changes=False, auto_rebake_delay_seconds=4, exclude_rigid_bodies=False, view_nav_mesh=False):
         """
         Rebuild the navmesh with the correct settings. Used for the people to move around.
         Called only when the sim with people is requested.
@@ -134,17 +134,6 @@ class PeopleManager:
             'ChangeSetting',
             path='/persistent/exts/omni.anim.navigation.core/navMesh/viewNavMesh',
             value=view_nav_mesh)
-        # print('Navigation mesh rebuilt.')
-
-        # Setup for obstacle avoidance
-        omni.kit.commands.execute(
-            'ChangeSetting',
-            path='/exts/omni.anim.people/navigation_settings/dynamic_avoidance_enabled',
-            value=dynamic_avoidance_enabled)
-        omni.kit.commands.execute(
-            'ChangeSetting',
-            path='/exts/omni.anim.people/navigation_settings/navmesh_enabled',
-            value=navmesh_enabled)
 
     def __new__(cls):
         """Method that allocated memory for a new people_manager. Since the PeopleManager follows a singleton pattern,

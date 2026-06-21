@@ -1,7 +1,7 @@
 import math
 import os
 
-from omni.isaac.core import World
+from isaacsim.core.api import World
 from pedestrian.simulator.logic.people.person import Person
 
 from isaac_utils.utils.path import world_path

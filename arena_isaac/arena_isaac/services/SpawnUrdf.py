@@ -9,15 +9,16 @@ import carb
 import isaac_utils.graphs.joint_states as joint_states
 import isaac_utils.graphs.odom as odom
 import isaac_utils.graphs.sensors.sensors as sensors
-import omni.kit.commands as commands
+import isaacsim.core.utils.prims as prim_utils
 import omni.usd
+from isaacsim.asset.importer.urdf import URDFImporter, URDFImporterConfig
 from isaac_utils.graphs import control
 from isaac_utils.managers import entity_lifecycle
 from isaac_utils.utils import geom
 from isaac_utils.utils.material import Material, PhysicsParams
 from isaac_utils.utils.path import world_path
 from isaac_utils.utils.prim import ensure_path
-from pxr import UsdPhysics
+from pxr import Usd, UsdGeom, UsdPhysics
 
 from isaacsim_msgs.srv import SpawnUrdf
 
@@ -28,58 +29,70 @@ sys.path.insert(0, str(parent_dir))
 
 
 def _resolve_articulation_prim(prim_path: str, base_frame: str) -> str:
-    """Return the prim that joint_states / IsaacArticulationController target.
+    """Return the prim carrying ArticulationRootAPI.
 
-    These need any prim inside the articulation (the controller walks up to
-    the root). Prefers `<prim_path>/<base_frame>`; falls back to the first
-    descendant with ArticulationRootAPI; finally to prim_path itself.
+    The URDF importer relocates ArticulationRootAPI onto the parent of the
+    root rigid body, nested under `<prim_path>/Geometry/...`, so we walk the
+    whole subtree rather than assuming a fixed depth. physx matches the
+    articulation at this exact prim path, so the joint-state / controller
+    graphs must target it directly. Falls back to a prim named `base_frame`,
+    then prim_path itself.
     """
     stage = omni.usd.get_context().get_stage()
     if stage is None:
-        return os.path.join(prim_path, base_frame)
-
-    explicit = os.path.join(prim_path, base_frame)
-    if stage.GetPrimAtPath(explicit).IsValid():
-        return explicit
+        return prim_path
 
     root = stage.GetPrimAtPath(prim_path)
     if root.IsValid():
-        for prim in root.GetAllChildren():
+        for prim in Usd.PrimRange(root):
             if prim.HasAPI(UsdPhysics.ArticulationRootAPI):
                 return str(prim.GetPath())
-            for grandchild in prim.GetAllChildren():
-                if grandchild.HasAPI(UsdPhysics.ArticulationRootAPI):
-                    return str(grandchild.GetPath())
+        for prim in Usd.PrimRange(root):
+            if prim.GetName() == base_frame:
+                return str(prim.GetPath())
 
     return prim_path
 
 
-def _resolve_body_prim(prim_path: str, base_frame: str) -> str:
-    """Return the prim whose world transform tracks the robot body.
+def _resolve_body_prim(robot_prim: str, articulation_prim: str) -> str:
+    """A physics-moved rigid body rigidly fixed to the base link, for odom to track.
 
-    odom.odom reads this prim's world transform to publish odom -> base.
-    Prefers `<prim_path>/<base_frame>` (e.g. base_link); falls back to the
-    first descendant with RigidBodyAPI (the first physics body, which is
-    the chassis for our robots); finally to prim_path itself.
+    Drops bodies behind an articulated joint (wheels spin) and the static holder,
+    then takes the one closest to the holder. odom composes its pose to the base.
     """
     stage = omni.usd.get_context().get_stage()
     if stage is None:
-        return os.path.join(prim_path, base_frame)
+        return articulation_prim
 
-    explicit = os.path.join(prim_path, base_frame)
-    if stage.GetPrimAtPath(explicit).IsValid():
-        return explicit
+    holder = stage.GetPrimAtPath(articulation_prim)
+    robot = stage.GetPrimAtPath(robot_prim)
+    if not holder.IsValid() or not robot.IsValid():
+        return articulation_prim
 
-    root = stage.GetPrimAtPath(prim_path)
-    if root.IsValid():
-        for prim in root.GetAllChildren():
-            if prim.HasAPI(UsdPhysics.RigidBodyAPI):
-                return str(prim.GetPath())
-            for grandchild in prim.GetAllChildren():
-                if grandchild.HasAPI(UsdPhysics.RigidBodyAPI):
-                    return str(grandchild.GetPath())
+    bodies = [
+        prim
+        for prim in Usd.PrimRange(holder)
+        if prim.GetPath() != holder.GetPath() and prim.HasAPI(UsdPhysics.RigidBodyAPI)
+    ]
+    if not bodies:
+        return articulation_prim
 
-    return prim_path
+    articulated: set[str] = set()
+    for prim in Usd.PrimRange(robot):
+        for joint_type in (UsdPhysics.RevoluteJoint, UsdPhysics.PrismaticJoint, UsdPhysics.SphericalJoint):
+            if prim.IsA(joint_type):
+                articulated.update(str(t) for t in joint_type(prim).GetBody1Rel().GetTargets())
+
+    candidates = [body for body in bodies if str(body.GetPath()) not in articulated] or bodies
+
+    cache = UsdGeom.XformCache()
+    hx, hy, _ = cache.GetLocalToWorldTransform(holder).ExtractTranslation()
+
+    def _offset(prim: Usd.Prim) -> float:
+        tx, ty, _ = cache.GetLocalToWorldTransform(prim).ExtractTranslation()
+        return (tx - hx) ** 2 + (ty - hy) ** 2
+
+    return str(min(candidates, key=_offset).GetPath())
 
 
 def sanitize_urdf_for_isaac(urdf_path: str) -> str:
@@ -261,32 +274,20 @@ def spawn_urdf(request: SpawnUrdf.Request) -> str:
 
     urdf_path = sanitize_urdf_for_isaac(urdf_path)
 
-    status, import_config = commands.execute("URDFCreateImportConfig")
-    import_config.set_merge_fixed_joints(False)
-    import_config.set_convex_decomp(False)
-    import_config.set_import_inertia_tensor(True)
-    import_config.set_make_default_prim(False)
-    import_config.set_distance_scale(1.0)
-    import_config.set_fix_base(False)
-    import_config.set_default_drive_type(2)
-    import_config.set_self_collision(False)
+    import_config = URDFImporterConfig(
+        urdf_path=urdf_path,
+        merge_fixed_joints=False,
+        allow_self_collision=False,
+        fix_base=False,
+        joint_target_type="velocity",
+    )
+    usd_path = URDFImporter(import_config).import_urdf()
+
+    if not usd_path:
+        raise ValueError(f"Failed to import URDF from '{urdf_path}'.")
 
     ensure_path(os.path.dirname(prim_path))
-    status, usd_path = commands.execute(
-        "URDFParseAndImportFile",
-        urdf_path=urdf_path,
-        import_config=import_config,
-    )
-
-    if usd_path is None:
-        raise ValueError(f"Failed to import URDF from '{urdf_path}'. Status {status}")
-
-    commands.execute(
-        "MovePrim",
-        path_from=usd_path,
-        path_to=prim_path,
-        keep_world_transform=True
-    )
+    prim_utils.create_prim(prim_path, "Xform", usd_path=usd_path)
 
     stage = omni.usd.get_context().get_stage()
 
@@ -301,7 +302,7 @@ def spawn_urdf(request: SpawnUrdf.Request) -> str:
             carb.log_error(f'failed to bind physx material at {collider_root}')
 
     articulation_path = _resolve_articulation_prim(prim_path, request.base_frame)
-    body_path = _resolve_body_prim(prim_path, request.base_frame)
+    body_path = _resolve_body_prim(prim_path, articulation_path)
 
     manifest = entity_lifecycle.register_robot(prim_path, articulation_path)
 
@@ -310,6 +311,7 @@ def spawn_urdf(request: SpawnUrdf.Request) -> str:
         if not odom.odom(
             odom_graph_path,
             prim_path=body_path,
+            base_prim=articulation_path,
             base_frame_id=f'{request.tf_prefix}{request.base_frame}',
             odom_frame_id=f'{request.tf_prefix}{request.odom_frame}',
             odom_topic=request.odom_topic,

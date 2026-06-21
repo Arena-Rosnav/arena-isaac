@@ -7,12 +7,12 @@ import omni
 import omni.graph.core as og
 import omni.replicator.core as rep
 import omni.syntheticdata._syntheticdata as sd
-from isaacsim.ros2.bridge import read_camera_info
+from isaacsim.ros2.core import read_camera_info
 from isaacsim.sensors.camera import Camera
 
 from isaac_utils.utils.geom import Rotation, Translation
 
-from . import SensorBase
+from . import SensorBase, resolve_link_prim
 
 
 class SensorCamera(SensorBase):
@@ -78,8 +78,9 @@ class SensorCamera(SensorBase):
         self.camera: Camera | None = None
 
     def simulate(self, base_prim: str):
+        link_prim = resolve_link_prim(base_prim, self.parent_frame)
         camera = Camera(
-            prim_path=os.path.join(base_prim, self.parent_frame, self.name),
+            prim_path=os.path.join(link_prim, self.name),
             name=self.name,
             translation=self.translation.tuple(),
             orientation=self.rotation.quat(),
@@ -325,7 +326,7 @@ class SensorCameraRGBD(SensorCamera):
             frameId=frame,
             nodeNamespace=node_namespace,
             queueSize=queue_size,
-            topicName=os.path.join(camera_topic, 'depth')
+            topicName=os.path.join(camera_topic, 'depth_image')
         )
         writer.attach([render_product])
 

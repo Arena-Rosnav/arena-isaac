@@ -8,7 +8,7 @@ from isaacsim.sensors.physics import ContactSensor
 
 from isaac_utils.graphs import Graph
 
-from . import SensorBase
+from . import SensorBase, resolve_link_prim
 
 
 class SensorContact(SensorBase):
@@ -25,23 +25,26 @@ class SensorContact(SensorBase):
                 update_rate=config.findtext('.//update_rate'),
             )
 
-    def __init__(self, robot_base_frame: str, config: "SensorContact.Config", name: str):
+    def __init__(self, robot_base_frame: str, config: "SensorContact.Config", name: str, parent_frame: str):
         """
         Initializes the contact sensor utility.
         Args:
             robot_base_frame (str): Base frame of the robot.
             config (SensorContact.Config): Configuration for the contact sensor.
             name (str): The name of the contact sensor.
+            parent_frame (str): The link the sensor attaches to.
         """
         self.robot_base_frame: str = robot_base_frame
         self.config: SensorContact.Config = config
         self.name: str = name
+        self.parent_frame: str = parent_frame
 
         self.prim_path: str | None = None
 
     def simulate(self, base_prim: str):
+        link_prim = resolve_link_prim(base_prim, self.parent_frame, require_rigid_body=True)
         contact_sensor = ContactSensor(
-            prim_path=os.path.join(base_prim, self.name),
+            prim_path=os.path.join(link_prim, self.name),
             name="Contact_Sensor",
             frequency=self.config.update_rate,
             min_threshold=0,

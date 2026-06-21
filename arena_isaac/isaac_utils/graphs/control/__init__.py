@@ -3,7 +3,7 @@ import xml.etree.ElementTree as ET
 
 import carb
 import omni.usd
-from pxr import UsdPhysics
+from pxr import Usd, UsdPhysics
 
 from .topic_bridge import topic_bridge
 
@@ -86,20 +86,27 @@ class Control:
             return False
 
         stage = omni.usd.get_context().get_stage()
+        root = stage.GetPrimAtPath(self.prim_path)
+        # The URDF importer nests joints under `<prim_path>/Physics/<name>`, so
+        # index them by name from the subtree rather than a fixed path.
+        joint_prims = {
+            prim.GetName(): prim
+            for prim in Usd.PrimRange(root)
+            if prim.IsA(UsdPhysics.Joint)
+        } if root.IsValid() else {}
+
         for joint_name in joints_position:
-            path = f"{self.prim_path}/joints/{joint_name}"
-            joint_prim = stage.GetPrimAtPath(path)
-            if joint_prim.IsValid():
+            joint_prim = joint_prims.get(joint_name)
+            if joint_prim is not None:
                 _set_drive(joint_prim, _POSITION_DRIVE_STIFFNESS, _POSITION_DRIVE_DAMPING)
             else:
-                carb.log_warn(f"topic_bridge: joint prim not found for position drive: {path}")
+                carb.log_warn(f"topic_bridge: joint prim not found for position drive: {joint_name}")
         for joint_name in joints_velocity:
-            path = f"{self.prim_path}/joints/{joint_name}"
-            joint_prim = stage.GetPrimAtPath(path)
-            if joint_prim.IsValid():
+            joint_prim = joint_prims.get(joint_name)
+            if joint_prim is not None:
                 _set_drive(joint_prim, 0.0, _VELOCITY_DRIVE_DAMPING)
             else:
-                carb.log_warn(f"topic_bridge: joint prim not found for velocity drive: {path}")
+                carb.log_warn(f"topic_bridge: joint prim not found for velocity drive: {joint_name}")
 
         return topic_bridge(
             graph_path=os.path.join(self.prim_path, 'topic_bridge'),

@@ -1,19 +1,22 @@
 import math
 import os
-import typing
 import xml.etree.ElementTree as ET
 from collections.abc import Sequence
 
 import attrs
 import carb
-import omni
-import omni.kit.commands
-import omni.replicator.core as rep
+import isaacsim.core.utils.prims as prim_utils
+from isaacsim.sensors.experimental.rtx import Lidar, LidarSensor
 
 from isaac_utils.utils.geom import Rotation, Translation
-from isaac_utils.utils.prim import ensure_path, resolve_paths, resolve_prim
 
-from . import SensorBase
+from . import SensorBase, resolve_link_prim
+
+# Built-in RTX rotary configs carry the firing pattern (azimuth/elevation
+# sampling) the sensor needs to cast rays. A lidar authored from bare attributes
+# scans nothing. The 3D config feeds the point cloud, the 2D the LaserScan.
+_LIDAR_CONFIG_POINTS = "Example_Rotary"
+_LIDAR_CONFIG_SCAN = "Example_Rotary_2D"
 
 
 class SensorLidar(SensorBase):
@@ -34,16 +37,6 @@ class SensorLidar(SensorBase):
             resolution: float = attrs.field(converter=attrs.converters.optional(float), default=1.0)
             min_angle: float = attrs.field(converter=attrs.converters.optional(float), default=-math.pi)
             max_angle: float = attrs.field(converter=attrs.converters.optional(float), default=+math.pi)
-
-            def sampled_angles_rad(self) -> list[float]:
-                sample_count = int(max(1, self.samples))
-                if sample_count == 1:
-                    return [float(self.min_angle)]
-
-                min_angle = float(self.min_angle)
-                max_angle = float(self.max_angle)
-                step = (max_angle - min_angle) / float(sample_count - 1)
-                return [min_angle + step * index for index in range(sample_count)]
 
         @attrs.define
         class Range:
@@ -93,85 +86,6 @@ class SensorLidar(SensorBase):
                 ),
             )
 
-        def vertical_elevation_angles_rad(self) -> list[float]:
-            return self.vertical.sampled_angles_rad()
-
-        def as_omnilidar_attributes(self) -> dict[str, object]:
-            horizontal_samples = int(max(1, self.horizontal.samples))
-            vertical_samples = int(max(1, self.vertical.samples))
-            scan_rate_hz = float(max(1e-3, self.update_rate))
-            report_rate_hz = int(max(1, round(scan_rate_hz * horizontal_samples)))
-            noise_type = str(self.noise.type or "none").strip().lower()
-            noise_mean = float(self.noise.mean)
-            noise_stddev = float(max(0.0, self.noise.stddev))
-
-            elevation_deg = [
-                float(math.degrees(angle_rad)) for angle_rad in self.vertical_elevation_angles_rad()
-            ]
-
-            azimuth_deg = [0.0] * vertical_samples
-            fire_time_ns = [0] * vertical_samples
-            channel_id = list(range(1, vertical_samples + 1))
-
-            start_azimuth_deg_raw = float(math.degrees(self.horizontal.min_angle))
-            end_azimuth_deg_raw = float(math.degrees(self.horizontal.max_angle))
-
-            span_deg_raw = end_azimuth_deg_raw - start_azimuth_deg_raw
-            span_deg = span_deg_raw
-            while span_deg <= 0.0:
-                span_deg += 360.0
-
-            if span_deg >= 359.999:
-                valid_start_azimuth_deg = 0.0
-                valid_end_azimuth_deg = 360.0
-            else:
-                valid_start_azimuth_deg = start_azimuth_deg_raw
-                valid_end_azimuth_deg = end_azimuth_deg_raw
-
-            attributes: dict[str, object] = {
-                "omni:sensor:Core:nearRangeM": float(self.range.min),
-                "omni:sensor:Core:farRangeM": float(self.range.max),
-                "omni:sensor:Core:rangeResolutionM": float(self.range.resolution),
-                "omni:sensor:Core:maxReturns": 1,
-                "omni:sensor:Core:reportRateBaseHz": report_rate_hz,
-                "omni:sensor:Core:scanRateBaseHz": int(max(1, round(scan_rate_hz))),
-                "omni:sensor:Core:numberOfChannels": vertical_samples,
-                "omni:sensor:Core:numberOfEmitters": vertical_samples,
-                "omni:sensor:Core:numLines": vertical_samples,
-                "omni:sensor:Core:numRaysPerLine": [horizontal_samples] * vertical_samples,
-                "omni:sensor:Core:validStartAzimuthDeg": valid_start_azimuth_deg,
-                "omni:sensor:Core:validEndAzimuthDeg": valid_end_azimuth_deg,
-                "OmniSensorGenericLidarCoreEmitterStateAPI:s000:azimuthDeg": azimuth_deg,
-                "OmniSensorGenericLidarCoreEmitterStateAPI:s000:elevationDeg": elevation_deg,
-                "OmniSensorGenericLidarCoreEmitterStateAPI:s000:fireTimeNs": fire_time_ns,
-                "OmniSensorGenericLidarCoreEmitterStateAPI:s000:channelId": channel_id,
-            }
-
-            if noise_type == "gaussian":
-                attributes["omni:sensor:Core:rangeAccuracyM"] = noise_stddev
-
-            return attributes
-
-    _ARRAY_ATTRIBUTE_KEYS = {
-        "omni:sensor:Core:numRaysPerLine",
-        "OmniSensorGenericLidarCoreEmitterStateAPI:s000:azimuthDeg",
-        "OmniSensorGenericLidarCoreEmitterStateAPI:s000:elevationDeg",
-        "OmniSensorGenericLidarCoreEmitterStateAPI:s000:fireTimeNs",
-        "OmniSensorGenericLidarCoreEmitterStateAPI:s000:channelId",
-    }
-    _EMITTER_STATE_ARRAY_KEYS: set[str] = {
-        "OmniSensorGenericLidarCoreEmitterStateAPI:s000:azimuthDeg",
-        "OmniSensorGenericLidarCoreEmitterStateAPI:s000:elevationDeg",
-        "OmniSensorGenericLidarCoreEmitterStateAPI:s000:fireTimeNs",
-        "OmniSensorGenericLidarCoreEmitterStateAPI:s000:channelId",
-    }
-    _EMITTER_STATE_REQUIRED_KEYS: set[str] = {
-        "OmniSensorGenericLidarCoreEmitterStateAPI:s000:azimuthDeg",
-        "OmniSensorGenericLidarCoreEmitterStateAPI:s000:elevationDeg",
-        "OmniSensorGenericLidarCoreEmitterStateAPI:s000:fireTimeNs",
-        "OmniSensorGenericLidarCoreEmitterStateAPI:s000:channelId",
-    }
-
     def __init__(
         self,
         robot_base_frame: str,
@@ -201,201 +115,31 @@ class SensorLidar(SensorBase):
         self.prim_path_points: str | None = None
         self.prim_path_scan: str | None = None
 
-        # Render products and writers we own, for symmetric teardown.
-        self._render_products: list = []
-        self._writers: list = []
+        self._points_lidar: Lidar | None = None
+        self._scan_lidar: Lidar | None = None
 
-    def _set_prim_attribute(self, prim, prim_path: str, key: str, value: object) -> bool:
-        candidate_keys = [key]
-        if key.startswith("OmniSensorGenericLidarCoreEmitterStateAPI:s000:"):
-            field = key.rsplit(":", 1)[-1]
-            candidate_keys.extend(
-                [
-                    f"omni:sensor:Core:emitterState:s001:{field}",
-                    f"omni:sensor:Core:emitterState:s000:{field}",
-                ]
-            )
+        # LidarSensor handles we own, for symmetric teardown.
+        self._sensors: list = []
 
-        for candidate_key in candidate_keys:
-            attr = prim.GetAttribute(candidate_key)
-            if not attr.IsValid():
-                continue
-            try:
-                attr.Set(value)
-                return True
-            except Exception as error:
-                carb.log_warn(
-                    f"Failed to set lidar attribute '{candidate_key}' on '{prim_path}': {error}"
-                )
-                return False
-
-        carb.log_warn(
-            f"Lidar attribute '{key}' not found on '{prim_path}' (checked {candidate_keys}), skipping."
-        )
-        return False
-
-    def _apply_prim_attributes(
-        self,
-        prim,
-        prim_path: str,
-        attributes: dict[str, object],
-        required_keys: set[str] | None = None,
-    ) -> bool:
-        required_keys = required_keys or set()
-        required_ok = True
-        for key, value in attributes.items():
-            if self._set_prim_attribute(prim, prim_path, key, value):
-                continue
-            if key in required_keys:
-                required_ok = False
-        return required_ok
-
-    def _flat_lidar_attributes(self, elevation_rad: float) -> dict[str, object]:
-        horizontal_samples = int(max(1, self.config.horizontal.samples))
-        scan_rate_hz = float(max(1e-3, self.config.update_rate))
-        report_rate_hz = int(max(1, round(scan_rate_hz * horizontal_samples)))
-        start_azimuth_deg_raw = float(math.degrees(self.config.horizontal.min_angle))
-        end_azimuth_deg_raw = float(math.degrees(self.config.horizontal.max_angle))
-
-        span_deg_raw = end_azimuth_deg_raw - start_azimuth_deg_raw
-        span_deg = span_deg_raw
-        while span_deg <= 0.0:
-            span_deg += 360.0
-
-        if span_deg >= 359.999:
-            valid_start_azimuth_deg = 0.0
-            valid_end_azimuth_deg = 360.0
-        else:
-            valid_start_azimuth_deg = start_azimuth_deg_raw
-            valid_end_azimuth_deg = end_azimuth_deg_raw
-
-        attributes: dict[str, object] = {
-            "omni:sensor:Core:nearRangeM": float(self.config.range.min),
-            "omni:sensor:Core:farRangeM": float(self.config.range.max),
-            "omni:sensor:Core:rangeResolutionM": float(self.config.range.resolution),
-            "omni:sensor:Core:maxReturns": 1,
-            "omni:sensor:Core:reportRateBaseHz": report_rate_hz,
-            "omni:sensor:Core:scanRateBaseHz": int(max(1, round(scan_rate_hz))),
-            "omni:sensor:Core:numberOfChannels": 1,
-            "omni:sensor:Core:numberOfEmitters": 1,
-            "omni:sensor:Core:numLines": 1,
-            "omni:sensor:Core:numRaysPerLine": [horizontal_samples],
-            "omni:sensor:Core:validStartAzimuthDeg": valid_start_azimuth_deg,
-            "omni:sensor:Core:validEndAzimuthDeg": valid_end_azimuth_deg,
-            "OmniSensorGenericLidarCoreEmitterStateAPI:s000:azimuthDeg": [0.0],
-            "OmniSensorGenericLidarCoreEmitterStateAPI:s000:elevationDeg": [float(math.degrees(elevation_rad))],
-            "OmniSensorGenericLidarCoreEmitterStateAPI:s000:fireTimeNs": [0],
-            "OmniSensorGenericLidarCoreEmitterStateAPI:s000:channelId": [1],
-        }
-
-        noise_type = str(self.config.noise.type or "none").strip().lower()
-        noise_stddev = float(max(0.0, self.config.noise.stddev))
-        if noise_type == "gaussian":
-            attributes["omni:sensor:Core:rangeAccuracyM"] = noise_stddev
-
-        return attributes
-
-    def _create_lidar_prim(self, prim_path: str, sensor_attributes: dict[str, object]) -> str | None:
-        requested_prim_path = prim_path
-        scalar_attributes = {
-            key: value
-            for key, value in sensor_attributes.items()
-            if key not in self._ARRAY_ATTRIBUTE_KEYS
-        }
-        array_attributes = {
-            key: value
-            for key, value in sensor_attributes.items()
-            if key in self._ARRAY_ATTRIBUTE_KEYS
-        }
-
-        deferred_scalar_attributes: dict[str, object] = {}
-        for deferred_key in (
-            "omni:sensor:Core:numberOfEmitters",
-            "omni:sensor:Core:numberOfChannels",
-        ):
-            if deferred_key in scalar_attributes:
-                deferred_scalar_attributes[deferred_key] = scalar_attributes.pop(deferred_key)
-
+    def _create_lidar(self, prim_path: str, config_name: str) -> Lidar | None:
         try:
-            _, lidar = omni.kit.commands.execute(
-                "IsaacSensorCreateRtxLidar",
-                path=os.path.basename(requested_prim_path),
-                parent=os.path.dirname(requested_prim_path),
-                config=None,
-                translation=self.translation.tuple(),
-                orientation=self.rotation.Quatd(),
-                force_camera_prim=False,
-                **scalar_attributes,
+            lidar = Lidar.create(
+                path=prim_path,
+                config=config_name,
+                translations=[list(self.translation.tuple())],
+                orientations=[list(self.rotation.quat())],
+                tick_rate=float(max(1e-3, self.config.update_rate)),
             )
         except Exception as error:
             carb.log_warn(
-                f"Lidar simulate failed for '{self.name}' at '{prim_path}': {error}"
+                f"Lidar create failed for '{self.name}' at '{prim_path}': {error}"
             )
             return None
 
-        if not lidar:
-            carb.log_warn(
-                f"Lidar simulate returned no prim for '{self.name}' at '{prim_path}'."
-            )
-            return None
-
-        created_prim_path = None
-        try:
-            created_prim_path = str(lidar.GetPath())
-        except Exception:
-            created_prim_path = None
-
-        if created_prim_path:
-            prim_path = created_prim_path
-
-        if prim_path != requested_prim_path:
-            for existing_target in resolve_paths(requested_prim_path):
-                omni.kit.commands.execute(
-                    "DeletePrims",
-                    paths=[existing_target],
-                )
-            try:
-                omni.kit.commands.execute(
-                    "MovePrim",
-                    path_from=prim_path,
-                    path_to=requested_prim_path,
-                    keep_world_transform=True,
-                )
-                prim_path = requested_prim_path
-            except Exception as error:
-                carb.log_warn(
-                    f"Failed to move lidar prim from '{prim_path}' to '{requested_prim_path}': {error}"
-                )
-
-        prim_wrapper = resolve_prim(prim_path)
-        prim = prim_wrapper.prims[0] if prim_wrapper is not None and prim_wrapper.prims else None
-
-        if prim is None:
-            carb.log_warn(
-                f"Lidar prim '{prim_path}' is invalid after creation for '{self.name}'."
-            )
-            return None
-
-        emitter_arrays_set_ok = self._apply_prim_attributes(
-            prim,
-            prim_path,
-            array_attributes,
-            required_keys=self._EMITTER_STATE_REQUIRED_KEYS,
-        )
-
-        if deferred_scalar_attributes:
-            if emitter_arrays_set_ok:
-                self._apply_prim_attributes(
-                    prim,
-                    prim_path,
-                    deferred_scalar_attributes,
-                )
-            else:
-                carb.log_warn(
-                    f"Skipped emitter count overrides on '{prim_path}' because emitter-state arrays were not fully set."
-                )
-
-        return prim_path
+        prim = prim_utils.get_prim_at_path(lidar.paths[0])
+        prim.GetAttribute("omni:sensor:Core:nearRangeM").Set(float(self.config.range.min))
+        prim.GetAttribute("omni:sensor:Core:farRangeM").Set(float(self.config.range.max))
+        return lidar
 
     def simulate(self, base_prim: str):
         """
@@ -407,70 +151,23 @@ class SensorLidar(SensorBase):
         """
 
         parent_frame_path = str(self.parent_frame).strip('/')
+        link_prim = resolve_link_prim(base_prim, parent_frame_path) if parent_frame_path else base_prim
 
-        parent_prim_path = os.path.join(base_prim, parent_frame_path) if parent_frame_path else base_prim
-        points_prim_path = os.path.join(parent_prim_path, f"{self.name}_points")
-        scan_prim_path = os.path.join(parent_prim_path, f"{self.name}_scan")
+        points_prim_path = os.path.join(link_prim, f"{self.name}_points")
+        scan_prim_path = os.path.join(link_prim, f"{self.name}_scan")
 
-        try:
-            ensure_path(parent_prim_path)
-        except Exception as error:
-            self.prim_path_points = None
-            self.prim_path_scan = None
-            carb.log_warn(
-                f"Lidar simulate failed to ensure path '{parent_prim_path}' for '{self.name}': {error}"
-            )
-            return
+        points_lidar = self._create_lidar(points_prim_path, _LIDAR_CONFIG_POINTS)
+        scan_lidar = self._create_lidar(scan_prim_path, _LIDAR_CONFIG_SCAN)
 
-        points_attributes = self.config.as_omnilidar_attributes()
-        scan_attributes = self._flat_lidar_attributes(0.0)
-
-        created_points = self._create_lidar_prim(points_prim_path, points_attributes)
-        created_scan = self._create_lidar_prim(scan_prim_path, scan_attributes)
-
-        if created_points is None or created_scan is None:
+        if points_lidar is None or scan_lidar is None:
             self.prim_path_points = None
             self.prim_path_scan = None
             return
 
-        self.prim_path_points = created_points
-        self.prim_path_scan = created_scan
-
-    def _create_lidar_publisher(
-        self,
-        *,
-        prim_path: str,
-        topic_name: str,
-        frame_id: str,
-        publish_type: typing.Literal['point_cloud', 'laser_scan'],
-    ) -> bool:
-        # Render product + writer owned in Python so teardown can call writer.detach + rp.destroy.
-        try:
-            render_product = rep.create.render_product(prim_path, [1, 1])
-        except Exception as error:
-            carb.log_warn(f"Lidar render_product create failed for '{prim_path}': {error}")
-            return False
-
-        writer_name = (
-            "RtxLidarROS2PublishPointCloud"
-            if publish_type == 'point_cloud'
-            else "RtxLidarROS2PublishLaserScan"
-        )
-        try:
-            writer = rep.writers.get(writer_name)
-            writer.initialize(topicName=topic_name, frameId=frame_id, queueSize=1)
-            writer.attach([render_product])
-        except Exception as error:
-            carb.log_warn(f"Lidar writer {writer_name} attach failed for '{prim_path}': {error}")
-            try:
-                render_product.destroy()
-            except Exception:
-                pass
-            return False
-
-        self._render_products.append(render_product)
-        self._writers.append(writer)
-        return True
+        self._points_lidar = points_lidar
+        self._scan_lidar = scan_lidar
+        self.prim_path_points = points_prim_path
+        self.prim_path_scan = scan_prim_path
 
     def paths(self) -> Sequence[str]:
         if self.prim_path_points is None or self.prim_path_scan is None:
@@ -478,21 +175,14 @@ class SensorLidar(SensorBase):
         return (self.prim_path_points, self.prim_path_scan)
 
     def destroy(self) -> None:
-        # Canonical NVIDIA inverse: detach writers, then destroy render products. Prims handled by caller.
-        for writer in self._writers:
+        for sensor in self._sensors:
             try:
-                writer.detach()
+                sensor.detach_writers()
             except Exception as error:
-                carb.log_warn(f"SensorLidar writer.detach raised: {error}")
-        for render_product in self._render_products:
-            try:
-                render_product.destroy()
-            except Exception as error:
-                carb.log_warn(f"SensorLidar render_product.destroy raised: {error}")
-        self._writers.clear()
-        self._render_products.clear()
+                carb.log_warn(f"SensorLidar sensor.detach_writers raised: {error}")
+        self._sensors.clear()
 
-    def publish(self, base_topic: str):
+    def publish(self, base_topic: str) -> bool:
         """
         Publishes the lidar sensor to ros2.
         Args:
@@ -505,24 +195,56 @@ class SensorLidar(SensorBase):
             )
             return False
 
-        points_prim_path = self.prim_path_points
-        scan_prim_path = self.prim_path_scan
-
         scan_topic = os.path.join(base_topic, self.config.topic)
         points_topic = os.path.join(base_topic, self.config.topic, 'points')
         frame_id = f'{self.robot_base_frame}{self.parent_frame}'
 
-        points_ok = self._create_lidar_publisher(
-            prim_path=points_prim_path,
-            topic_name=points_topic,
-            frame_id=frame_id,
-            publish_type='point_cloud',
-        )
-        scan_ok = self._create_lidar_publisher(
-            prim_path=scan_prim_path,
-            topic_name=scan_topic,
-            frame_id=frame_id,
-            publish_type='laser_scan',
-        )
+        points_ok = True
+        try:
+            points_sensor = LidarSensor(self._points_lidar, annotators=[])
+            points_sensor.attach_writer(
+                "RtxLidarROS2PublishPointCloud",
+                topicName=points_topic,
+                frameId=frame_id,
+            )
+            self._sensors.append(points_sensor)
+        except Exception as error:
+            carb.log_warn(
+                f"Lidar PointCloud publish failed for '{self.name}': {error}"
+            )
+            points_ok = False
+
+        scan_ok = True
+        try:
+            prim = prim_utils.get_prim_at_path(self._scan_lidar.paths[0])
+            rotation_rate = float(prim.GetAttribute("omni:sensor:Core:scanRateBaseHz").Get() or 0)
+            firing_rate = int(prim.GetAttribute("omni:sensor:Core:patternFiringRateHz").Get() or 0)
+            near_range = float(prim.GetAttribute("omni:sensor:Core:nearRangeM").Get() or 0)
+            far_range = float(prim.GetAttribute("omni:sensor:Core:farRangeM").Get() or 0)
+
+            if rotation_rate <= 0 or firing_rate <= 0:
+                carb.log_warn(
+                    f"Lidar LaserScan writer skipped for '{self.name}': "
+                    f"invalid rotation_rate={rotation_rate} firing_rate={firing_rate}."
+                )
+                scan_ok = False
+            else:
+                scan_sensor = LidarSensor(self._scan_lidar, annotators=[])
+                scan_sensor.attach_writer(
+                    "RtxLidarROS2PublishLaserScan",
+                    topicName=scan_topic,
+                    frameId=frame_id,
+                    horizontalFov=360.0,
+                    horizontalResolution=360.0 * rotation_rate / firing_rate,
+                    depthRange=[near_range, far_range],
+                    rotationRate=rotation_rate,
+                    azimuthRange=[-180.0, 180.0],
+                )
+                self._sensors.append(scan_sensor)
+        except Exception as error:
+            carb.log_warn(
+                f"Lidar LaserScan publish failed for '{self.name}': {error}"
+            )
+            scan_ok = False
 
         return points_ok and scan_ok

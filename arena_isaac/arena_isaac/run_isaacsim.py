@@ -48,13 +48,11 @@ from isaac_utils.utils.assets import get_assets_root_path_safe
 from isaacsim.core.utils.extensions import enable_extension
 
 enable_extension("isaacsim.asset.importer.urdf")
-from isaacsim.asset.importer.urdf import _urdf
-from omni.isaac.core import SimulationContext, World
+from isaacsim.core.api import SimulationContext, World
 from isaacsim.core.utils import extensions, prims, stage
 from pxr import Sdf
 
 EXTENSIONS_PEOPLE = [
-    'omni.anim.people',
     'omni.anim.navigation.bundle',
     'omni.anim.timeline',
     'omni.anim.graph.bundle',
@@ -112,9 +110,28 @@ for _ in range(100):
 # -------------------------------------------------------------------------------------------------
 omni.usd.get_context().new_stage()
 
-extensions.enable_extension("isaacsim.ros2.bridge")
-extensions.enable_extension("isaacsim.sensors.physics")
-extensions.enable_extension("isaacsim.sensors.camera")
+for _ext in (
+    "isaacsim.ros2.bridge",
+    "isaacsim.sensors.physics",
+    "isaacsim.sensors.camera",
+    "isaacsim.sensors.experimental.rtx",
+):
+    if not extensions.enable_extension(_ext):
+        carb.log_error(f"failed to enable extension: {_ext}")
+
+# Let the freshly-enabled extensions finish starting (native plugins and the
+# OG nodes the sensor graphs use register over the next few app updates).
+for _ in range(20):
+    simulation_app.update()
+
+# RTX lidars and cameras render through the experimental.rtx multi-tick pipeline:
+# supportMultiTickRate must be on or their render products never tick and they
+# publish nothing. perSensorTickTlas (the per-sensor motion BVH) must stay off,
+# with it on Isaac segfaults a few minutes in and basic lidar/camera do not need it.
+import carb.settings
+_carb_settings = carb.settings.get_settings()
+_carb_settings.set("/rtx/hydra/supportMultiTickRate", True)
+_carb_settings.set("/rtx/rendering/perSensorTickTlas", False)
 
 import numpy as np
 
@@ -137,6 +154,15 @@ from isaac_utils.utils.material import Material, PhysicsParams
 from isaac_utils.utils.path import world_path
 
 #Import services
+# isaacsim.sensors.physics ships in extsDeprecated, but `isaacsim.sensors` was
+# already imported from the sibling sensor extensions, so its cached __path__
+# never picks up the deprecated portion and the physics import resolves to an
+# empty namespace ("unknown location"). Drop the cached namespace so the import
+# below rebuilds __path__ across every enabled portion.
+import importlib
+importlib.invalidate_caches()
+for _mod in [_m for _m in sys.modules if _m == "isaacsim.sensors" or _m.startswith("isaacsim.sensors.physics")]:
+    del sys.modules[_mod]
 from arena_isaac.services import services
 from pedestrian.simulator.logic.people_manager import PeopleManager
 from rclpy.qos import QoSProfile
@@ -207,15 +233,6 @@ omni.kit.commands.execute(
     path='/exts/omni.anim.navigation.core/navMesh/config/agentRadius',
     value=35.0)
 
-omni.kit.commands.execute(
-    'ChangeSetting',
-    path='/exts/omni.anim.people/navigation_settings/dynamic_avoidance_enabled',
-    value=True)
-omni.kit.commands.execute(
-    'ChangeSetting',
-    path='/exts/omni.anim.people/navigation_settings/navmesh_enabled',
-    value=True)
-
 inav = nav.acquire_interface()
 x = inav.start_navmesh_baking()
 simulation_app.update()
@@ -279,8 +296,8 @@ class IsaacController(rclpy.node.Node):
         extensions.enable_extension("isaacsim.ros2.bridge")
         simulation_app.update()
 
-        from isaacsim.ros2.bridge._ros2_bridge import acquire_ros2_bridge_interface
-        ros2_bridge = acquire_ros2_bridge_interface()
+        from isaacsim.ros2.core.bindings._ros2_core import acquire_ros2_core_interface
+        ros2_bridge = acquire_ros2_core_interface()
         while not ros2_bridge.get_startup_status():
             simulation_app.update()
 
@@ -332,7 +349,7 @@ def main(args=None):
                 stepped_this_iteration = True
             else:
                 if was_playing:
-                    world.stop()
+                    world.pause()
                     was_playing = False
                 simulation_app.update()
 
