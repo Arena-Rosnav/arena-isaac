@@ -1,9 +1,6 @@
 import math
 
 import numpy as np
-import omni
-from isaacsim.core.utils.rotations import euler_angles_to_quat
-
 from isaac_utils.utils.geom import Rotation, Scale, Translation
 from isaac_utils.utils.material import Material, PhysicsParams
 from isaac_utils.utils.mesh import create_cube

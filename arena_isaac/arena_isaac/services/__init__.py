@@ -8,12 +8,12 @@ from .MovePedestrians import move_pedestrians_service
 from .ResetWorld import reset_world_service
 from .SpawnCeilings import spawn_ceilings_service
 from .SpawnFloors import spawn_floors_service
-from .SpawnPrims import spawn_prims_service
 from .SpawnPedestrians import spawn_pedestrians_service
-from .UpdatePedestrians import update_pedestrians_service
+from .SpawnPrims import spawn_prims_service
 from .SpawnUrdf import spawn_urdf_service
 from .SpawnUsd import spawn_usd_service
 from .SpawnWalls import spawn_walls_service
+from .UpdatePedestrians import update_pedestrians_service
 from .utils import Service
 
 services: collections.abc.Iterable[Service] = (

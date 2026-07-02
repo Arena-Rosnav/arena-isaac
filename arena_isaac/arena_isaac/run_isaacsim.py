@@ -44,41 +44,22 @@ import omni.kit.commands as commands
 import omni.timeline
 import omni.usd
 import yaml
-from isaac_utils.utils.assets import get_assets_root_path_safe
 from isaacsim.core.utils.extensions import enable_extension
 
 enable_extension("isaacsim.asset.importer.urdf")
 from isaacsim.core.api import SimulationContext, World
-from isaacsim.core.utils import extensions, prims, stage
-from pxr import Sdf
-
-EXTENSIONS_PEOPLE = [
-    'omni.anim.navigation.bundle',
-    'omni.anim.timeline',
-    'omni.anim.graph.bundle',
-    'omni.anim.graph.core',
-    'omni.anim.retarget.bundle',
-    'omni.anim.retarget.core',
-    'omni.kit.scripting',
-    'omni.graph.nodes',
-    'omni.anim.curve.core',
-    'omni.anim.navigation.core',
-]
+from isaacsim.core.utils import extensions, prims
 
 EXTENSIONS_MATERIAL = [
     'omni.kit.material.library',
 ]
 
 if not CONFIG["headless"]:
-    EXTENSIONS_PEOPLE += ['omni.anim.graph.ui', 'omni.anim.retarget.ui']
     EXTENSIONS_MATERIAL += [
         'omni.kit.browser.material',
         'omni.kit.browser.asset',
         'omni.kit.window.material',
     ]
-
-for ext_people in EXTENSIONS_PEOPLE:
-    extensions.enable_extension(ext_people)
 
 for ext_material in EXTENSIONS_MATERIAL:
     extensions.enable_extension(ext_material)
@@ -115,6 +96,7 @@ for _ext in (
     "isaacsim.sensors.physics",
     "isaacsim.sensors.camera",
     "isaacsim.sensors.experimental.rtx",
+    "omni.graph.nodes",
 ):
     if not extensions.enable_extension(_ext):
         carb.log_error(f"failed to enable extension: {_ext}")
@@ -135,11 +117,6 @@ _carb_settings.set("/rtx/rendering/perSensorTickTlas", False)
 
 import numpy as np
 
-#Import world generation dependencies
-import omni.anim.graph.core as ag
-
-#imprt navmesh gen
-import omni.anim.navigation.core as nav
 import omni.replicator.core as rep
 import omni.syntheticdata._syntheticdata as sd
 
@@ -164,7 +141,7 @@ importlib.invalidate_caches()
 for _mod in [_m for _m in sys.modules if _m == "isaacsim.sensors" or _m.startswith("isaacsim.sensors.physics")]:
     del sys.modules[_mod]
 from arena_isaac.services import services
-from pedestrian.simulator.logic.people_manager import PeopleManager
+from peds import runtime as pedestrian_runtime
 from rclpy.qos import QoSProfile
 from arena_isaac import run_after_tick_queue
 
@@ -216,28 +193,6 @@ light_1 = prims.create_prim(
         "inputs:color": (1.0, 1.0, 1.0)
     }
 )
-assets_root_path = get_assets_root_path_safe()
-
-# Navmesh config and baking
-simulation_app.update()
-stage = omni.usd.get_context().get_stage()
-
-omni.kit.commands.execute("CreateNavMeshVolumeCommand",
-                          parent_prim_path=Sdf.Path("/World"),
-                          layer=stage.GetRootLayer()
-                          )
-simulation_app.update()
-
-omni.kit.commands.execute(
-    'ChangeSetting',
-    path='/exts/omni.anim.navigation.core/navMesh/config/agentRadius',
-    value=35.0)
-
-inav = nav.acquire_interface()
-x = inav.start_navmesh_baking()
-simulation_app.update()
-
-
 # =================================================================================
 
 # ===================================controller====================================
@@ -324,6 +279,8 @@ def main(args=None):
 
     PublishTime('/World/publish_time')
     world.reset()
+
+    pedestrian_runtime.initialize(world)
 
     # set photoreal settings
     import isaac_utils.config.photoreal as photoreal

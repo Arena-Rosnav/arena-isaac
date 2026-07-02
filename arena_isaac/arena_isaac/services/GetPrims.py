@@ -1,5 +1,4 @@
 from isaacsim.core.utils.prims import get_prim_at_path
-
 from isaacsim_msgs.msg import Prim
 from isaacsim_msgs.srv import GetPrims
 

@@ -1,5 +1,4 @@
 import numpy as np
-
 from isaac_utils.utils import geom, prim
 from isaac_utils.utils.path import world_path
 from isaacsim_msgs.msg import Prim

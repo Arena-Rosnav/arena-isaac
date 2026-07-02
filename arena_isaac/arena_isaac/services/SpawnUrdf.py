@@ -3,7 +3,6 @@ import sys
 import tempfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from typing import Dict
 
 import carb
 import isaac_utils.graphs.joint_states as joint_states
@@ -11,16 +10,15 @@ import isaac_utils.graphs.odom as odom
 import isaac_utils.graphs.sensors.sensors as sensors
 import isaacsim.core.utils.prims as prim_utils
 import omni.usd
-from isaacsim.asset.importer.urdf import URDFImporter, URDFImporterConfig
 from isaac_utils.graphs import control
 from isaac_utils.managers import entity_lifecycle
 from isaac_utils.utils import geom
 from isaac_utils.utils.material import Material, PhysicsParams
 from isaac_utils.utils.path import world_path
 from isaac_utils.utils.prim import ensure_path
-from pxr import Usd, UsdGeom, UsdPhysics
-
+from isaacsim.asset.importer.urdf import URDFImporter, URDFImporterConfig
 from isaacsim_msgs.srv import SpawnUrdf
+from pxr import Usd, UsdGeom, UsdPhysics
 
 from .utils import Service, on_exception
 
@@ -100,8 +98,8 @@ def sanitize_urdf_for_isaac(urdf_path: str) -> str:
     tree = ET.parse(urdf_path)
     root = tree.getroot()
 
-    link_name_map: Dict[str, str] = {}
-    joint_name_map: Dict[str, str] = {}
+    link_name_map: dict[str, str] = {}
+    joint_name_map: dict[str, str] = {}
 
     for tag in root.iter():
         if tag.tag == 'link':
@@ -347,7 +345,7 @@ def spawn_urdf(request: SpawnUrdf.Request) -> str:
         else:
             manifest.graph_paths.append(os.path.join(prim_path, 'topic_bridge'))
 
-    with open(request.urdf_path, 'r') as f:
+    with open(request.urdf_path) as f:
         manifest.sensors.extend(
             sensors.Sensors(
                 prim_path=prim_path,

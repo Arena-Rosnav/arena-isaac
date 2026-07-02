@@ -1,4 +1,3 @@
-import omni
 
 from isaac_utils.utils.geom import Scale, Translation
 from isaac_utils.utils.material import Material, PhysicsParams
