@@ -4,6 +4,7 @@ from collections.abc import Mapping, Sequence
 
 import attrs
 import omni
+from arena_robots.sensors import output_topics
 import omni.graph.core as og
 import omni.replicator.core as rep
 import omni.syntheticdata._syntheticdata as sd
@@ -12,7 +13,7 @@ from isaacsim.sensors.camera import Camera
 
 from isaac_utils.utils.geom import Rotation, Translation
 
-from . import SensorBase, resolve_link_prim
+from . import SensorBase, join_topic, resolve_link_prim
 
 
 class SensorCamera(SensorBase):
@@ -31,11 +32,15 @@ class SensorCamera(SensorBase):
         image: Image
         clip: Clip
         update_rate: float = attrs.field(converter=attrs.converters.optional(float), default=1.0)
+        topic: str | None = attrs.field(converter=attrs.converters.optional(str), default=None)
+        camera_info_topic: str | None = attrs.field(converter=attrs.converters.optional(str), default=None)
 
         @classmethod
         def parse(cls, config: ET.Element) -> "SensorCamera.Config":
             return cls(
                 update_rate=config.findtext(".//update_rate"),
+                topic=config.findtext("./topic") or config.findtext(".//topic"),
+                camera_info_topic=config.findtext("./camera/camera_info_topic") or config.findtext(".//camera_info_topic"),
                 image=cls.Image(
                     width=config.findtext(".//image/width"),
                     height=config.findtext(".//image/height"),
@@ -97,22 +102,34 @@ class SensorCamera(SensorBase):
             return ()
         return (self.prim_path,)
 
+    def _common_args(self) -> tuple[str, str, str, int, int]:
+        frame = f'{self.robot_base_frame}{self.parent_frame}'
+        node_namespace = ''
+        queue_size = 1
+        render_product = self.camera._render_product_path
+        step_size = int(60 / self.config.update_rate)
+        return render_product, frame, node_namespace, queue_size, step_size
+
+    def _resolve_topics(self, base_topic: str) -> tuple[str, str]:
+        """Returns (image_topic, camera_info_topic)."""
+        if self.config.topic:
+            outputs = output_topics('camera', self.config.topic, self.config.camera_info_topic)
+            return join_topic(base_topic, outputs['image']), join_topic(base_topic, outputs['camera_info'])
+
+        camera_topic = join_topic(base_topic, self.name)
+        return camera_topic + '/image', camera_topic + '/camera_info'
+
     def publish(self, base_topic: str):
         if self.prim_path is None or self.camera is None:
             raise RuntimeError('Camera not simulated. Call simulate() first.')
 
-        camera_topic = os.path.join(base_topic, self.name)
-        frame = f'{self.robot_base_frame}{self.parent_frame}'
-        node_namespace = ''
-        queue_size = 1
+        render_product, frame, node_namespace, queue_size, step_size = self._common_args()
+        image_topic, info_topic = self._resolve_topics(base_topic)
 
-        render_product = self.camera._render_product_path
-        step_size = int(60 / self.config.update_rate)
+        self._publish_camera_info(render_product, frame, node_namespace, queue_size, info_topic, step_size)
+        self._publish_rgb(render_product, frame, node_namespace, queue_size, image_topic, step_size)
 
-        self._publish_camera_info(render_product, frame, node_namespace, queue_size, camera_topic, step_size)
-        self._publish_rgb(render_product, frame, node_namespace, queue_size, camera_topic, step_size)
-
-        return render_product, frame, node_namespace, queue_size, camera_topic, step_size
+        return render_product, frame, node_namespace, queue_size, step_size
 
     @staticmethod
     def _reshape_param(value, columns: int):
@@ -246,7 +263,7 @@ class SensorCamera(SensorBase):
         raise TypeError(f"Unsupported camera info format: {type(camera_info)!r}, len={tuple_len}, value={camera_info!r}")
 
     @classmethod
-    def _publish_camera_info(cls, render_product: str, frame: str, node_namespace: str, queue_size: int, camera_topic: str, step_size: int):
+    def _publish_camera_info(cls, render_product: str, frame: str, node_namespace: str, queue_size: int, topic_name: str, step_size: int):
         camera_info = cls._normalize_camera_info(read_camera_info(render_product_path=render_product))
 
         writer_camera_info = rep.writers.get("ROS2PublishCameraInfo")
@@ -254,7 +271,7 @@ class SensorCamera(SensorBase):
             frameId=frame,
             nodeNamespace=node_namespace,
             queueSize=queue_size,
-            topicName=os.path.join(camera_topic, "camera_info"),
+            topicName=topic_name,
             width=camera_info["width"],
             height=camera_info["height"],
             projectionType=camera_info["projectionType"],
@@ -271,14 +288,14 @@ class SensorCamera(SensorBase):
         og.Controller.attribute(gate_path_camera_info + ".inputs:step").set(step_size)
 
     @classmethod
-    def _publish_rgb(cls, render_product: str, frame: str, node_namespace: str, queue_size: int, camera_topic: str, step_size: int):
+    def _publish_rgb(cls, render_product: str, frame: str, node_namespace: str, queue_size: int, topic_name: str, step_size: int):
         rv = omni.syntheticdata.SyntheticData.convert_sensor_type_to_rendervar(sd.SensorType.Rgb.name)
         writer = rep.writers.get(rv + "ROS2PublishImage")
         writer.initialize(
             frameId=frame,
             nodeNamespace=node_namespace,
             queueSize=queue_size,
-            topicName=os.path.join(camera_topic, 'image')
+            topicName=topic_name
         )
         writer.attach([render_product])
 
@@ -289,15 +306,34 @@ class SensorCamera(SensorBase):
 
 
 class SensorCameraRGBD(SensorCamera):
+    """<topic> is a prefix here, gz-sensors hangs image/depth_image/points/camera_info off it."""
+
+    def _resolve_topics(self, base_topic: str) -> tuple[str, str, str, str]:
+        """Returns (image_topic, camera_info_topic, depth_topic, points_topic)."""
+        outputs = output_topics('rgbd_camera', self.config.topic or self.name, self.config.camera_info_topic)
+        return (
+            join_topic(base_topic, outputs['image']),
+            join_topic(base_topic, outputs['camera_info']),
+            join_topic(base_topic, outputs['depth']),
+            join_topic(base_topic, outputs['pointcloud']),
+        )
 
     def publish(self, base_topic: str):
-        args = super().publish(base_topic)
-        self._publish_pointcloud(*args)
-        self._publish_depth(*args)
-        return args
+        if self.prim_path is None or self.camera is None:
+            raise RuntimeError('Camera not simulated. Call simulate() first.')
+
+        render_product, frame, node_namespace, queue_size, step_size = self._common_args()
+        image_topic, info_topic, depth_topic, points_topic = self._resolve_topics(base_topic)
+
+        self._publish_camera_info(render_product, frame, node_namespace, queue_size, info_topic, step_size)
+        self._publish_rgb(render_product, frame, node_namespace, queue_size, image_topic, step_size)
+        self._publish_pointcloud(render_product, frame, node_namespace, queue_size, points_topic, step_size)
+        self._publish_depth(render_product, frame, node_namespace, queue_size, depth_topic, step_size)
+
+        return render_product, frame, node_namespace, queue_size, step_size
 
     @classmethod
-    def _publish_pointcloud(cls, render_product: str, frame: str, node_namespace: str, queue_size: int, camera_topic: str, step_size: int):
+    def _publish_pointcloud(cls, render_product: str, frame: str, node_namespace: str, queue_size: int, topic_name: str, step_size: int):
         rv = omni.syntheticdata.SyntheticData.convert_sensor_type_to_rendervar(
             sd.SensorType.DistanceToImagePlane.name
         )
@@ -307,7 +343,7 @@ class SensorCameraRGBD(SensorCamera):
             frameId=frame,
             nodeNamespace=node_namespace,
             queueSize=queue_size,
-            topicName=os.path.join(camera_topic, 'points')
+            topicName=topic_name
         )
         writer.attach([render_product])
 
@@ -317,7 +353,7 @@ class SensorCameraRGBD(SensorCamera):
         og.Controller.attribute(gate_path + ".inputs:step").set(step_size)
 
     @classmethod
-    def _publish_depth(cls, render_product: str, frame: str, node_namespace: str, queue_size: int, camera_topic: str, step_size: int):
+    def _publish_depth(cls, render_product: str, frame: str, node_namespace: str, queue_size: int, topic_name: str, step_size: int):
         rv = omni.syntheticdata.SyntheticData.convert_sensor_type_to_rendervar(
             sd.SensorType.DistanceToImagePlane.name
         )
@@ -326,7 +362,7 @@ class SensorCameraRGBD(SensorCamera):
             frameId=frame,
             nodeNamespace=node_namespace,
             queueSize=queue_size,
-            topicName=os.path.join(camera_topic, 'depth_image')
+            topicName=topic_name
         )
         writer.attach([render_product])
 

@@ -7,6 +7,16 @@ import omni.usd
 from pxr import Usd, UsdPhysics
 
 
+def join_topic(base_topic: str, *parts: str) -> str:
+    """Join relative topic segments onto base_topic, stripping any leading '/'.
+
+    URDF-authored topics carry a Gazebo-side namespace prefix that expands
+    empty under Isaac, so parts may arrive absolute (e.g. '/scan'); strip
+    them so they nest under base_topic instead of discarding it.
+    """
+    return os.path.join(base_topic, *(part.lstrip('/') for part in parts))
+
+
 def resolve_link_prim(robot_root: str, link_name: str, *, require_rigid_body: bool = False) -> str:
     """Resolve a URDF link name to its prim path within the robot subtree.
 

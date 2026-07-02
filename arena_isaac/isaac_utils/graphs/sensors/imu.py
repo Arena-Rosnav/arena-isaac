@@ -8,7 +8,7 @@ from isaacsim.sensors.physics import IMUSensor
 
 from isaac_utils.graphs import Graph
 
-from . import SensorBase, resolve_link_prim
+from . import SensorBase, join_topic, resolve_link_prim
 
 
 class SensorIMU(SensorBase):
@@ -21,7 +21,7 @@ class SensorIMU(SensorBase):
         @classmethod
         def parse(cls, config: ET.Element) -> "SensorIMU.Config":
             return cls(
-                topic=config.findtext('.//topic') or (config.findtext('.//remapping', '').split(':=')[-1] or None),
+                topic=config.findtext('./topic') or config.findtext('.//topic') or (config.findtext('.//remapping', '').split(':=')[-1] or None),
                 update_rate=config.findtext('.//update_rate'),
             )
 
@@ -82,7 +82,7 @@ class SensorIMU(SensorBase):
         read_imu.connect("orientation", ros2_publish_imu, "orientation")  # Pass orientation
 
         # Set the node parameters
-        ros2_publish_imu.attribute("topicName", os.path.join(base_topic, self.config.topic))  # ROS2 topic name
+        ros2_publish_imu.attribute("topicName", join_topic(base_topic, self.config.topic))  # ROS2 topic name
         ros2_publish_imu.attribute("frameId", f'{self.robot_base_frame}{self.parent_frame}')
         ros2_publish_imu.attribute("publishAngularVelocity", True)
         ros2_publish_imu.attribute("publishLinearAcceleration", True)

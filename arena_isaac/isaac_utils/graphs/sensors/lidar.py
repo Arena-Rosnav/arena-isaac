@@ -5,16 +5,19 @@ from collections.abc import Sequence
 
 import attrs
 import carb
+from arena_robots.sensors import output_topics
 import isaacsim.core.utils.prims as prim_utils
 from isaacsim.sensors.experimental.rtx import Lidar, LidarSensor
 
 from isaac_utils.utils.geom import Rotation, Translation
 
-from . import SensorBase, resolve_link_prim
+from . import SensorBase, join_topic, resolve_link_prim
 
-# Built-in RTX rotary configs carry the firing pattern (azimuth/elevation
-# sampling) the sensor needs to cast rays. A lidar authored from bare attributes
-# scans nothing. The 3D config feeds the point cloud, the 2D the LaserScan.
+# Built-in RTX rotary configs carry a complete firing pattern (azimuth/elevation
+# sampling), a lidar authored from bare attributes scans nothing. The presets only
+# seed the prim, the URDF scan block then overrides the pattern attributes on it.
+# Lidars without a vertical fan use the planar config for both prims so the point
+# cloud stays planar.
 _LIDAR_CONFIG_POINTS = "Example_Rotary"
 _LIDAR_CONFIG_SCAN = "Example_Rotary_2D"
 
@@ -60,7 +63,7 @@ class SensorLidar(SensorBase):
         @classmethod
         def parse(cls, config: ET.Element) -> "SensorLidar.Config":
             return cls(
-                topic=config.findtext(".//topic") or config.findtext(".//topicName") or 'lidar',
+                topic=config.findtext("./topic") or config.findtext(".//topic") or config.findtext(".//topicName") or 'lidar',
                 update_rate=float(config.findtext(".//update_rate") or 1.0),
                 horizontal=SensorLidar.Config.Dimension(
                     samples=int(config.findtext(".//scan/horizontal/samples") or 1),
@@ -139,7 +142,53 @@ class SensorLidar(SensorBase):
         prim = prim_utils.get_prim_at_path(lidar.paths[0])
         prim.GetAttribute("omni:sensor:Core:nearRangeM").Set(float(self.config.range.min))
         prim.GetAttribute("omni:sensor:Core:farRangeM").Set(float(self.config.range.max))
+        self._apply_scan_pattern(prim)
         return lidar
+
+    def _apply_scan_pattern(self, prim) -> None:
+        """Override the preset firing pattern with the URDF scan block.
+
+        The OmniLidar pattern attribute names are undocumented, so each value is
+        resolved through candidate names, a miss logs the prim's sensor attributes
+        so the table can be corrected from one live run.
+        """
+        horizontal = self.config.horizontal
+        span = float(horizontal.max_angle) - float(horizontal.min_angle)
+        if span <= 0.0:
+            carb.log_warn(f"lidar '{self.name}': non-positive azimuth span, keeping preset pattern")
+            return
+        # The emitter fires uniformly over the full revolution, the sector only
+        # gates output, so the firing rate must upscale samples to 360 degrees.
+        per_revolution = float(horizontal.samples) * max(2.0 * math.pi / span, 1.0)
+
+        # The azimuth domain is [0, 360] with the seam at 0 (negative values
+        # clamp), shipped sector profiles center their FOV on 180, so a signed
+        # URDF sector shifts by 180 and a full revolution stays 0..360.
+        if span >= 2.0 * math.pi - 1e-6:
+            start_deg, end_deg = 0.0, 360.0
+        else:
+            start_deg = 180.0 + math.degrees(float(horizontal.min_angle))
+            end_deg = 180.0 + math.degrees(float(horizontal.max_angle))
+
+        overrides: list[tuple[tuple[str, ...], float]] = [
+            (('omni:sensor:Core:startAzimuthDeg', 'omni:sensor:Core:validStartAzimuthDeg'), start_deg),
+            (('omni:sensor:Core:endAzimuthDeg', 'omni:sensor:Core:validEndAzimuthDeg'), end_deg),
+            (('omni:sensor:Core:rotationRateHz', 'omni:sensor:Core:scanRateBaseHz'), float(self.config.update_rate)),
+            (('omni:sensor:Core:reportRateBaseHz',), per_revolution * float(self.config.update_rate)),
+        ]
+        missing: list[str] = []
+        for candidates, value in overrides:
+            for name in candidates:
+                attr = prim.GetAttribute(name)
+                if attr.IsValid():
+                    current = attr.Get()
+                    attr.Set(type(current)(value) if current is not None else value)
+                    break
+            else:
+                missing.append(candidates[0])
+        if missing:
+            available = sorted(a.GetName() for a in prim.GetAttributes() if a.GetName().startswith('omni:sensor:'))
+            carb.log_warn(f"lidar '{self.name}': pattern attribute(s) {missing} not found, available: {available}")
 
     def simulate(self, base_prim: str):
         """
@@ -156,7 +205,8 @@ class SensorLidar(SensorBase):
         points_prim_path = os.path.join(link_prim, f"{self.name}_points")
         scan_prim_path = os.path.join(link_prim, f"{self.name}_scan")
 
-        points_lidar = self._create_lidar(points_prim_path, _LIDAR_CONFIG_POINTS)
+        is_planar = self.config.vertical.samples <= 1
+        points_lidar = self._create_lidar(points_prim_path, _LIDAR_CONFIG_SCAN if is_planar else _LIDAR_CONFIG_POINTS)
         scan_lidar = self._create_lidar(scan_prim_path, _LIDAR_CONFIG_SCAN)
 
         if points_lidar is None or scan_lidar is None:
@@ -195,8 +245,9 @@ class SensorLidar(SensorBase):
             )
             return False
 
-        scan_topic = os.path.join(base_topic, self.config.topic)
-        points_topic = os.path.join(base_topic, self.config.topic, 'points')
+        outputs = output_topics('gpu_lidar', self.config.topic)
+        scan_topic = join_topic(base_topic, outputs['laserscan'])
+        points_topic = join_topic(base_topic, outputs['pointcloud'])
         frame_id = f'{self.robot_base_frame}{self.parent_frame}'
 
         points_ok = True
