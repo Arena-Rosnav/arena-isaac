@@ -1,6 +1,6 @@
 import omni.graph.core as og
 
-from isaac_utils.graphs import Graph
+from isaac_utils.graphs import Graph, physics_engine
 from isaac_utils.graphs.transform import base_pose
 
 
@@ -22,11 +22,13 @@ def odom(
 
     graph = Graph(graph_path)
 
+    newton = physics_engine() == 'newton'
+
     on_playback_tick = graph.node('on_playback_tick', 'omni.graph.action.OnPlaybackTick')
     read_simulation_time = graph.node('read_simulation_time', 'isaacsim.core.nodes.IsaacReadSimulationTime')
-    get_transform = graph.node('get_transform', 'omni.graph.nodes.GetPrimLocalToWorldTransform')
+    read_simulation_time.attribute('resetOnStop', False)
     get_base_transform = graph.node('get_base_transform', 'omni.graph.nodes.GetPrimLocalToWorldTransform')
-    base = base_pose(graph, 'base_link_pose')
+    base = base_pose(graph, 'base_link_pose', body_is_matrix=not newton)
     publish_map = graph.node('publish_odom_static', 'isaacsim.ros2.bridge.ROS2PublishRawTransformTree')
     publish_odom = graph.node('publish_odom', 'isaacsim.ros2.bridge.ROS2PublishRawTransformTree')
 
@@ -36,8 +38,19 @@ def odom(
     read_simulation_time.connect('simulationTime', publish_odom, 'timeStamp')
     read_simulation_time.connect('simulationTime', publish_map, 'timeStamp')
 
+    # the usd body matrix serves the one-time offset capture under both engines,
+    # and stays the live pose source under physx
+    get_transform = graph.node('get_transform', 'omni.graph.nodes.GetPrimLocalToWorldTransform')
     get_transform.attribute('primPath', prim_path)
     get_transform.connect('localToWorldTransform', base, 'body_matrix')
+
+    if newton:
+        # newton syncs body poses to fabric only, usd xforms keep their spawn
+        # values, so the live body pose must come from the fabric world matrix
+        read_world_pose = graph.node('read_world_pose', 'isaacsim.core.nodes.IsaacReadWorldPose')
+        read_world_pose.attribute('prim', prim_path)
+        read_world_pose.connect('translation', base, 'body_translation')
+        read_world_pose.connect('orientation', base, 'body_orientation')
 
     get_base_transform.attribute('primPath', base_prim)
     get_base_transform.connect('localToWorldTransform', base, 'base_matrix')

@@ -5,6 +5,7 @@ from isaac_utils.graphs import Graph
 
 extensions.enable_extension("isaacsim.core.nodes")
 extensions.enable_extension("isaacsim.ros2.bridge")
+extensions.enable_extension("isaacsim.sensors.physics.nodes")
 
 
 def topic_bridge(
@@ -34,6 +35,11 @@ def topic_bridge(
     isaac_read_simulation_time = graph.node(
         'isaac_read_simulation_time', 'isaacsim.core.nodes.IsaacReadSimulationTime'
     )
+    isaac_read_simulation_time.attribute('resetOnStop', False)
+    # publisher targetPrim is deprecated and its reader finds no joints under asset
+    # structure 3.0 (joints live in the sibling Physics scope), feed it from the
+    # tensor-backed read node instead
+    read_joint_state = graph.node('read_joint_state', 'isaacsim.sensors.physics.IsaacReadJointState')
     ros2_publish_joint_state = graph.node(
         'ros2_publish_joint_state', 'isaacsim.ros2.bridge.ROS2PublishJointState'
     )
@@ -42,10 +48,16 @@ def topic_bridge(
     ros2_publish_joint_state.attribute('topicName', states_topic)
 
     on_playback_tick.connect('tick', get_target_prim, 'execIn')
-    on_playback_tick.connect('tick', ros2_publish_joint_state, 'execIn')
+    on_playback_tick.connect('tick', read_joint_state, 'execIn')
+    read_joint_state.connect('execOut', ros2_publish_joint_state, 'execIn')
 
     isaac_read_simulation_time.connect('simulationTime', ros2_publish_joint_state, 'timeStamp')
-    get_target_prim.connect('prims', ros2_publish_joint_state, 'targetPrim')
+    get_target_prim.connect('prims', read_joint_state, 'prim')
+    for attr in (
+        'jointNames', 'jointPositions', 'jointVelocities',
+        'jointEfforts', 'jointDofTypes', 'stageMetersPerUnit',
+    ):
+        read_joint_state.connect(attr, ros2_publish_joint_state, attr)
 
     def _wire_kind(kind: str, joints: list[str], topic: str, command_attr: str) -> None:
         subscriber = graph.node(

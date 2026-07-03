@@ -12,6 +12,7 @@ from isaacsim.core.utils.rotations import euler_angles_to_quat, quat_to_euler_an
 from pxr import Gf, Usd, UsdGeom, UsdPhysics
 
 import isaacsim_msgs.msg
+from isaac_utils.graphs import physics_engine
 from isaac_utils.utils.prim import resolve_paths, resolve_prim
 
 
@@ -250,7 +251,13 @@ def move(
         return
 
     target = None
-    if all(p.HasAPI(UsdPhysics.ArticulationRootAPI) for p in prim.prims):
+    if physics_engine() == 'newton':
+        # newton rebuilds its model from authored usd on every unpause, and pose
+        # writes through the tensor views are lost with the rebuilt state, so
+        # teleports must land in the usd xform to survive
+        target = XformPrim(prim_path, reset_xform_op_properties=True)
+
+    if target is None and all(p.HasAPI(UsdPhysics.ArticulationRootAPI) for p in prim.prims):
         try:
             target = Articulation(prim_path)
         except Exception:

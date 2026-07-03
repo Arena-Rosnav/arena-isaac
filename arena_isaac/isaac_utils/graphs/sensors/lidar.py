@@ -11,7 +11,7 @@ from isaacsim.sensors.experimental.rtx import Lidar, LidarSensor
 
 from isaac_utils.utils.geom import Rotation, Translation
 
-from . import SensorBase, join_topic, resolve_link_prim
+from . import SensorBase, join_topic, monotonic_sensor_time, resolve_link_prim
 
 # Built-in RTX rotary configs carry a complete firing pattern (azimuth/elevation
 # sampling), a lidar authored from bare attributes scans nothing. The presets only
@@ -259,6 +259,7 @@ class SensorLidar(SensorBase):
                 frameId=frame_id,
             )
             self._sensors.append(points_sensor)
+            monotonic_sensor_time(str(points_sensor.render_product.GetPath()))
         except Exception as error:
             carb.log_warn(
                 f"Lidar PointCloud publish failed for '{self.name}': {error}"
@@ -292,6 +293,7 @@ class SensorLidar(SensorBase):
                     azimuthRange=[-180.0, 180.0],
                 )
                 self._sensors.append(scan_sensor)
+                monotonic_sensor_time(str(scan_sensor.render_product.GetPath()))
         except Exception as error:
             carb.log_warn(
                 f"Lidar LaserScan publish failed for '{self.name}': {error}"

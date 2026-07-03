@@ -4,6 +4,36 @@ import typing
 import omni.graph.core as og
 
 
+def physics_engine() -> str:
+    """Active physics engine name, 'physx' or 'newton'."""
+    from isaacsim.core.simulation_manager import SimulationManager
+
+    return SimulationManager.get_active_physics_engine()
+
+
+_rebuilders: dict[str, typing.Callable[[], object]] = {}
+
+
+def register_rebuilder(graph_path: str, rebuild: typing.Callable[[], object]) -> None:
+    """Register a closure recreating a graph whose nodes cache physx tensor views,
+    prim deletions invalidate those and only a rebuild re-acquires them."""
+    _rebuilders[graph_path] = rebuild
+
+
+def rebuild_graphs() -> None:
+    import omni.usd
+
+    stage = omni.usd.get_context().get_stage()
+    for graph_path, rebuild in list(_rebuilders.items()):
+        parent = graph_path.rsplit('/', 1)[0]
+        if not stage.GetPrimAtPath(parent).IsValid():
+            del _rebuilders[graph_path]
+            continue
+        if stage.GetPrimAtPath(graph_path).IsValid():
+            stage.RemovePrim(graph_path)
+        rebuild()
+
+
 class _Node:
     def __init__(
         self,

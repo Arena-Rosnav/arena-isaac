@@ -35,7 +35,7 @@ def get_prim(name: str) -> Prim:
 
 
 def get_prims_callback(request: GetPrims.Request, response: GetPrims.Response):
-    response.prims = list(filter(None, map(get_prim, request.prim_paths)))
+    response.prims = list(filter(None, map(get_prim, request.names)))
     return response
 
 

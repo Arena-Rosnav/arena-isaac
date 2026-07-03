@@ -13,7 +13,14 @@ from isaacsim.sensors.camera import Camera
 
 from isaac_utils.utils.geom import Rotation, Translation
 
-from . import SensorBase, join_topic, resolve_link_prim
+from . import SensorBase, join_topic, monotonic_sensor_time, resolve_link_prim
+
+_RENDER_HZ = 60
+
+
+def _snap_rate(rate: float) -> float:
+    """Snap to the nearest divisor of the render rate, Camera raises otherwise."""
+    return float(min((d for d in range(1, _RENDER_HZ + 1) if _RENDER_HZ % d == 0), key=lambda d: abs(d - rate)))
 
 
 class SensorCamera(SensorBase):
@@ -89,7 +96,7 @@ class SensorCamera(SensorBase):
             name=self.name,
             translation=self.translation.tuple(),
             orientation=self.rotation.quat(),
-            frequency=self.config.update_rate,
+            frequency=_snap_rate(self.config.update_rate),
             resolution=(self.config.image.width, self.config.image.height),
         )
         if camera:
@@ -107,7 +114,7 @@ class SensorCamera(SensorBase):
         node_namespace = ''
         queue_size = 1
         render_product = self.camera._render_product_path
-        step_size = int(60 / self.config.update_rate)
+        step_size = int(_RENDER_HZ / _snap_rate(self.config.update_rate))
         return render_product, frame, node_namespace, queue_size, step_size
 
     def _resolve_topics(self, base_topic: str) -> tuple[str, str]:
@@ -128,6 +135,7 @@ class SensorCamera(SensorBase):
 
         self._publish_camera_info(render_product, frame, node_namespace, queue_size, info_topic, step_size)
         self._publish_rgb(render_product, frame, node_namespace, queue_size, image_topic, step_size)
+        monotonic_sensor_time(render_product)
 
         return render_product, frame, node_namespace, queue_size, step_size
 
@@ -329,6 +337,7 @@ class SensorCameraRGBD(SensorCamera):
         self._publish_rgb(render_product, frame, node_namespace, queue_size, image_topic, step_size)
         self._publish_pointcloud(render_product, frame, node_namespace, queue_size, points_topic, step_size)
         self._publish_depth(render_product, frame, node_namespace, queue_size, depth_topic, step_size)
+        monotonic_sensor_time(render_product)
 
         return render_product, frame, node_namespace, queue_size, step_size
 

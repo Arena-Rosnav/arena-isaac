@@ -9,6 +9,10 @@ def PublishTime(graph_path: str) -> bool:
     read_simulation_time = graph.node('read_simulation_time', 'isaacsim.core.nodes.IsaacReadSimulationTime')
     publish_clock = graph.node('publish_clock', 'isaacsim.ros2.bridge.ROS2PublishClock')
 
+    # timeline stop cycles (newton rebuilds) must never publish a backward
+    # /clock jump, use_sim_time consumers wedge on it
+    read_simulation_time.attribute('resetOnStop', False)
+
     on_playback_tick.connect('tick', publish_clock, 'execIn')
     read_simulation_time.connect('simulationTime', publish_clock, 'timeStamp')
 

@@ -7,6 +7,17 @@ import omni.usd
 from pxr import Usd, UsdPhysics
 
 
+def monotonic_sensor_time(render_product_path: str) -> None:
+    """RTX writer pipelines stamp from a per-render-product sim-time node that
+    resets on timeline stop, which would rewind sensor stamps behind /clock and
+    tf across newton stop-cycles."""
+    import omni.syntheticdata
+
+    omni.syntheticdata.SyntheticData.Get().set_node_attributes(
+        'IsaacReadSimulationTime', {'inputs:resetOnStop': False}, render_product_path
+    )
+
+
 def join_topic(base_topic: str, *parts: str) -> str:
     """Join relative topic segments onto base_topic, stripping any leading '/'.
 

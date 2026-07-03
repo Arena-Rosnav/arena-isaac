@@ -34,6 +34,7 @@ def tf(
     on_tick.attribute('framePeriod', throttle)
 
     read_simulation_time = graph.node('read_simulation_time', 'isaacsim.core.nodes.IsaacReadSimulationTime')
+    read_simulation_time.attribute('resetOnStop', False)
     get_base_prim = graph.node('get_base_prim', 'omni.replicator.core.OgnGetPrimAtPath')
     publish_tf = graph.node('publish_tf', 'isaacsim.ros2.bridge.ROS2PublishTransformTree')
     prefix_transform = graph.node('prefix_transform', 'omni.graph.scriptnode.ScriptNode')

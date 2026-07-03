@@ -21,10 +21,24 @@ def _arg_bool(name: str, default: bool) -> bool:
             return arg[len(prefix):].lower() in ("true", "1")
     return default
 
+def _arg_str(name: str, default: str) -> str:
+    if name in sys.argv:
+        i = sys.argv.index(name)
+        if i + 1 < len(sys.argv):
+            return sys.argv[i + 1]
+    prefix = f"{name.lstrip('-')}:="
+    for arg in sys.argv:
+        if arg.startswith(prefix):
+            return arg[len(prefix):]
+    return default
+
 CONFIG = {
     "renderer": "Wireframe",
     "headless": _arg_bool("--headless", False),
 }
+PHYSICS_ENGINE = _arg_str("--physics", "physx")
+if PHYSICS_ENGINE not in ("physx", "newton"):
+    raise ValueError(f"unknown physics engine: {PHYSICS_ENGINE}")
 #import parent directory
 from pathlib import Path
 
@@ -94,6 +108,7 @@ omni.usd.get_context().new_stage()
 for _ext in (
     "isaacsim.ros2.bridge",
     "isaacsim.sensors.physics",
+    "isaacsim.sensors.physics.nodes",
     "isaacsim.sensors.camera",
     "isaacsim.sensors.experimental.rtx",
     "omni.graph.nodes",
@@ -114,6 +129,12 @@ import carb.settings
 _carb_settings = carb.settings.get_settings()
 _carb_settings.set("/rtx/hydra/supportMultiTickRate", True)
 _carb_settings.set("/rtx/rendering/perSensorTickTlas", False)
+
+# ros2 publisher nodes skip publishing when getSubscriptionCount() sees no
+# subscribers, and that count is unreliable (matched DDS subscribers read as 0,
+# silently muting joint_states/odom/tf), publish unconditionally like NVIDIA's
+# own test configs do.
+_carb_settings.set("/exts/isaacsim.ros2.bridge/publish_without_verification", True)
 
 import numpy as np
 
@@ -155,7 +176,106 @@ plane_material_paths = [
     # 'https://omniverse-content-production.s3.us-west-2.amazonaws.com/Materials/2023_1/vMaterials_2/Ceramic/Ceramic_Tiles_Glazed_Diamond.mdl',
     # 'https://omniverse-content-production.s3.us-west-2.amazonaws.com/Materials/2023_1/vMaterials_2/Ceramic/Ceramic_Tiles_Glazed_Diamond.mdl'
 ]
+class _NewtonStaleGuard:
+    """Tracks structural stage edits that newton cannot see.
+
+    Newton registers no prim-change callbacks with the stage-update interface, so a
+    robot spawned during a pause hold never enters the mjwarp model, its articulation
+    view then matches nothing ("Physics backend not found"). The main loop bounces
+    play-time edits through a pause and rebuilds on the stop->play resume.
+    """
+
+    # resyncs on these prim types (or their descendants) never change the physics
+    # model, and graph/material/render churn arrives every frame, which would keep
+    # the guard dirty forever and starve the sim in a pause/rebuild cycle
+    _SKIP_TYPES = frozenset((
+        'Shader', 'Material', 'OmniGraph', 'OmniGraphNode',
+        'RenderProduct', 'RenderVar', 'RenderSettings',
+    ))
+
+    def __init__(self, stage) -> None:
+        from pxr import Tf, Usd
+        self._stage = stage
+        self._dirty = False
+        self._quiet = 0
+        self._key = Tf.Notice.Register(Usd.Notice.ObjectsChanged, self._on_changed, stage)
+
+    def _relevant(self, path) -> bool:
+        prim = self._stage.GetPrimAtPath(path.GetPrimPath())
+        while prim and prim.IsValid():
+            if str(prim.GetTypeName()) in self._SKIP_TYPES:
+                return False
+            prim = prim.GetParent()
+        return True
+
+    def _on_changed(self, notice, _sender) -> None:
+        if any(self._relevant(p) for p in notice.GetResyncedPaths()):
+            self._dirty = True
+            self._quiet = 0
+
+    def tick(self) -> None:
+        self._quiet += 1
+
+    def pending(self, settle_frames: int = 0) -> bool:
+        return self._dirty and self._quiet >= settle_frames
+
+    def flush(self, settle_frames: int = 0) -> bool:
+        if self.pending(settle_frames):
+            self._dirty = False
+            return True
+        return False
+
+
+def _newton_sim_time() -> float:
+    import isaacsim.physics.newton as newton_ext
+    ns = newton_ext.acquire_stage()
+    return 0.0 if ns is None else float(ns.sim_time)
+
+
+def _newton_restore_sim_time(t: float) -> None:
+    # newton's init() zeroes physics time on every model rebuild, which publishes a
+    # backward /clock jump and wedges every use_sim_time consumer (controller_manager
+    # update loop, controller switches), keep it monotonic across rebuilds
+    import isaacsim.physics.newton as newton_ext
+    ns = newton_ext.acquire_stage()
+    if ns is not None and ns.initialized and ns.sim_time < t:
+        ns.sim_time = t
+
+
+def _newton_apply_solver_cfg() -> None:
+    import isaacsim.physics.newton as newton_ext
+    ns = newton_ext.acquire_stage()
+    if ns is None:
+        carb.log_warn("arena: newton stage not attached yet, solver cfg not applied")
+        return
+    cfg = ns.cfg.solver_cfg
+    if cfg.solver_type != "mujoco":
+        return
+    # elliptic cone at impratio 1 can neither turn a skid-steer in place nor
+    # grip quadruped feet, 0.05 is bench-validated for both
+    cfg.cone = "pyramidal"
+    cfg.impratio = 0.05
+    # mjwarp specializes its tile kernels on these sizes
+    cfg.nconmax = 400
+    cfg.njmax = 2400
+
+
+newton_guard = None
+if PHYSICS_ENGINE == "newton":
+    # python.sh does not autoload the newton extensions (only isaac-sim.newton.sh does),
+    # and the engine switch must happen before any physics scene exists.
+    for _ext in ("isaacsim.physics.newton", "isaacsim.physics.newton.tensors"):
+        if not extensions.enable_extension(_ext):
+            carb.log_error(f"failed to enable extension: {_ext}")
+    for _ in range(20):
+        simulation_app.update()
+    from isaacsim.core.simulation_manager import SimulationManager
+    SimulationManager.switch_physics_engine("newton")
+    newton_guard = _NewtonStaleGuard(omni.usd.get_context().get_stage())
+
 world = World()
+if PHYSICS_ENGINE == "newton":
+    _newton_apply_solver_cfg()
 world.scene.add_ground_plane(size=100, z_position=0.0)
 Material.physics(
     parent_prim_path=world_path(),
@@ -279,6 +399,9 @@ def main(args=None):
 
     PublishTime('/World/publish_time')
     world.reset()
+    if PHYSICS_ENGINE == "newton":
+        # the solver consumes the extension cfg at first play, before the resume path
+        _newton_apply_solver_cfg()
 
     pedestrian_runtime.initialize(world)
 
@@ -294,16 +417,58 @@ def main(args=None):
 
     # mainloop
     was_playing: bool = False
+    newton_bounce_hold: int = 0
     try:
         while simulation_app.is_running():
             stepped_this_iteration: bool = False
             rclpy.spin_once(controller, timeout_sec=0)
             if controller.running:
-                if not was_playing:
+                if newton_guard is not None:
+                    newton_guard.tick()
+                if newton_bounce_hold > 0:
+                    newton_bounce_hold -= 1
+                    simulation_app.update()
+                elif not was_playing:
+                    restore_time = 0.0
+                    if newton_guard is not None:
+                        # newton's per-frame pump does not survive a plain pause->play
+                        # resume (only warmup's two direct steps run afterwards), the
+                        # timeline stop->play cycle is the transition the simulation
+                        # manager rebuilds around (stop invalidates, play triggers full
+                        # warmup), and authored poses are the spawn/teleport poses so
+                        # the stage reset is a no-op at arena's episode boundaries
+                        newton_guard.flush()
+                        restore_time = _newton_sim_time()
+                        timeline = omni.timeline.get_timeline_interface()
+                        timeline_time = timeline.get_current_time()
+                        world.stop()
+                        _newton_apply_solver_cfg()
+                        if timeline_time > 0.0:
+                            # stop rewinds the timeline to zero, but rtx sensor
+                            # writers stamp from it, keep it continuous or their
+                            # messages fall behind /clock and tf lookups fail
+                            timeline.set_current_time(timeline_time)
+                    else:
+                        # prim deletions during the pause invalidate the tensor
+                        # views cached in bridge graph nodes
+                        from isaac_utils.graphs import rebuild_graphs
+                        rebuild_graphs()
                     world.play()
                     was_playing = True
-                world.step(render=True)
-                stepped_this_iteration = True
+                    world.step(render=True)
+                    if restore_time > 0.0:
+                        _newton_restore_sim_time(restore_time)
+                    stepped_this_iteration = True
+                elif newton_guard is not None and newton_guard.pending(settle_frames=30):
+                    # spawns during an open clock window never cross a pause->play
+                    # boundary, hold a real pause and rebuild on the resume path
+                    carb.log_info("arena: newton rebuild pending, bouncing timeline")
+                    world.pause()
+                    was_playing = False
+                    newton_bounce_hold = 30
+                else:
+                    world.step(render=True)
+                    stepped_this_iteration = True
             else:
                 if was_playing:
                     world.pause()
