@@ -1,10 +1,12 @@
 """Rebuild-on-dirty USD cache for pedestrian actors. stdlib + numpy + pxr.
 
 convert_cached resolves an actor SDF to a per-actor cache dir holding the
-authored USD (character.usda, clips/, meta.json), its downloaded source DAEs and
-an ATTRIBUTION.md. The digest is deterministic offline: it hashes the SDF bytes
-plus the referenced mesh URI strings, never the remote bytes. Importable outside
-Isaac; pxr is only reached through peds.convert.convert_actor.
+authored USD (character.usda, clips/, meta.json), its downloaded source DAEs, the
+skin's diffuse textures and an ATTRIBUTION.md. The digest hashes the SDF bytes
+plus, per referenced mesh URI, the local file's bytes (so an in-place re-export
+rebuilds even when the SDF is unchanged) or, for remote URIs, the URI string
+(kept offline, never the remote bytes). Importable outside Isaac; pxr is only
+reached through peds.convert.convert_actor.
 """
 
 from __future__ import annotations
@@ -15,7 +17,9 @@ import pathlib
 import shutil
 import tempfile
 import urllib.error
+import urllib.parse
 import urllib.request
+import xml.etree.ElementTree as ET
 
 from peds.convert import CONVERTER_VERSION, ActorSpec, convert_actor, parse_actor
 
@@ -39,8 +43,17 @@ def _digest(sdf_path: str, spec: ActorSpec) -> str:
     hasher.update(pathlib.Path(sdf_path).read_bytes())
     for uri in sorted(spec.mesh_uris):
         hasher.update(b"\n")
-        hasher.update(uri.encode("utf-8"))
+        local = _uri_local_path(uri)
+        hasher.update(local.read_bytes() if local is not None else uri.encode("utf-8"))
     return hasher.hexdigest()[:8]
+
+
+def _uri_local_path(uri: str) -> pathlib.Path | None:
+    """The on-disk path a mesh URI names, or None if it is remote or absent."""
+    if _is_remote(uri):
+        return None
+    path = pathlib.Path(uri[len("file://") :] if uri.startswith("file://") else uri)
+    return path if path.is_file() else None
 
 
 def actor_cache_dir(sdf_path: str) -> pathlib.Path:
@@ -79,7 +92,55 @@ def _fetch_all(spec: ActorSpec, tmp: pathlib.Path, existing: pathlib.Path) -> di
         dest = tmp / f"{index:02d}_{_uri_basename(uri)}"
         _fetch(uri, dest, existing)
         paths[uri] = str(dest)
+    _fetch_textures(spec.skin_uri, pathlib.Path(paths[spec.skin_uri]), tmp, existing)
     return paths
+
+
+def _fetch_textures(skin_uri: str, skin_dae: pathlib.Path, tmp: pathlib.Path, existing: pathlib.Path) -> None:
+    """Copy or download every diffuse image the skin DAE references, preserving the
+    bundle-relative path convert.py authors into the USD (e.g. ``textures/skin.png``).
+    """
+    for rel in _dae_image_refs(skin_dae):
+        dest = tmp / rel
+        if dest.is_file():
+            continue
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        prior = existing / rel
+        if prior.is_file():
+            shutil.copyfile(prior, dest)
+        elif _is_remote(skin_uri):
+            _download(urllib.parse.urljoin(skin_uri, rel), dest)
+        else:
+            source = skin_uri[len("file://") :] if skin_uri.startswith("file://") else skin_uri
+            src = pathlib.Path(source).parent / rel
+            if src.is_file():
+                shutil.copyfile(src, dest)
+
+
+def _dae_image_refs(dae_path: pathlib.Path) -> list[str]:
+    """Bundle-relative image paths from a DAE's library_images, './'-stripped.
+
+    Absolute and remote image URIs are skipped: the cache only mirrors the
+    self-contained relative textures MakeHuman bundles ship.
+    """
+    root = ET.parse(dae_path).getroot()
+    ns = root.tag[: root.tag.index("}") + 1]
+    refs: list[str] = []
+    for image in root.iter(ns + "image"):
+        init_from = image.find(ns + "init_from")
+        if init_from is None:
+            continue
+        ref = init_from.find(ns + "ref")
+        text = ref.text if ref is not None and ref.text else init_from.text
+        if not text:
+            continue
+        text = text.strip()
+        if text.startswith(("http://", "https://", "file://")) or pathlib.PurePath(text).is_absolute():
+            continue
+        rel = text[2:] if text.startswith("./") else text
+        if rel not in refs:
+            refs.append(rel)
+    return refs
 
 
 def _fetch(uri: str, dest: pathlib.Path, existing: pathlib.Path) -> None:

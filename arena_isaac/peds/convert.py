@@ -35,7 +35,7 @@ _ROUGHNESS_BOUNDS = (0.05, 1.0)
 
 # Bump whenever convert_actor's output changes shape, cache.py salts its digest
 # with this so stale disk caches rebuild instead of serving old geometry.
-CONVERTER_VERSION = 2
+CONVERTER_VERSION = 3
 
 
 @dataclass(eq=False)
@@ -84,16 +84,18 @@ class MeshData:
     face_counts: list[int]  # all 3 after triangulation
     face_indices: list[int]  # position indices into points
     normals: np.ndarray | None  # (F, 3) faceVarying normals, or None
+    uvs: np.ndarray | None  # (F, 2) faceVarying texcoords, or None
     subsets: dict[str, list[int]]  # polylist material symbol -> triangle indices
 
 
 @dataclass(eq=False)
 class MaterialData:
-    """A resolved COLLADA material: constant diffuse color, no textures."""
+    """A resolved COLLADA material: constant diffuse plus an optional diffuse map."""
 
     name: str  # polylist material symbol
     diffuse: tuple[float, float, float]
     roughness: float
+    diffuse_texture: str | None  # bundle-relative diffuse image path, or None
 
 
 # --------------------------------------------------------------------------- #
@@ -268,15 +270,17 @@ def _parse_mesh(doc: _Collada) -> MeshData:
     face_counts: list[int] = []
     face_indices: list[int] = []
     normals_out: list[np.ndarray] = []
+    uvs_out: list[np.ndarray] = []
     have_normals = False
+    have_uvs = False
     subsets: dict[str, list[int]] = {}
     triangle_index = 0
 
     primitives = mesh.findall(doc.ns + "polylist") + mesh.findall(doc.ns + "triangles")
     for prim in primitives:
         material = prim.get("material")
-        vertex_off = normal_off = None
-        vertex_src = normal_src = None
+        vertex_off = normal_off = texcoord_off = None
+        vertex_src = normal_src = texcoord_src = None
         max_off = 0
         for inp in prim.findall(doc.ns + "input"):
             semantic, offset = inp.get("semantic"), int(inp.get("offset"))
@@ -285,6 +289,8 @@ def _parse_mesh(doc: _Collada) -> MeshData:
                 vertex_off, vertex_src = offset, inp.get("source")
             elif semantic == "NORMAL":
                 normal_off, normal_src = offset, inp.get("source")
+            elif semantic == "TEXCOORD":
+                texcoord_off, texcoord_src = offset, inp.get("source")
         if vertex_off is None or vertex_src is None:
             raise ValueError("mesh primitive without VERTEX input")
         prim_stride = max_off + 1
@@ -298,6 +304,9 @@ def _parse_mesh(doc: _Collada) -> MeshData:
         normals = doc.read_floats(normal_src) if normal_src is not None else None
         if normals is not None:
             have_normals = True
+        texcoords = doc.read_floats(texcoord_src) if texcoord_src is not None else None
+        if texcoords is not None:
+            have_uvs = True
 
         indices = np.array(prim.find(doc.ns + "p").text.split(), dtype=int).reshape(-1, prim_stride)
         if doc.localname(prim) == "polylist":
@@ -314,6 +323,8 @@ def _parse_mesh(doc: _Collada) -> MeshData:
                     face_indices.append(int(tuple_row[vertex_off]))
                     if normals is not None and normal_off is not None:
                         normals_out.append(normals[int(tuple_row[normal_off])])
+                    if texcoords is not None and texcoord_off is not None:
+                        uvs_out.append(texcoords[int(tuple_row[texcoord_off])][:2])
                 face_counts.append(3)
                 if material is not None:
                     subsets.setdefault(material, []).append(triangle_index)
@@ -326,6 +337,7 @@ def _parse_mesh(doc: _Collada) -> MeshData:
         face_counts=face_counts,
         face_indices=face_indices,
         normals=np.array(normals_out) if have_normals else None,
+        uvs=np.array(uvs_out) if have_uvs else None,
         subsets=subsets,
     )
 
@@ -372,6 +384,9 @@ def _parse_materials(doc: _Collada) -> dict[str, MaterialData]:
         else:
             diffuse = _DISPLAY_COLOR
 
+        texture_el = diffuse_el.find(doc.ns + "texture")
+        diffuse_texture = _resolve_texture(doc, effect_el, texture_el) if texture_el is not None else None
+
         shininess_el = shading.find(doc.q("shininess", "float"))
         if shininess_el is not None and shininess_el.text:
             shininess = float(shininess_el.text)
@@ -380,8 +395,43 @@ def _parse_materials(doc: _Collada) -> dict[str, MaterialData]:
         else:
             roughness = 1.0
 
-        materials[symbol] = MaterialData(name=symbol, diffuse=diffuse, roughness=roughness)
+        materials[symbol] = MaterialData(name=symbol, diffuse=diffuse, roughness=roughness, diffuse_texture=diffuse_texture)
     return materials
+
+
+def _resolve_texture(doc: _Collada, effect_el: ET.Element, texture_el: ET.Element) -> str | None:
+    """Follow a <texture> through the effect's sampler/surface newparams to the
+    library_images file path, returned bundle-relative with any leading './' stripped.
+
+    Chain: texture@texture -> newparam(sampler2D)/source -> newparam(surface)/init_from
+    (an image id) -> library_images image/init_from (the on-disk path). A break
+    anywhere yields None so the caller falls back to the constant diffuse color.
+    """
+    newparams = {el.get("sid"): el for el in effect_el.iter(doc.ns + "newparam") if el.get("sid")}
+    sampler_el = newparams.get(texture_el.get("texture"))
+    if sampler_el is None:
+        return None
+    source_el = sampler_el.find(doc.q("sampler2D", "source"))
+    if source_el is None or not source_el.text:
+        return None
+    surface_el = newparams.get(source_el.text.strip())
+    if surface_el is None:
+        return None
+    image_ref = surface_el.find(doc.q("surface", "init_from"))
+    if image_ref is None or not image_ref.text:
+        return None
+    image_el = doc.id_map.get(image_ref.text.strip())
+    if image_el is None:
+        return None
+    init_from = image_el.find(doc.ns + "init_from")
+    ref = init_from.find(doc.ns + "ref") if init_from is not None else None
+    path = ref.text if ref is not None and ref.text else (init_from.text if init_from is not None else None)
+    if not path:
+        return None
+    path = path.strip()
+    if path.startswith(("http://", "https://", "file://")) or pathlib.PurePath(path).is_absolute():
+        return None
+    return path[2:] if path.startswith("./") else path
 
 
 def _parse_animations(doc: _Collada) -> dict[str, tuple[np.ndarray, np.ndarray]]:
@@ -583,6 +633,9 @@ def _author_character(out_dir: pathlib.Path, joints: list[JointNode], skin: Skin
     if mesh.normals is not None:
         mesh_prim.CreateNormalsAttr(Vt.Vec3fArray([Gf.Vec3f(*normal) for normal in mesh.normals.tolist()]))
         mesh_prim.SetNormalsInterpolation(UsdGeom.Tokens.faceVarying)
+    if mesh.uvs is not None:
+        st = UsdGeom.PrimvarsAPI(mesh_prim).CreatePrimvar("st", Sdf.ValueTypeNames.TexCoord2fArray, UsdGeom.Tokens.faceVarying)
+        st.Set(Vt.Vec2fArray([Gf.Vec2f(float(uv[0]), float(uv[1])) for uv in mesh.uvs.tolist()]))
 
     binding = UsdSkel.BindingAPI.Apply(mesh_prim.GetPrim())
     binding.CreateSkeletonRel().SetTargets([Sdf.Path("/Character/Skeleton")])
@@ -602,9 +655,27 @@ def _author_character(out_dir: pathlib.Path, joints: list[JointNode], skin: Skin
         material = UsdShade.Material.Define(stage, f"/Character/Materials/{name}")
         shader = UsdShade.Shader.Define(stage, f"/Character/Materials/{name}/Shader")
         shader.CreateIdAttr("UsdPreviewSurface")
-        shader.CreateInput("diffuseColor", Sdf.ValueTypeNames.Color3f).Set(Gf.Vec3f(*material_data.diffuse))
         shader.CreateInput("roughness", Sdf.ValueTypeNames.Float).Set(material_data.roughness)
         material.CreateSurfaceOutput().ConnectToSource(shader.ConnectableAPI(), "surface")
+
+        diffuse_input = shader.CreateInput("diffuseColor", Sdf.ValueTypeNames.Color3f)
+        if material_data.diffuse_texture is not None and mesh.uvs is not None and (out_dir / material_data.diffuse_texture).is_file():
+            reader = UsdShade.Shader.Define(stage, f"/Character/Materials/{name}/stReader")
+            reader.CreateIdAttr("UsdPrimvarReader_float2")
+            reader.CreateInput("varname", Sdf.ValueTypeNames.Token).Set("st")
+            reader.CreateOutput("result", Sdf.ValueTypeNames.Float2)
+            texture = UsdShade.Shader.Define(stage, f"/Character/Materials/{name}/DiffuseTexture")
+            texture.CreateIdAttr("UsdUVTexture")
+            texture.CreateInput("file", Sdf.ValueTypeNames.Asset).Set(Sdf.AssetPath(f"./{material_data.diffuse_texture}"))
+            texture.CreateInput("st", Sdf.ValueTypeNames.Float2).ConnectToSource(reader.ConnectableAPI(), "result")
+            texture.CreateInput("wrapS", Sdf.ValueTypeNames.Token).Set("repeat")
+            texture.CreateInput("wrapT", Sdf.ValueTypeNames.Token).Set("repeat")
+            texture.CreateInput("sourceColorSpace", Sdf.ValueTypeNames.Token).Set("sRGB")
+            texture.CreateInput("fallback", Sdf.ValueTypeNames.Float4).Set(Gf.Vec4f(*material_data.diffuse, 1.0))
+            texture.CreateOutput("rgb", Sdf.ValueTypeNames.Float3)
+            diffuse_input.ConnectToSource(texture.ConnectableAPI(), "rgb")
+        else:
+            diffuse_input.Set(Gf.Vec3f(*material_data.diffuse))
 
         subset = UsdGeom.Subset.CreateGeomSubset(mesh_prim, name, UsdGeom.Tokens.face, Vt.IntArray(face_indices), "materialBind")
         UsdShade.MaterialBindingAPI.Apply(subset.GetPrim()).Bind(material)

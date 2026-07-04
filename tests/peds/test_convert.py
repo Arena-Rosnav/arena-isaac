@@ -43,6 +43,7 @@ DURATION_EXPECTED = 0.5
 MATERIAL_DIFFUSE = (0.8, 0.2, 0.1)
 MATERIAL_SHININESS = 50.0
 MATERIAL_ROUGHNESS_EXPECTED = math.sqrt(2.0 / (MATERIAL_SHININESS + 2.0))
+TEXTURE_REL = "textures/skin.png"
 
 
 def _rot_z(angle: float) -> np.ndarray:
@@ -70,7 +71,7 @@ def _gf_to_np(matrix: Gf.Matrix4d) -> np.ndarray:
     return np.array([list(matrix.GetRow(i)) for i in range(4)], dtype=float)
 
 
-def _dae_text() -> str:
+def _dae_text(*, textured: bool = False) -> str:
     rest = _fmt(REST_LOCAL)
     inv_bind = _fmt(INV_BIND_SKIN.reshape(-1))
     a0 = f"{_fmt(_compose(np.zeros(3), np.eye(3)))} {_fmt(_compose(np.array([ROOT_DRIFT[0], ROOT_DRIFT[1], ROOT_BOB_Z]), np.eye(3)))}"
@@ -89,27 +90,55 @@ def _dae_text() -> str:
             f"</animation>"
         )
 
+    uv_source = (
+        '<source id="g-uv"><float_array id="gua" count="6">0 0 1 0 0 1</float_array>'
+        '<technique_common><accessor source="#gua" count="3" stride="2"><param name="S" type="float"/><param name="T" type="float"/></accessor></technique_common></source>'
+        if textured
+        else ""
+    )
+    uv_input = '<input semantic="TEXCOORD" source="#g-uv" offset="2"/>' if textured else ""
+    p_text = "0 0 0 1 1 1 2 2 2" if textured else "0 0 1 1 2 2"
+    if textured:
+        effect = (
+            '<effect id="mat-effect"><profile_COMMON>'
+            '<newparam sid="skin-surface"><surface type="2D"><init_from>skin-image</init_from></surface></newparam>'
+            '<newparam sid="skin-sampler"><sampler2D><source>skin-surface</source></sampler2D></newparam>'
+            '<technique sid="common"><phong>'
+            '<diffuse><texture texture="skin-sampler" texcoord="UVTex"/></diffuse>'
+            f"<shininess><float>{MATERIAL_SHININESS}</float></shininess>"
+            "</phong></technique></profile_COMMON></effect>"
+        )
+        images = f'<library_images><image id="skin-image"><init_from>./{TEXTURE_REL}</init_from></image></library_images>'
+    else:
+        effect = (
+            '<effect id="mat-effect"><profile_COMMON><technique sid="common"><phong>'
+            f"<diffuse><color>{MATERIAL_DIFFUSE[0]} {MATERIAL_DIFFUSE[1]} {MATERIAL_DIFFUSE[2]} 1</color></diffuse>"
+            f"<shininess><float>{MATERIAL_SHININESS}</float></shininess>"
+            "</phong></technique></profile_COMMON></effect>"
+        )
+        images = ""
+
     return f"""<?xml version="1.0"?>
 <COLLADA xmlns="http://www.collada.org/2005/11/COLLADASchema" version="1.4.1">
+ {images}
  <library_geometries>
   <geometry id="g-mesh" name="g"><mesh>
    <source id="g-positions"><float_array id="gpa" count="9">0 0 0 1 0 0 0 1 0</float_array>
     <technique_common><accessor source="#gpa" count="3" stride="3"><param name="X" type="float"/><param name="Y" type="float"/><param name="Z" type="float"/></accessor></technique_common></source>
    <source id="g-normals"><float_array id="gna" count="9">0 0 1 0 0 1 0 0 1</float_array>
     <technique_common><accessor source="#gna" count="3" stride="3"><param name="X" type="float"/><param name="Y" type="float"/><param name="Z" type="float"/></accessor></technique_common></source>
+   {uv_source}
    <vertices id="g-vertices"><input semantic="POSITION" source="#g-positions"/></vertices>
    <polylist material="m" count="1">
     <input semantic="VERTEX" source="#g-vertices" offset="0"/>
     <input semantic="NORMAL" source="#g-normals" offset="1"/>
-    <vcount>3</vcount><p>0 0 1 1 2 2</p>
+    {uv_input}
+    <vcount>3</vcount><p>{p_text}</p>
    </polylist>
   </mesh></geometry>
  </library_geometries>
  <library_effects>
-  <effect id="mat-effect"><profile_COMMON><technique sid="common"><phong>
-    <diffuse><color>{MATERIAL_DIFFUSE[0]} {MATERIAL_DIFFUSE[1]} {MATERIAL_DIFFUSE[2]} 1</color></diffuse>
-    <shininess><float>{MATERIAL_SHININESS}</float></shininess>
-   </phong></technique></profile_COMMON></effect>
+  {effect}
  </library_effects>
  <library_materials>
   <material id="mat-material" name="m"><instance_effect url="#mat-effect"/></material>
@@ -176,6 +205,17 @@ def built(tmp_path: pathlib.Path) -> pathlib.Path:
     assert set(spec) == {"walk", "idle"}
     convert_actor(str(sdf), {str(dae): str(dae)}, out)
     return out
+
+
+@pytest.fixture()
+def built_textured(tmp_path: pathlib.Path, arena_data_dir: pathlib.Path) -> pathlib.Path:
+    dae = tmp_path / "synth_tex.dae"
+    dae.write_text(_dae_text(textured=True))
+    (tmp_path / "textures").mkdir()
+    (tmp_path / "textures" / "skin.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+    sdf = tmp_path / "actor.sdf"
+    sdf.write_text(_sdf_text(str(dae)))
+    return convert_cached(str(sdf))
 
 
 @pytest.fixture()
@@ -287,6 +327,36 @@ def test_character_mesh_has_material_subset_bound_to_shader(built: pathlib.Path)
     np.testing.assert_allclose([diffuse[0], diffuse[1], diffuse[2]], MATERIAL_DIFFUSE, atol=1e-6)
     assert shader.GetInput("roughness").Get() == pytest.approx(MATERIAL_ROUGHNESS_EXPECTED, abs=1e-6)
     assert bound_material.GetSurfaceOutput().HasConnectedSource()
+
+
+def test_parse_materials_resolves_diffuse_texture(tmp_path: pathlib.Path) -> None:
+    dae = tmp_path / "synth.dae"
+    dae.write_text(_dae_text(textured=True))
+    materials = _parse_materials(_Collada(str(dae)))
+    assert materials["m"].diffuse_texture == TEXTURE_REL
+
+
+def test_textured_mesh_authors_st_and_diffuse_texture(built_textured: pathlib.Path) -> None:
+    assert (built_textured / TEXTURE_REL).is_file()  # cache mirrored the skin's image
+    stage = Usd.Stage.Open(str(built_textured / "character.usda"))
+
+    mesh_prim = stage.GetPrimAtPath("/Character/Mesh")
+    st = UsdGeom.PrimvarsAPI(mesh_prim).GetPrimvar("st")
+    assert st.HasValue()
+    assert st.GetInterpolation() == UsdGeom.Tokens.faceVarying
+
+    shader = UsdShade.Shader(stage.GetPrimAtPath("/Character/Materials/m/Shader"))
+    texture_source, texture_output, _ = shader.GetInput("diffuseColor").GetConnectedSource()
+    assert texture_output == "rgb"
+    texture = UsdShade.Shader(texture_source.GetPrim())
+    assert texture.GetIdAttr().Get() == "UsdUVTexture"
+    assert texture.GetInput("file").Get().path.endswith("skin.png")
+
+    reader_source, reader_output, _ = texture.GetInput("st").GetConnectedSource()
+    assert reader_output == "result"
+    reader = UsdShade.Shader(reader_source.GetPrim())
+    assert reader.GetIdAttr().Get() == "UsdPrimvarReader_float2"
+    assert reader.GetInput("varname").Get() == "st"
 
 
 def test_walk_clip_loads_via_clip_load(built: pathlib.Path) -> None:
