@@ -19,8 +19,7 @@ import pytest
 pytest.importorskip("pxr")
 
 from peds.cache import actor_cache_dir, convert_cached
-from peds.convert import _Collada, _parse_materials, convert_actor, enforce_hemisphere_continuity, parse_actor_sdf
-from peds.providers.clip import Clip
+from peds.convert import _Collada, _parse_materials, convert_actor, parse_actor_sdf
 from pxr import Gf, Usd, UsdGeom, UsdShade, UsdSkel
 
 # Canonical joint tree J0 -> J1 -> J2. The skin lists joints scrambled to force
@@ -38,8 +37,6 @@ BIND_SHAPE = np.array([[1, 0, 0, 0.1], [0, 1, 0, 0.2], [0, 0, 1, 0.3], [0, 0, 0,
 REST_LOCAL = np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 1], [0, 0, 0, 1]], dtype=float)
 ROOT_DRIFT = np.array([0.4, 0.3])
 ROOT_BOB_Z = 0.1
-STRIDE_EXPECTED = float(np.hypot(*ROOT_DRIFT))
-DURATION_EXPECTED = 0.5
 MATERIAL_DIFFUSE = (0.8, 0.2, 0.1)
 MATERIAL_SHININESS = 50.0
 MATERIAL_ROUGHNESS_EXPECTED = math.sqrt(2.0 / (MATERIAL_SHININESS + 2.0))
@@ -71,7 +68,7 @@ def _gf_to_np(matrix: Gf.Matrix4d) -> np.ndarray:
     return np.array([list(matrix.GetRow(i)) for i in range(4)], dtype=float)
 
 
-def _dae_text(*, textured: bool = False) -> str:
+def _dae_text(*, textured: bool = False, idref_joints: bool = False) -> str:
     rest = _fmt(REST_LOCAL)
     inv_bind = _fmt(INV_BIND_SKIN.reshape(-1))
     a0 = f"{_fmt(_compose(np.zeros(3), np.eye(3)))} {_fmt(_compose(np.array([ROOT_DRIFT[0], ROOT_DRIFT[1], ROOT_BOB_Z]), np.eye(3)))}"
@@ -90,6 +87,8 @@ def _dae_text(*, textured: bool = False) -> str:
             f"</animation>"
         )
 
+    joint_array_tag = "IDREF_array" if idref_joints else "Name_array"
+    joint_param_type = "IDREF" if idref_joints else "name"
     uv_source = (
         '<source id="g-uv"><float_array id="gua" count="6">0 0 1 0 0 1</float_array>'
         '<technique_common><accessor source="#gua" count="3" stride="2"><param name="S" type="float"/><param name="T" type="float"/></accessor></technique_common></source>'
@@ -146,8 +145,8 @@ def _dae_text(*, textured: bool = False) -> str:
  <library_controllers>
   <controller id="c" name="c"><skin source="#g-mesh">
    <bind_shape_matrix>{_fmt(BIND_SHAPE)}</bind_shape_matrix>
-   <source id="c-joints"><Name_array id="cja" count="3">{" ".join(SKIN_ORDER)}</Name_array>
-    <technique_common><accessor source="#cja" count="3" stride="1"><param name="J" type="name"/></accessor></technique_common></source>
+   <source id="c-joints"><{joint_array_tag} id="cja" count="3">{" ".join(SKIN_ORDER)}</{joint_array_tag}>
+    <technique_common><accessor source="#cja" count="3" stride="1"><param name="J" type="{joint_param_type}"/></accessor></technique_common></source>
    <source id="c-binds"><float_array id="cba" count="48">{inv_bind}</float_array>
     <technique_common><accessor source="#cba" count="3" stride="16"><param name="M" type="float4x4"/></accessor></technique_common></source>
    <source id="c-weights"><float_array id="cwa" count="2">1.0 0.5</float_array>
@@ -359,58 +358,50 @@ def test_textured_mesh_authors_st_and_diffuse_texture(built_textured: pathlib.Pa
     assert reader.GetInput("varname").Get() == "st"
 
 
-def test_walk_clip_loads_via_clip_load(built: pathlib.Path) -> None:
-    clip = Clip.load(str(built / "clips" / "walk.usda"))
-    assert clip.joint_order == CANONICAL_PATHS
-    assert clip.times.shape == (2,)
-    assert clip.rotations.shape == (2, 3, 4)
-    assert clip.translations.shape == (2, 3, 3)
-    assert clip.duration == pytest.approx(DURATION_EXPECTED)
+def test_no_clips_authored(built: pathlib.Path) -> None:
+    assert not (built / "clips").exists()
 
 
-def test_clip_quat_hemisphere_continuity(built: pathlib.Path) -> None:
-    clip = Clip.load(str(built / "clips" / "walk.usda"))
-    for k in range(1, clip.rotations.shape[0]):
-        for j in range(clip.rotations.shape[1]):
-            assert float(np.dot(clip.rotations[k, j], clip.rotations[k - 1, j])) >= -1e-9
-
-
-def test_enforce_hemisphere_continuity_negates_flipped_key() -> None:
-    quats = np.array([[[1.0, 0.0, 0.0, 0.0]], [[-0.9, 0.0, 0.0, -0.4359]], [[0.9, 0.0, 0.0, 0.4359]]])
-    assert float(np.dot(quats[1, 0], quats[0, 0])) < 0.0  # raw input flips
-    fixed = enforce_hemisphere_continuity(quats)
-    assert fixed[1, 0, 0] > 0.0
-    for k in range(1, fixed.shape[0]):
-        assert float(np.dot(fixed[k, 0], fixed[k - 1, 0])) >= 0.0
-
-
-def test_walk_root_strip_removes_planar_drift(built: pathlib.Path) -> None:
-    clip = Clip.load(str(built / "clips" / "walk.usda"))
-    root = clip.translations[:, 0, :]
-    np.testing.assert_allclose(root[0, :2], root[-1, :2], atol=1e-6)
-    np.testing.assert_allclose(root[0, :2], [0.0, 0.0], atol=1e-6)
-    assert root[-1, 2] == pytest.approx(ROOT_BOB_Z, abs=1e-6)
-
-
-def test_idle_clip_keeps_root_motion(built: pathlib.Path) -> None:
-    clip = Clip.load(str(built / "clips" / "idle.usda"))
-    root = clip.translations[:, 0, :]
-    np.testing.assert_allclose(root[-1, :2], ROOT_DRIFT, atol=1e-6)
-
-
-def test_clip_metadata_and_custom_attrs(built: pathlib.Path) -> None:
+def test_meta_neutral_stance_from_idle_first_frame(built: pathlib.Path) -> None:
     meta = json.loads((built / "meta.json").read_text())
     assert meta["actor"] == "synth"
     assert meta["up_axis"] == "Z"
     assert meta["joints"] == list(CANONICAL_PATHS)
-    assert meta["clips"]["walk"]["stride_length_m"] == pytest.approx(STRIDE_EXPECTED)
-    assert meta["clips"]["walk"]["duration_s"] == pytest.approx(DURATION_EXPECTED)
-    assert meta["clips"]["idle"]["stride_length_m"] == pytest.approx(0.0)
+    # The synthetic idle channels all start at identity with zero translation.
+    np.testing.assert_allclose(meta["neutral"]["rotations_xyzw"], [[0.0, 0.0, 0.0, 1.0]] * 3, atol=1e-9)
+    np.testing.assert_allclose(meta["neutral"]["translations"], [[0.0, 0.0, 0.0]] * 3, atol=1e-9)
 
-    stage = Usd.Stage.Open(str(built / "clips" / "walk.usda"))
-    anim = stage.GetPrimAtPath("/Anim")
-    assert anim.GetAttribute("arena:strideLength").Get() == pytest.approx(STRIDE_EXPECTED)
-    assert anim.GetAttribute("arena:duration").Get() == pytest.approx(DURATION_EXPECTED)
+
+def test_convert_actor_requires_idle(tmp_path: pathlib.Path) -> None:
+    dae = tmp_path / "synth.dae"
+    dae.write_text(_dae_text())
+    sdf = tmp_path / "actor.sdf"
+    sdf.write_text(
+        _sdf_text(str(dae)).replace(f'<animation name="idle"><filename>{dae}</filename></animation>', "")
+    )
+    with pytest.raises(ValueError, match="no idle animation"):
+        convert_actor(str(sdf), {str(dae): str(dae)}, tmp_path / "out")
+
+
+def test_convert_actor_rejects_non_collada_idle(tmp_path: pathlib.Path) -> None:
+    dae = tmp_path / "synth.dae"
+    dae.write_text(_dae_text())
+    bvh = tmp_path / "idle.bvh"
+    sdf = tmp_path / "actor.sdf"
+    sdf.write_text(_sdf_text(str(dae)).replace(f"<filename>{dae}</filename></animation>\n </actor>", f"<filename>{bvh}</filename></animation>\n </actor>"))
+    clips = parse_actor_sdf(str(sdf))
+    assert clips["idle"] == str(bvh)  # the replace really rewired the idle clip
+    with pytest.raises(ValueError, match="not COLLADA"):
+        convert_actor(str(sdf), {str(dae): str(dae), str(bvh): str(bvh)}, tmp_path / "out")
+
+
+def test_idref_joint_arrays_rejected(tmp_path: pathlib.Path) -> None:
+    dae = tmp_path / "synth.dae"
+    dae.write_text(_dae_text(idref_joints=True))
+    sdf = tmp_path / "actor.sdf"
+    sdf.write_text(_sdf_text(str(dae)))
+    with pytest.raises(ValueError, match="no Name_array"):
+        convert_actor(str(sdf), {str(dae): str(dae)}, tmp_path / "out")
 
 
 def test_cache_digest_stable_and_sensitive(tmp_path: pathlib.Path, arena_data_dir: pathlib.Path) -> None:
@@ -435,7 +426,7 @@ def test_cache_hit_returns_without_rebuild(tmp_path: pathlib.Path, arena_data_di
     assert (first / "character.usda").is_file()
     assert (first / "meta.json").is_file()
     assert (first / "ATTRIBUTION.md").is_file()
-    assert Clip.load(str(first / "clips" / "walk.usda")).duration == pytest.approx(DURATION_EXPECTED)
+    assert "neutral" in json.loads((first / "meta.json").read_text())
 
     marker = first / "MARKER"
     marker.write_text("kept")

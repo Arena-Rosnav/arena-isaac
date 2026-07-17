@@ -2,7 +2,7 @@
 
 The Protocol and NullWriter stay importable without pxr/usdrt/omni, so plain
 tests can import them. The two real writers import their USD backends lazily
-inside their methods, matching providers/clip.py.
+inside their methods.
 """
 
 from __future__ import annotations

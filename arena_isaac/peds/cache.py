@@ -1,12 +1,12 @@
 """Rebuild-on-dirty USD cache for pedestrian actors. stdlib + numpy + pxr.
 
 convert_cached resolves an actor SDF to a per-actor cache dir holding the
-authored USD (character.usda, clips/, meta.json), its downloaded source DAEs, the
+authored USD (character.usda, meta.json), its downloaded source DAEs, the
 skin's diffuse textures and an ATTRIBUTION.md. The digest hashes the SDF bytes
-plus, per referenced mesh URI, the local file's bytes (so an in-place re-export
-rebuilds even when the SDF is unchanged) or, for remote URIs, the URI string
-(kept offline, never the remote bytes). Importable outside Isaac; pxr is only
-reached through peds.convert.convert_actor.
+plus, per consumed URI (the skin and the idle clip), the local file's bytes (so
+an in-place re-export rebuilds even when the SDF is unchanged) or, for remote
+URIs, the URI string (kept offline, never the remote bytes). Importable outside
+Isaac; pxr is only reached through peds.convert.convert_actor.
 """
 
 from __future__ import annotations
@@ -41,7 +41,7 @@ def _digest(sdf_path: str, spec: ActorSpec) -> str:
     hasher = hashlib.sha256()
     hasher.update(str(CONVERTER_VERSION).encode("utf-8"))
     hasher.update(pathlib.Path(sdf_path).read_bytes())
-    for uri in sorted(spec.mesh_uris):
+    for uri in sorted(spec.consumed_uris):
         hasher.update(b"\n")
         local = _uri_local_path(uri)
         hasher.update(local.read_bytes() if local is not None else uri.encode("utf-8"))
@@ -78,7 +78,9 @@ def convert_cached(sdf_path: str) -> pathlib.Path:
     try:
         dae_paths = _fetch_all(spec, tmp, final)
         convert_actor(sdf_path, dae_paths, tmp)
-        (tmp / "ATTRIBUTION.md").write_text(_attribution(spec))
+        source_attribution = pathlib.Path(sdf_path).resolve().parent / "ATTRIBUTION.md"
+        text = source_attribution.read_text() if source_attribution.is_file() else _attribution(spec)
+        (tmp / "ATTRIBUTION.md").write_text(text)
         _publish(tmp, final)
     finally:
         if tmp.exists():
@@ -88,7 +90,7 @@ def convert_cached(sdf_path: str) -> pathlib.Path:
 
 def _fetch_all(spec: ActorSpec, tmp: pathlib.Path, existing: pathlib.Path) -> dict[str, str]:
     paths: dict[str, str] = {}
-    for index, uri in enumerate(spec.mesh_uris):
+    for index, uri in enumerate(spec.consumed_uris):
         dest = tmp / f"{index:02d}_{_uri_basename(uri)}"
         _fetch(uri, dest, existing)
         paths[uri] = str(dest)
@@ -187,7 +189,7 @@ def _publish(tmp: pathlib.Path, final: pathlib.Path) -> None:
 
 
 def _attribution(spec: ActorSpec) -> str:
-    sources = "\n".join(f"- {uri}" for uri in spec.mesh_uris)
+    sources = "\n".join(f"- {uri}" for uri in spec.consumed_uris)
     return (
         f"# Attribution\n\n"
         f"The skin and animation clips for actor `{spec.name}` are converted from\n"

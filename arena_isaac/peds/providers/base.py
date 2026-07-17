@@ -31,10 +31,3 @@ class ResettablePhase(Protocol):
     """Optional capability: providers that keep an internal phase resettable on teleport."""
 
     def reset_phase(self) -> None: ...
-
-
-@runtime_checkable
-class DistanceDrivenPose(Protocol):
-    """Optional capability: providers whose phase advances with planar displacement."""
-
-    def advance(self, distance: float, dt: float) -> None: ...

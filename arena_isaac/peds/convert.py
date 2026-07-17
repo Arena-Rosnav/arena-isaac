@@ -1,11 +1,12 @@
 """Offline COLLADA actor to USD (UsdSkel) converter. numpy + pxr, no omni/carb.
 
-Parses the self-contained Fuel DAEs an actor SDF references and authors a
-standalone ``character.usda`` (SkelRoot + Skeleton + skinned Mesh) plus one
-``clips/<name>.usda`` per animation (a single SkelAnimation each). Emitted clips
-load through peds.providers.clip.Clip.load. pxr is imported lazily inside the
-authoring helpers so this module stays importable without pxr (e.g. for SDF
-parsing and cache digests), matching peds.providers.clip.
+Parses the self-contained skin DAE an actor SDF references and authors a
+standalone ``character.usda`` (SkelRoot + Skeleton + one skinned Mesh per skin
+controller). Clips are not converted: the runtime renders the arena_peds wire
+(peds.providers.external), and the only animation input consumed is the idle
+clip's first frame, extracted into meta.json as the neutral stance wire angles
+compose over. pxr is imported lazily inside the authoring helpers so this
+module stays importable without pxr (e.g. for SDF parsing and cache digests).
 """
 
 from __future__ import annotations
@@ -20,22 +21,20 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 if TYPE_CHECKING:
-    from pxr import Gf
+    from pxr import Gf, Usd, UsdShade
 
 # COLLADA matrices are row-major, column-vector convention (v' = M v). USD/Gf is
 # row-major, row-vector convention (v' = v M), so the USD form is the transpose.
 # The rotation quaternion is the standard column-vector matrix-to-quat of the
 # COLLADA rotation block, which reconstructs the same USD row-vector rotation.
 
-_ROOT_STRIP_CLIPS = frozenset({"walk"})
-_TIME_CODES_PER_SECOND = 24.0
 _DISPLAY_COLOR = (0.72, 0.66, 0.60)
 _SHADING_TAGS = ("phong", "lambert", "blinn")
 _ROUGHNESS_BOUNDS = (0.05, 1.0)
 
 # Bump whenever convert_actor's output changes shape, cache.py salts its digest
 # with this so stale disk caches rebuild instead of serving old geometry.
-CONVERTER_VERSION = 3
+CONVERTER_VERSION = 5
 
 
 @dataclass(eq=False)
@@ -47,12 +46,12 @@ class ActorSpec:
     clips: dict[str, str]  # clip name -> mesh URI
 
     @property
-    def mesh_uris(self) -> list[str]:
-        """Unique source URIs (skin first, then clips) in stable order."""
-        ordered: list[str] = []
-        for uri in [self.skin_uri, *self.clips.values()]:
-            if uri not in ordered:
-                ordered.append(uri)
+    def consumed_uris(self) -> list[str]:
+        """Unique source URIs the conversion reads: the skin, then the idle clip."""
+        ordered = [self.skin_uri]
+        idle = self.clips.get("idle")
+        if idle is not None and idle not in ordered:
+            ordered.append(idle)
         return ordered
 
 
@@ -96,6 +95,16 @@ class MaterialData:
     diffuse: tuple[float, float, float]
     roughness: float
     diffuse_texture: str | None  # bundle-relative diffuse image path, or None
+
+
+@dataclass(eq=False)
+class SkinnedMesh:
+    """One scene instance_controller: its skin, geometry and material binding."""
+
+    name: str  # geometry id, sanitized into the USD prim name at authoring time
+    skin: SkinData
+    mesh: MeshData
+    bound_material: str | None  # whole-mesh symbol for meshes whose polylists carry none
 
 
 # --------------------------------------------------------------------------- #
@@ -171,10 +180,11 @@ class _Collada:
         return data.reshape(-1, stride)
 
     def read_names(self, ref: str) -> list[str]:
+        """Read a Name_array. IDREF_array joints mark a pre-gz_compat bundle."""
         src = self.by_id(ref)
         arr = src.find(self.ns + "Name_array")
         if arr is None or not arr.text:
-            raise ValueError(f"source {ref} has no Name_array")
+            raise ValueError(f"source {ref} has no Name_array, regenerate the bundle")
         return arr.text.split()
 
 
@@ -209,13 +219,10 @@ def _parse_skeleton(doc: _Collada) -> list[JointNode]:
     return joints
 
 
-def _parse_skin(doc: _Collada) -> SkinData:
-    controller = doc.root.find(doc.q("library_controllers", "controller"))
-    if controller is None:
-        raise ValueError("COLLADA has no controller")
+def _parse_skin(doc: _Collada, controller: ET.Element) -> SkinData:
     skin = controller.find(doc.ns + "skin")
     if skin is None:
-        raise ValueError("controller has no skin")
+        raise ValueError(f"controller {controller.get('id')} has no skin")
 
     bind_el = skin.find(doc.ns + "bind_shape_matrix")
     bind_shape = np.array(bind_el.text.split(), dtype=float).reshape(4, 4) if bind_el is not None and bind_el.text else np.eye(4)
@@ -261,11 +268,7 @@ def _parse_skin(doc: _Collada) -> SkinData:
     return SkinData(joint_names=joint_names, inv_bind=inv_bind, bind_shape=bind_shape, influences=influences)
 
 
-def _parse_mesh(doc: _Collada) -> MeshData:
-    mesh = doc.root.find(doc.q("library_geometries", "geometry", "mesh"))
-    if mesh is None:
-        raise ValueError("COLLADA has no geometry mesh")
-
+def _parse_mesh(doc: _Collada, mesh: ET.Element) -> MeshData:
     points: np.ndarray | None = None
     face_counts: list[int] = []
     face_indices: list[int] = []
@@ -340,6 +343,45 @@ def _parse_mesh(doc: _Collada) -> MeshData:
         uvs=np.array(uvs_out) if have_uvs else None,
         subsets=subsets,
     )
+
+
+def _parse_skinned_meshes(doc: _Collada) -> list[SkinnedMesh]:
+    """One SkinnedMesh per scene instance_controller, in document order.
+
+    Material binding: polylist material symbols win when present; otherwise the
+    instance_controller's sole bind_material symbol binds the whole mesh
+    (MakeHuman exports bind one material per controller and leave polylists
+    unmarked).
+    """
+    scene = doc.root.find(doc.q("library_visual_scenes", "visual_scene"))
+    if scene is None:
+        raise ValueError("COLLADA has no visual_scene")
+    skinned: list[SkinnedMesh] = []
+    for instance in scene.iter(doc.ns + "instance_controller"):
+        url = instance.get("url")
+        if not url:
+            raise ValueError("instance_controller without url")
+        controller = doc.by_id(url)
+        skin_el = controller.find(doc.ns + "skin")
+        if skin_el is None:
+            raise ValueError(f"controller {controller.get('id')} has no skin")
+        geometry_url = skin_el.get("source")
+        if not geometry_url:
+            raise ValueError(f"controller {controller.get('id')} skin has no source")
+        geometry = doc.by_id(geometry_url)
+        mesh_el = geometry.find(doc.ns + "mesh")
+        if mesh_el is None:
+            raise ValueError(f"geometry {geometry.get('id')} has no mesh")
+        mesh = _parse_mesh(doc, mesh_el)
+        bound_material = None
+        if not mesh.subsets:
+            symbols = [im.get("symbol") for im in instance.iter(doc.ns + "instance_material") if im.get("symbol")]
+            if len(symbols) == 1:
+                bound_material = symbols[0]
+        skinned.append(SkinnedMesh(name=geometry.get("id") or "Mesh", skin=_parse_skin(doc, controller), mesh=mesh, bound_material=bound_material))
+    if not skinned:
+        raise ValueError("no instance_controller in visual scene")
+    return skinned
 
 
 def _parse_materials(doc: _Collada) -> dict[str, MaterialData]:
@@ -504,56 +546,21 @@ def _matrix_to_quat(rotation: np.ndarray) -> np.ndarray:
     return quat / np.linalg.norm(quat)
 
 
-def enforce_hemisphere_continuity(quats: np.ndarray) -> np.ndarray:
-    """Negate each key so dot(q[k], q[k-1]) >= 0 per joint, for stable slerp.
+def _neutral_pose(
+    joints: list[JointNode], channels: dict[str, tuple[np.ndarray, np.ndarray]]
+) -> tuple[list[list[float]], list[list[float]]]:
+    """First-frame joint-local pose of a clip: (xyzw quaternions, translations).
 
-    quats is (K, J, 4) in wxyz order (sign is irrelevant to the rotation).
-    """
-    out = quats.copy()
-    for k in range(1, out.shape[0]):
-        flip = np.sum(out[k] * out[k - 1], axis=-1) < 0.0
-        out[k][flip] *= -1.0
-    return out
-
-
-def _build_clip(joints: list[JointNode], channels: dict[str, tuple[np.ndarray, np.ndarray]], clip_name: str) -> tuple[np.ndarray, np.ndarray, np.ndarray, float, float]:
-    """Decompose per-joint matrix keys into (times, wxyz quats, translations, stride, duration)."""
-    times: np.ndarray | None = None
+    Joints without a channel hold their rest transform. This is the neutral
+    standing stance the runtime composes wire angles over."""
+    rotations: list[list[float]] = []
+    translations: list[list[float]] = []
     for joint in joints:
-        if joint.name in channels:
-            times = channels[joint.name][0]
-            break
-    if times is None:
-        raise ValueError(f"clip {clip_name} has no animation channels for the skeleton joints")
-    key_count = len(times)
-    joint_count = len(joints)
-
-    translations = np.zeros((key_count, joint_count, 3), dtype=float)
-    quats = np.zeros((key_count, joint_count, 4), dtype=float)
-    for jindex, joint in enumerate(joints):
-        if joint.name in channels:
-            channel_times, matrices = channels[joint.name]
-            if len(channel_times) != key_count:
-                raise ValueError(f"joint {joint.name} in clip {clip_name} has a mismatched keyframe count")
-        else:
-            matrices = np.repeat(joint.rest[None], key_count, axis=0)
-        for k in range(key_count):
-            local = matrices[k]
-            translations[k, jindex] = local[:3, 3]
-            quats[k, jindex] = _matrix_to_quat(_orthonormalize(local[:3, :3]))
-
-    times = times - times[0]
-    duration = float(times[-1]) if key_count > 1 else 0.0
-
-    stride = 0.0
-    if clip_name in _ROOT_STRIP_CLIPS and key_count > 1 and duration > 0.0:
-        root_index = next(i for i, joint in enumerate(joints) if joint.parent < 0)
-        drift = translations[-1, root_index, :2] - translations[0, root_index, :2]
-        fraction = times / duration
-        translations[:, root_index, :2] -= fraction[:, None] * drift
-        stride = float(np.linalg.norm(drift))
-
-    return times, enforce_hemisphere_continuity(quats), translations, stride, duration
+        local = channels[joint.name][1][0] if joint.name in channels else joint.rest
+        w, x, y, z = _matrix_to_quat(_orthonormalize(local[:3, :3]))
+        rotations.append([float(x), float(y), float(z), float(w)])
+        translations.append([float(v) for v in local[:3, 3]])
+    return rotations, translations
 
 
 # --------------------------------------------------------------------------- #
@@ -596,7 +603,7 @@ def _skin_arrays(joints: list[JointNode], skin: SkinData) -> tuple[list[int], li
     return indices, weights, element_size
 
 
-def _author_character(out_dir: pathlib.Path, joints: list[JointNode], skin: SkinData, mesh: MeshData, materials: dict[str, MaterialData]) -> None:
+def _author_character(out_dir: pathlib.Path, joints: list[JointNode], skinned: list[SkinnedMesh], materials: dict[str, MaterialData]) -> None:
     from pxr import Gf, Sdf, Tf, Usd, UsdGeom, UsdShade, UsdSkel, Vt
 
     stage = Usd.Stage.CreateNew(str(out_dir / "character.usda"))
@@ -609,84 +616,105 @@ def _author_character(out_dir: pathlib.Path, joints: list[JointNode], skin: Skin
     skeleton = UsdSkel.Skeleton.Define(stage, "/Character/Skeleton")
     skeleton.CreateJointsAttr(Vt.TokenArray([joint.path for joint in joints]))
 
-    name_to_skin = {name: i for i, name in enumerate(skin.joint_names)}
+    # All controllers of one export share the bind pose, first occurrence wins.
+    inv_bind_by_joint: dict[str, np.ndarray] = {}
+    for skinned_mesh in skinned:
+        for skin_index, name in enumerate(skinned_mesh.skin.joint_names):
+            if name not in inv_bind_by_joint:
+                inv_bind_by_joint[name] = skinned_mesh.skin.inv_bind[skin_index]
     bind: list[Gf.Matrix4d] = []
     rest: list[Gf.Matrix4d] = []
     for joint in joints:
         rest.append(_gf_matrix(joint.rest))
-        if joint.name in name_to_skin:
-            world = np.linalg.inv(skin.inv_bind[name_to_skin[joint.name]])
+        if joint.name in inv_bind_by_joint:
+            world = np.linalg.inv(inv_bind_by_joint[joint.name])
         else:
             world = _world_rest(joints, joint)
         bind.append(_gf_matrix(world))
     skeleton.CreateBindTransformsAttr(Vt.Matrix4dArray(bind))
     skeleton.CreateRestTransformsAttr(Vt.Matrix4dArray(rest))
 
-    mesh_prim = UsdGeom.Mesh.Define(stage, "/Character/Mesh")
-    mesh_prim.CreatePointsAttr(Vt.Vec3fArray([Gf.Vec3f(*point) for point in mesh.points.tolist()]))
-    mesh_prim.CreateFaceVertexCountsAttr(Vt.IntArray(mesh.face_counts))
-    mesh_prim.CreateFaceVertexIndicesAttr(Vt.IntArray(mesh.face_indices))
-    low = mesh.points.min(axis=0).tolist()
-    high = mesh.points.max(axis=0).tolist()
-    mesh_prim.CreateExtentAttr(Vt.Vec3fArray([Gf.Vec3f(*low), Gf.Vec3f(*high)]))
-    mesh_prim.CreateDisplayColorAttr(Vt.Vec3fArray([Gf.Vec3f(*_DISPLAY_COLOR)]))
-    if mesh.normals is not None:
-        mesh_prim.CreateNormalsAttr(Vt.Vec3fArray([Gf.Vec3f(*normal) for normal in mesh.normals.tolist()]))
-        mesh_prim.SetNormalsInterpolation(UsdGeom.Tokens.faceVarying)
-    if mesh.uvs is not None:
-        st = UsdGeom.PrimvarsAPI(mesh_prim).CreatePrimvar("st", Sdf.ValueTypeNames.TexCoord2fArray, UsdGeom.Tokens.faceVarying)
-        st.Set(Vt.Vec2fArray([Gf.Vec2f(float(uv[0]), float(uv[1])) for uv in mesh.uvs.tolist()]))
+    for skinned_mesh in skinned:
+        mesh = skinned_mesh.mesh
+        prim_name = "Mesh" if len(skinned) == 1 else Tf.MakeValidIdentifier(skinned_mesh.name)
+        mesh_prim = UsdGeom.Mesh.Define(stage, f"/Character/{prim_name}")
+        mesh_prim.CreatePointsAttr(Vt.Vec3fArray([Gf.Vec3f(*point) for point in mesh.points.tolist()]))
+        mesh_prim.CreateFaceVertexCountsAttr(Vt.IntArray(mesh.face_counts))
+        mesh_prim.CreateFaceVertexIndicesAttr(Vt.IntArray(mesh.face_indices))
+        low = mesh.points.min(axis=0).tolist()
+        high = mesh.points.max(axis=0).tolist()
+        mesh_prim.CreateExtentAttr(Vt.Vec3fArray([Gf.Vec3f(*low), Gf.Vec3f(*high)]))
+        mesh_prim.CreateDisplayColorAttr(Vt.Vec3fArray([Gf.Vec3f(*_DISPLAY_COLOR)]))
+        if mesh.normals is not None:
+            mesh_prim.CreateNormalsAttr(Vt.Vec3fArray([Gf.Vec3f(*normal) for normal in mesh.normals.tolist()]))
+            mesh_prim.SetNormalsInterpolation(UsdGeom.Tokens.faceVarying)
+        if mesh.uvs is not None:
+            st = UsdGeom.PrimvarsAPI(mesh_prim).CreatePrimvar("st", Sdf.ValueTypeNames.TexCoord2fArray, UsdGeom.Tokens.faceVarying)
+            st.Set(Vt.Vec2fArray([Gf.Vec2f(float(uv[0]), float(uv[1])) for uv in mesh.uvs.tolist()]))
 
-    binding = UsdSkel.BindingAPI.Apply(mesh_prim.GetPrim())
-    binding.CreateSkeletonRel().SetTargets([Sdf.Path("/Character/Skeleton")])
-    indices, weights, element_size = _skin_arrays(joints, skin)
-    binding.CreateJointIndicesPrimvar(False, element_size).Set(Vt.IntArray(indices))
-    binding.CreateJointWeightsPrimvar(False, element_size).Set(Vt.FloatArray(weights))
-    binding.CreateGeomBindTransformAttr(_gf_matrix(skin.bind_shape))
+        binding = UsdSkel.BindingAPI.Apply(mesh_prim.GetPrim())
+        binding.CreateSkeletonRel().SetTargets([Sdf.Path("/Character/Skeleton")])
+        indices, weights, element_size = _skin_arrays(joints, skinned_mesh.skin)
+        binding.CreateJointIndicesPrimvar(False, element_size).Set(Vt.IntArray(indices))
+        binding.CreateJointWeightsPrimvar(False, element_size).Set(Vt.FloatArray(weights))
+        binding.CreateGeomBindTransformAttr(_gf_matrix(skinned_mesh.skin.bind_shape))
 
-    total_faces = len(mesh.face_counts)
-    covered_faces = 0
-    subset_count = 0
-    for symbol, face_indices in mesh.subsets.items():
-        material_data = materials.get(symbol)
-        if material_data is None:
-            continue
-        name = Tf.MakeValidIdentifier(symbol)
-        material = UsdShade.Material.Define(stage, f"/Character/Materials/{name}")
-        shader = UsdShade.Shader.Define(stage, f"/Character/Materials/{name}/Shader")
-        shader.CreateIdAttr("UsdPreviewSurface")
-        shader.CreateInput("roughness", Sdf.ValueTypeNames.Float).Set(material_data.roughness)
-        material.CreateSurfaceOutput().ConnectToSource(shader.ConnectableAPI(), "surface")
-
-        diffuse_input = shader.CreateInput("diffuseColor", Sdf.ValueTypeNames.Color3f)
-        if material_data.diffuse_texture is not None and mesh.uvs is not None and (out_dir / material_data.diffuse_texture).is_file():
-            reader = UsdShade.Shader.Define(stage, f"/Character/Materials/{name}/stReader")
-            reader.CreateIdAttr("UsdPrimvarReader_float2")
-            reader.CreateInput("varname", Sdf.ValueTypeNames.Token).Set("st")
-            reader.CreateOutput("result", Sdf.ValueTypeNames.Float2)
-            texture = UsdShade.Shader.Define(stage, f"/Character/Materials/{name}/DiffuseTexture")
-            texture.CreateIdAttr("UsdUVTexture")
-            texture.CreateInput("file", Sdf.ValueTypeNames.Asset).Set(Sdf.AssetPath(f"./{material_data.diffuse_texture}"))
-            texture.CreateInput("st", Sdf.ValueTypeNames.Float2).ConnectToSource(reader.ConnectableAPI(), "result")
-            texture.CreateInput("wrapS", Sdf.ValueTypeNames.Token).Set("repeat")
-            texture.CreateInput("wrapT", Sdf.ValueTypeNames.Token).Set("repeat")
-            texture.CreateInput("sourceColorSpace", Sdf.ValueTypeNames.Token).Set("sRGB")
-            texture.CreateInput("fallback", Sdf.ValueTypeNames.Float4).Set(Gf.Vec4f(*material_data.diffuse, 1.0))
-            texture.CreateOutput("rgb", Sdf.ValueTypeNames.Float3)
-            diffuse_input.ConnectToSource(texture.ConnectableAPI(), "rgb")
-        else:
-            diffuse_input.Set(Gf.Vec3f(*material_data.diffuse))
-
-        subset = UsdGeom.Subset.CreateGeomSubset(mesh_prim, name, UsdGeom.Tokens.face, Vt.IntArray(face_indices), "materialBind")
-        UsdShade.MaterialBindingAPI.Apply(subset.GetPrim()).Bind(material)
-        covered_faces += len(face_indices)
-        subset_count += 1
-
-    if subset_count:
-        family_type = UsdGeom.Tokens.partition if covered_faces == total_faces else UsdGeom.Tokens.nonOverlapping
-        UsdGeom.Subset.SetFamilyType(mesh_prim, "materialBind", family_type)
+        total_faces = len(mesh.face_counts)
+        covered_faces = 0
+        subset_count = 0
+        for symbol, face_indices in mesh.subsets.items():
+            material_data = materials.get(symbol)
+            if material_data is None:
+                continue
+            material = _author_material(stage, out_dir, material_data, mesh.uvs is not None)
+            subset = UsdGeom.Subset.CreateGeomSubset(mesh_prim, Tf.MakeValidIdentifier(symbol), UsdGeom.Tokens.face, Vt.IntArray(face_indices), "materialBind")
+            UsdShade.MaterialBindingAPI.Apply(subset.GetPrim()).Bind(material)
+            covered_faces += len(face_indices)
+            subset_count += 1
+        if subset_count:
+            family_type = UsdGeom.Tokens.partition if covered_faces == total_faces else UsdGeom.Tokens.nonOverlapping
+            UsdGeom.Subset.SetFamilyType(mesh_prim, "materialBind", family_type)
+        elif skinned_mesh.bound_material is not None and skinned_mesh.bound_material in materials:
+            material = _author_material(stage, out_dir, materials[skinned_mesh.bound_material], mesh.uvs is not None)
+            UsdShade.MaterialBindingAPI.Apply(mesh_prim.GetPrim()).Bind(material)
 
     stage.GetRootLayer().Save()
+
+
+def _author_material(stage: Usd.Stage, out_dir: pathlib.Path, material_data: MaterialData, has_uvs: bool) -> UsdShade.Material:
+    """Define /Character/Materials/<symbol> with its shader, reusing an existing prim."""
+    from pxr import Gf, Sdf, Tf, UsdShade
+
+    name = Tf.MakeValidIdentifier(material_data.name)
+    path = f"/Character/Materials/{name}"
+    existing = stage.GetPrimAtPath(path)
+    if existing:
+        return UsdShade.Material(existing)
+    material = UsdShade.Material.Define(stage, path)
+    shader = UsdShade.Shader.Define(stage, f"{path}/Shader")
+    shader.CreateIdAttr("UsdPreviewSurface")
+    shader.CreateInput("roughness", Sdf.ValueTypeNames.Float).Set(material_data.roughness)
+    material.CreateSurfaceOutput().ConnectToSource(shader.ConnectableAPI(), "surface")
+
+    diffuse_input = shader.CreateInput("diffuseColor", Sdf.ValueTypeNames.Color3f)
+    if material_data.diffuse_texture is not None and has_uvs and (out_dir / material_data.diffuse_texture).is_file():
+        reader = UsdShade.Shader.Define(stage, f"{path}/stReader")
+        reader.CreateIdAttr("UsdPrimvarReader_float2")
+        reader.CreateInput("varname", Sdf.ValueTypeNames.Token).Set("st")
+        reader.CreateOutput("result", Sdf.ValueTypeNames.Float2)
+        texture = UsdShade.Shader.Define(stage, f"{path}/DiffuseTexture")
+        texture.CreateIdAttr("UsdUVTexture")
+        texture.CreateInput("file", Sdf.ValueTypeNames.Asset).Set(Sdf.AssetPath(f"./{material_data.diffuse_texture}"))
+        texture.CreateInput("st", Sdf.ValueTypeNames.Float2).ConnectToSource(reader.ConnectableAPI(), "result")
+        texture.CreateInput("wrapS", Sdf.ValueTypeNames.Token).Set("repeat")
+        texture.CreateInput("wrapT", Sdf.ValueTypeNames.Token).Set("repeat")
+        texture.CreateInput("sourceColorSpace", Sdf.ValueTypeNames.Token).Set("sRGB")
+        texture.CreateInput("fallback", Sdf.ValueTypeNames.Float4).Set(Gf.Vec4f(*material_data.diffuse, 1.0))
+        texture.CreateOutput("rgb", Sdf.ValueTypeNames.Float3)
+        diffuse_input.ConnectToSource(texture.ConnectableAPI(), "rgb")
+    else:
+        diffuse_input.Set(Gf.Vec3f(*material_data.diffuse))
+    return material
 
 
 def _world_rest(joints: list[JointNode], joint: JointNode) -> np.ndarray:
@@ -699,47 +727,15 @@ def _world_rest(joints: list[JointNode], joint: JointNode) -> np.ndarray:
     return world
 
 
-def _author_clip(path: pathlib.Path, joint_paths: list[str], times: np.ndarray, quats: np.ndarray, translations: np.ndarray, stride: float, duration: float) -> None:
-    from pxr import Gf, Sdf, Usd, UsdGeom, UsdSkel, Vt
-
-    stage = Usd.Stage.CreateNew(str(path))
-    stage.SetTimeCodesPerSecond(_TIME_CODES_PER_SECOND)
-    UsdGeom.SetStageUpAxis(stage, UsdGeom.Tokens.z)
-    UsdGeom.SetStageMetersPerUnit(stage, 1.0)
-
-    anim = UsdSkel.Animation.Define(stage, "/Anim")
-    stage.SetDefaultPrim(anim.GetPrim())
-    anim.CreateJointsAttr(Vt.TokenArray(joint_paths))
-    rotations_attr = anim.CreateRotationsAttr()
-    translations_attr = anim.CreateTranslationsAttr()
-
-    key_count = len(times)
-    joint_count = len(joint_paths)
-    timecodes = times * _TIME_CODES_PER_SECOND
-    for k in range(key_count):
-        code = float(timecodes[k])
-        rotations_attr.Set(Vt.QuatfArray([Gf.Quatf(float(quats[k, j, 0]), Gf.Vec3f(float(quats[k, j, 1]), float(quats[k, j, 2]), float(quats[k, j, 3]))) for j in range(joint_count)]), code)
-        translations_attr.Set(Vt.Vec3fArray([Gf.Vec3f(float(translations[k, j, 0]), float(translations[k, j, 1]), float(translations[k, j, 2])) for j in range(joint_count)]), code)
-    anim.CreateScalesAttr(Vt.Vec3hArray([Gf.Vec3h(1.0, 1.0, 1.0) for _ in range(joint_count)]))
-    if key_count:
-        stage.SetStartTimeCode(float(timecodes[0]))
-        stage.SetEndTimeCode(float(timecodes[-1]))
-
-    prim = anim.GetPrim()
-    prim.CreateAttribute("arena:strideLength", Sdf.ValueTypeNames.Float).Set(float(stride))
-    prim.CreateAttribute("arena:duration", Sdf.ValueTypeNames.Float).Set(float(duration))
-
-    stage.GetRootLayer().Save()
-
-
 # --------------------------------------------------------------------------- #
 # Top-level conversion
 # --------------------------------------------------------------------------- #
 def convert_actor(sdf_path: str, dae_paths: dict[str, str], out_dir: str | pathlib.Path) -> ActorSpec:
-    """Author character.usda, clips/<name>.usda and meta.json into out_dir.
+    """Author character.usda and meta.json into out_dir.
 
-    dae_paths maps each SDF mesh URI to a local .dae file. The skeleton, skin and
-    mesh come from the skin DAE, each clip's channels from its own DAE.
+    dae_paths maps each consumed SDF URI to a local file. The skeleton and the
+    skinned meshes come from the skin DAE, the neutral stance from the idle
+    clip's first frame. Other clips are not read, the runtime renders the wire.
     """
     out = pathlib.Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -747,29 +743,24 @@ def convert_actor(sdf_path: str, dae_paths: dict[str, str], out_dir: str | pathl
 
     skin_doc = _Collada(dae_paths[spec.skin_uri])
     joints = _parse_skeleton(skin_doc)
-    skin = _parse_skin(skin_doc)
-    mesh = _parse_mesh(skin_doc)
+    skinned = _parse_skinned_meshes(skin_doc)
     materials = _parse_materials(skin_doc)
-    _author_character(out, joints, skin, mesh, materials)
+    _author_character(out, joints, skinned, materials)
 
-    joint_paths = [joint.path for joint in joints]
-    clips_dir = out / "clips"
-    clips_dir.mkdir(exist_ok=True)
+    idle_uri = spec.clips.get("idle")
+    if idle_uri is None:
+        raise ValueError(f"actor {spec.name} has no idle animation to take the neutral stance from")
+    idle_path = dae_paths[idle_uri]
+    if not idle_path.lower().endswith(".dae"):
+        raise ValueError(f"actor {spec.name} idle clip {idle_path} is not COLLADA, regenerate the bundle")
+    rotations, translations = _neutral_pose(joints, _parse_animations(_Collada(idle_path)))
 
     meta: dict[str, object] = {
         "actor": spec.name,
         "up_axis": "Z",
         "meters_per_unit": 1.0,
-        "fps": _TIME_CODES_PER_SECOND,
-        "joints": joint_paths,
-        "clips": {},
+        "joints": [joint.path for joint in joints],
+        "neutral": {"rotations_xyzw": rotations, "translations": translations},
     }
-    clip_meta: dict[str, dict[str, float]] = {}
-    for clip_name, uri in spec.clips.items():
-        channels = _parse_animations(_Collada(dae_paths[uri]))
-        times, quats, translations, stride, duration = _build_clip(joints, channels, clip_name)
-        _author_clip(clips_dir / f"{clip_name}.usda", joint_paths, times, quats, translations, stride, duration)
-        clip_meta[clip_name] = {"stride_length_m": stride, "duration_s": duration}
-    meta["clips"] = clip_meta
     (out / "meta.json").write_text(json.dumps(meta, indent=2))
     return spec
