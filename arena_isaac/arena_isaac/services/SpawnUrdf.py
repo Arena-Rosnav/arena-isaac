@@ -206,6 +206,7 @@ def _extract_gazebo_physics(urdf_path: str) -> dict[str, PhysicsParams]:
 
     mu1_per_link: dict[str, float] = {}
     mu2_per_link: dict[str, float] = {}
+    directional: set[str] = set()
 
     for gazebo in root.iter('gazebo'):
         ref = gazebo.attrib.get('reference')
@@ -213,6 +214,14 @@ def _extract_gazebo_physics(urdf_path: str) -> dict[str, PhysicsParams]:
             continue
 
         for child in gazebo:
+            if child.tag == 'fdir1':
+                raw = child.attrib.get('value') or child.text or ''
+                try:
+                    if any(float(c) != 0.0 for c in raw.split()):
+                        directional.add(ref)
+                except ValueError:
+                    pass
+                continue
             if child.tag not in ('mu1', 'mu2'):
                 continue
             raw = child.attrib.get('value')
@@ -231,6 +240,12 @@ def _extract_gazebo_physics(urdf_path: str) -> dict[str, PhysicsParams]:
                 mu2_per_link[ref] = val
 
     all_links = set(mu1_per_link) | set(mu2_per_link)
+    for ref in sorted(all_links & directional):
+        carb.log_warn(
+            f'{urdf_path}: link {ref!r} declares directional friction (fdir1), a gz '
+            'tuning an isotropic material cannot honor, keeping the solver default'
+        )
+    all_links -= directional
     warned_asymmetric = False
     result: dict[str, PhysicsParams] = {}
 
@@ -262,6 +277,31 @@ def _extract_gazebo_physics(urdf_path: str) -> dict[str, PhysicsParams]:
     return result
 
 
+def _link_collider_prims(stage, robot_prim: str, link_name: str) -> list[str]:
+    """Collider prims of one imported link. The importer applies CollisionAPI to
+    collision children inside the nested Geometry link tree (there is no flat
+    /colliders scope), and child links nest under their parent link, so the walk
+    prunes at descendant rigid bodies to not capture their colliders."""
+    root = stage.GetPrimAtPath(robot_prim)
+    if not root.IsValid():
+        return []
+    link = next(
+        (p for p in Usd.PrimRange(root) if p.GetName() == link_name and p.HasAPI(UsdPhysics.RigidBodyAPI)),
+        None,
+    )
+    if link is None:
+        return []
+    out: list[str] = []
+    it = iter(Usd.PrimRange(link))
+    for prim in it:
+        if prim.GetPath() != link.GetPath() and prim.HasAPI(UsdPhysics.RigidBodyAPI):
+            it.PruneChildren()
+            continue
+        if prim.HasAPI(UsdPhysics.CollisionAPI):
+            out.append(str(prim.GetPath()))
+    return out
+
+
 @on_exception('')
 def spawn_urdf(request: SpawnUrdf.Request) -> str:
     name = request.name
@@ -291,13 +331,15 @@ def spawn_urdf(request: SpawnUrdf.Request) -> str:
 
     friction_params = _extract_gazebo_physics(urdf_path)
     for link_name, params in friction_params.items():
-        collider_root = f'/colliders/{link_name}'
-        if not stage.GetPrimAtPath(collider_root).IsValid():
+        colliders = _link_collider_prims(stage, prim_path, link_name)
+        if not colliders:
+            carb.log_warn(f'{name}: no collider prims for link {link_name!r}, friction mu={params.static_friction} not applied')
             continue
-        key = f'wheel_{round(params.static_friction * 1000):d}_{round(params.dynamic_friction * 1000):d}_{round(params.restitution * 1000):d}_{params.combine_mode or "def"}'
+        key = f'friction_{round(params.static_friction * 1000):d}_{round(params.dynamic_friction * 1000):d}_{round(params.restitution * 1000):d}_{params.combine_mode or "def"}'
         material = Material.physics(parent_prim_path=world_path(), key=key, params=params)
-        if not material.bind_to(collider_root):
-            carb.log_error(f'failed to bind physx material at {collider_root}')
+        for collider in colliders:
+            if not material.bind_to(collider):
+                carb.log_error(f'failed to bind physx material at {collider}')
 
     articulation_path = _resolve_articulation_prim(prim_path, request.base_frame)
     body_path = _resolve_body_prim(prim_path, articulation_path)

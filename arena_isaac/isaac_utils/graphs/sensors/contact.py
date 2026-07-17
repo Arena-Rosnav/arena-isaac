@@ -4,7 +4,9 @@ from collections.abc import Sequence
 
 import attrs
 import omni.graph.core as og
+import omni.usd
 from isaacsim.sensors.physics import ContactSensor
+from pxr import Usd, UsdPhysics
 
 from isaac_utils.graphs import Graph
 
@@ -41,10 +43,24 @@ class SensorContact(SensorBase):
 
         self.prim_path: str | None = None
 
+    @staticmethod
+    def _collision_prim(link_prim: str) -> str | None:
+        """ContactSensor must be parented under a prim with UsdPhysics.CollisionAPI;
+        the URDF importer applies it to collider children, not the link prim itself."""
+        stage = omni.usd.get_context().get_stage()
+        link = stage.GetPrimAtPath(link_prim)
+        if not link.IsValid():
+            return None
+        for prim in Usd.PrimRange(link):
+            if prim.HasAPI(UsdPhysics.CollisionAPI):
+                return str(prim.GetPath())
+        return None
+
     def simulate(self, base_prim: str):
         link_prim = resolve_link_prim(base_prim, self.parent_frame, require_rigid_body=True)
+        parent_prim = self._collision_prim(link_prim) or link_prim
         contact_sensor = ContactSensor(
-            prim_path=os.path.join(link_prim, self.name),
+            prim_path=os.path.join(parent_prim, self.name),
             name="Contact_Sensor",
             frequency=self.config.update_rate,
             min_threshold=0,

@@ -32,6 +32,7 @@ class Sensors:
         """
 
         root = ET.fromstring(urdf)
+        links = {name for link in root.findall('.//link') if (name := link.get('name')) is not None}
         sensors_created: list[SensorBase] = []
 
         for gazebo in root.findall('.//gazebo'):
@@ -46,7 +47,7 @@ class Sensors:
                     continue
 
                 try:
-                    created = self._spawn_sensor(sensor, sensor_type, sensor_name, reference)
+                    created = self._spawn_sensor(sensor, sensor_type, sensor_name, reference, links)
                 except Exception as error:
                     carb.log_error(f"sensor {sensor_name!r} ({sensor_type}) failed to initialize, skipping: {error}")
                     continue
@@ -56,7 +57,21 @@ class Sensors:
 
         return sensors_created
 
-    def _spawn_sensor(self, sensor: ET.Element, sensor_type: str, sensor_name: str, reference: str) -> SensorBase | None:
+    @staticmethod
+    def _optical_frame(sensor: ET.Element, reference: str, links: set[str]) -> str:
+        """REP-103 optical frame for camera messages. Isaac's camera writers emit
+        optical-axes data (z forward), so stamping the body-convention link frame
+        tilts every consumer's view by 90 degrees."""
+        declared = sensor.findtext('./optical_frame_id')
+        if declared:
+            return declared.strip()
+        candidate = f"{reference.removesuffix('_frame')}_optical_frame"
+        if candidate in links:
+            return candidate
+        carb.log_warn(f"camera under {reference!r} has no optical frame in the URDF, stamping the body frame")
+        return reference
+
+    def _spawn_sensor(self, sensor: ET.Element, sensor_type: str, sensor_name: str, reference: str, links: set[str]) -> SensorBase | None:
         """Build, simulate and publish one URDF sensor, None when the type is unsupported."""
 
         pose = list(map(float, sensor.findtext('./pose', '0 0 0 0 0 0').split(' ')))
@@ -94,6 +109,7 @@ class Sensors:
                 name=sensor_name,
                 translation=translation,
                 rotation=rotation,
+                optical_frame=self._optical_frame(sensor, reference, links),
             )
         elif sensor_type == 'rgbd_camera':
             created = SensorCameraRGBD(
@@ -103,6 +119,7 @@ class Sensors:
                 name=sensor_name,
                 translation=translation,
                 rotation=rotation,
+                optical_frame=self._optical_frame(sensor, reference, links),
             )
         else:
             return None

@@ -67,6 +67,7 @@ class SensorCamera(SensorBase):
         translation: Translation,
         rotation: Rotation,
         is_rgbd: bool = False,
+        optical_frame: str | None = None,
     ):
         """
         Initializes the camera sensor.
@@ -77,9 +78,11 @@ class SensorCamera(SensorBase):
             config(SensorLidar.Config): The configuration of the lidar sensor.
             translation(Translation): Translation relative to parent prim.
             rotation(Rotation): Rotation relative to parent prim.
+            optical_frame(str): REP-103 optical frame for published messages, parent_frame when None.
         """
         self.robot_base_frame: str = robot_base_frame
         self.parent_frame: str = parent_frame
+        self.optical_frame: str = optical_frame or parent_frame
         self.name: str = name
         self.config: "SensorCamera.Config" = config
         self.translation: Translation = translation
@@ -110,7 +113,7 @@ class SensorCamera(SensorBase):
         return (self.prim_path,)
 
     def _common_args(self) -> tuple[str, str, str, int, int]:
-        frame = f'{self.robot_base_frame}{self.parent_frame}'
+        frame = f'{self.robot_base_frame}{self.optical_frame}'
         node_namespace = ''
         queue_size = 1
         render_product = self.camera._render_product_path
