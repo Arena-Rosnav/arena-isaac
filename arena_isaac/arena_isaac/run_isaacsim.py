@@ -161,7 +161,7 @@ import importlib
 importlib.invalidate_caches()
 for _mod in [_m for _m in sys.modules if _m == "isaacsim.sensors" or _m.startswith("isaacsim.sensors.physics")]:
     del sys.modules[_mod]
-from arena_isaac.services import services
+from arena_isaac.services import services, subscriptions
 from peds import runtime as pedestrian_runtime
 from rclpy.qos import QoSProfile
 from arena_isaac import run_after_tick_queue
@@ -397,6 +397,10 @@ def main(args=None):
     for service in services:
         service.create(controller, qos_profile=QoSProfile(depth=2000))
 
+    # latest-wins state streams, shallow history discards stale samples
+    for subscription in subscriptions:
+        subscription.create(controller, qos_profile=QoSProfile(depth=10))
+
     PublishTime('/World/publish_time')
     world.reset()
     if PHYSICS_ENGINE == "newton":
@@ -421,7 +425,9 @@ def main(args=None):
     try:
         while simulation_app.is_running():
             stepped_this_iteration: bool = False
-            rclpy.spin_once(controller, timeout_sec=0)
+            # bounded drain, a single callback per frame backs up under call bursts
+            for _ in range(16):
+                rclpy.spin_once(controller, timeout_sec=0)
             if controller.running:
                 if newton_guard is not None:
                     newton_guard.tick()

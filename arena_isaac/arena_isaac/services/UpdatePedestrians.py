@@ -1,8 +1,8 @@
-from arena_people_msgs.msg import Pedestrian
+from arena_people_msgs.msg import Pedestrian, Pedestrians
 from arena_people_msgs.srv import UpdatePedestrians
 from peds import runtime
 
-from .utils import Service, on_exception
+from .utils import Service, Subscription, on_exception
 
 
 @on_exception(UpdatePedestrians.Response.NOT_FOUND)
@@ -27,10 +27,23 @@ def update_pedestrians_callback(
     return response
 
 
+def update_pedestrians_msg(msg: Pedestrians) -> None:
+    """Topic-borne variant: latest-wins state stream, no per-ped results."""
+    stamp_sec = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
+    for pedestrian in msg.pedestrians:
+        update_pedestrian(pedestrian, stamp_sec)
+
+
 update_pedestrians_service = Service(
     srv_type=UpdatePedestrians,
     srv_name='isaac/UpdatePedestrians',
     callback=update_pedestrians_callback
 )
 
-__all__ = ['update_pedestrians_service']
+update_pedestrians_subscription = Subscription(
+    msg_type=Pedestrians,
+    topic='isaac/arena_peds',
+    callback=update_pedestrians_msg
+)
+
+__all__ = ['update_pedestrians_service', 'update_pedestrians_subscription']

@@ -13,8 +13,8 @@ from .SpawnPrims import spawn_prims_service
 from .SpawnUrdf import spawn_urdf_service
 from .SpawnUsd import spawn_usd_service
 from .SpawnWalls import spawn_walls_service
-from .UpdatePedestrians import update_pedestrians_service
-from .utils import Service
+from .UpdatePedestrians import update_pedestrians_service, update_pedestrians_subscription
+from .utils import Service, Subscription
 
 services: collections.abc.Iterable[Service] = (
     delete_pedestrians_service,
@@ -33,4 +33,8 @@ services: collections.abc.Iterable[Service] = (
     spawn_walls_service,
 )
 
-__all__ = ["services"]
+subscriptions: collections.abc.Iterable[Subscription] = (
+    update_pedestrians_subscription,
+)
+
+__all__ = ["services", "subscriptions"]

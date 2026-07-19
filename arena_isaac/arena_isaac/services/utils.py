@@ -27,3 +27,16 @@ class Service:
 
     def create(self, controller: rclpy.node.Node, **kwargs):
         controller.create_service(**{**self.kwargs, **kwargs})
+
+
+class Subscription:
+    def __init__(self, msg_type, topic, callback, **kwargs):
+        self.kwargs = {
+            'msg_type': msg_type,
+            'topic': topic,
+            'callback': callback,
+            **kwargs
+        }
+
+    def create(self, controller: rclpy.node.Node, **kwargs):
+        controller.create_subscription(**{**self.kwargs, **kwargs})
