@@ -114,6 +114,10 @@ def sanitize_urdf_for_isaac(urdf_path: str) -> str:
     tmp_mesh_dir_path = tempfile.mkdtemp(prefix="isaac_urdf_")
 
     for tag in root.iter():
+        # usd cannot name xml-namespaced attributes (gz:expressed_in), strip them
+        for key in [k for k in tag.attrib if k.startswith('{')]:
+            del tag.attrib[key]
+
         if tag.tag in ['robot', 'link', 'joint']:
             name = tag.attrib.get('name')
             if name and '-' in name:
