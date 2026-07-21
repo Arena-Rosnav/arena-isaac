@@ -250,38 +250,40 @@ def move(
     if prim is None:
         return
 
-    target = None
+    def physics_view():
+        if all(p.HasAPI(UsdPhysics.ArticulationRootAPI) for p in prim.prims):
+            try:
+                return Articulation(prim_path)
+            except Exception:
+                return None
+        if all(p.HasAPI(UsdPhysics.RigidBodyAPI) for p in prim.prims):
+            try:
+                return RigidPrim(prim_path)
+            except Exception:
+                return None
+        return None
+
+    positions = np.array(np.atleast_2d(translation.tuple())) if translation is not None else None
+    orientations = np.array(np.atleast_2d(rotation.quat())) if rotation is not None else None
+
+    def write(target) -> None:
+        if local:
+            target.set_local_poses(positions, orientations)
+        else:
+            target.set_world_poses(positions, orientations)
+
     if physics_engine() == 'newton':
-        # newton rebuilds its model from authored usd on every unpause, and pose
-        # writes through the tensor views are lost with the rebuilt state, so
-        # teleports must land in the usd xform to survive
-        target = XformPrim(prim_path, reset_xform_op_properties=True)
-
-    if target is None and all(p.HasAPI(UsdPhysics.ArticulationRootAPI) for p in prim.prims):
-        try:
-            target = Articulation(prim_path)
-        except Exception:
-            target = None
-
-    if target is None and all(p.HasAPI(UsdPhysics.RigidBodyAPI) for p in prim.prims):
-        try:
-            target = RigidPrim(prim_path)
-        except Exception:
-            target = None
-
-    if target is None:
-        target = XformPrim(prim_path)
-
-    if local:
-        target.set_local_poses(
-            np.array(np.atleast_2d(translation.tuple())) if translation is not None else None,
-            np.array(np.atleast_2d(rotation.quat())) if rotation is not None else None
-        )
+        # usd write survives the reset rebuild. the physics-view write survives live
+        # ticks (newton never re-reads usd while playing, only syncs poses to fabric)
+        write(XformPrim(prim_path, reset_xform_op_properties=True))
+        if (view := physics_view()) is not None:
+            # invalid during a paused reset, where the usd write already teleports
+            try:
+                write(view)
+            except Exception:
+                carb.log_warn(f"arena: newton physics-view teleport at {prim_path} failed")
     else:
-        target.set_world_poses(
-            np.array(np.atleast_2d(translation.tuple())) if translation is not None else None,
-            np.array(np.atleast_2d(rotation.quat())) if rotation is not None else None
-        )
+        write(physics_view() or XformPrim(prim_path))
 
 
 def get_world_translation(prim_path: str) -> Translation | None:
