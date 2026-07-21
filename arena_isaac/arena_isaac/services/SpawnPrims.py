@@ -11,13 +11,15 @@ from .utils import Service, on_exception
 def prim_importer(prim_msg: Prim) -> bool:
     name = prim_msg.name
     usd_path = prim_msg.usd_path
-    prim.create_prim_safe(
+    spawned = prim.create_prim_safe(
         prim_path=world_path(name),
         position=np.array(geom.Translation.parse(prim_msg.pose.position).tuple()),
         orientation=np.array(geom.Rotation.parse(prim_msg.pose.orientation).quat()),
         usd_path=usd_path,
         scale=np.array([prim_msg.scale.x, prim_msg.scale.y, prim_msg.scale.z]),
     )
+    if spawned:
+        prim.sanitize_asset(spawned)
 
     return True
 

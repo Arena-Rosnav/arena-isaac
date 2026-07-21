@@ -1,5 +1,5 @@
 import os
-from pxr import Usd, UsdGeom
+from pxr import Usd, UsdGeom, UsdLux, UsdPhysics
 from isaacsim.core.experimental.prims import Prim
 from isaacsim.core.utils.prims import create_prim
 from typing import Optional
@@ -72,6 +72,18 @@ def create_prim_safe(
         primPath=xform_prim
     )
     return prim
+
+
+def sanitize_asset(root: Usd.Prim) -> None:
+    """Deactivate light prims and strip rigid-body dynamics under root."""
+    lights = []
+    for prim in Usd.PrimRange(root):
+        if prim.HasAPI(UsdLux.LightAPI):
+            lights.append(prim)
+        if prim.HasAPI(UsdPhysics.RigidBodyAPI):
+            prim.RemoveAPI(UsdPhysics.RigidBodyAPI)
+    for prim in lights:
+        prim.SetActive(False)
 
 
 def ensure_path(path: str):
