@@ -13,6 +13,8 @@ def get_prim(name: str) -> Prim:
     msg.name = name
 
     prim = get_prim_at_path(name)
+    if not prim.IsValid():
+        return None
 
     translate = prim.GetAttribute("xformOp:translate").Get()
     quat = prim.GetAttribute("xformOp:orient").Get()
