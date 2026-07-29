@@ -272,6 +272,12 @@ def move(
         else:
             target.set_world_poses(positions, orientations)
 
+    def zero_velocities(view) -> None:
+        # teleports must not preserve momentum
+        view.set_velocities(np.zeros((1, 3)), np.zeros((1, 3)))
+        if isinstance(view, Articulation):
+            view.set_dof_velocities(0.0)
+
     if physics_engine() == 'newton':
         # usd write survives the reset rebuild. the physics-view write survives live
         # ticks (newton never re-reads usd while playing, only syncs poses to fabric)
@@ -280,10 +286,17 @@ def move(
             # invalid during a paused reset, where the usd write already teleports
             try:
                 write(view)
+                zero_velocities(view)
             except Exception:
                 carb.log_warn(f"arena: newton physics-view teleport at {prim_path} failed")
     else:
-        write(physics_view() or XformPrim(prim_path))
+        view = physics_view()
+        write(view or XformPrim(prim_path))
+        if view is not None:
+            try:
+                zero_velocities(view)
+            except Exception:
+                carb.log_warn(f"arena: physics-view velocity reset at {prim_path} failed")
 
 
 def get_world_translation(prim_path: str) -> Translation | None:
