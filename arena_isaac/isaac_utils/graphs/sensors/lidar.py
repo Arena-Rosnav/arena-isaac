@@ -225,11 +225,6 @@ class SensorLidar(SensorBase):
         return (self.prim_path_points, self.prim_path_scan)
 
     def destroy(self) -> None:
-        for sensor in self._sensors:
-            try:
-                sensor.detach_writers()
-            except Exception as error:
-                carb.log_warn(f"SensorLidar sensor.detach_writers raised: {error}")
         self._sensors.clear()
 
     def publish(self, base_topic: str) -> bool:
@@ -257,6 +252,7 @@ class SensorLidar(SensorBase):
                 "RtxLidarROS2PublishPointCloud",
                 topicName=points_topic,
                 frameId=frame_id,
+                outputIntensity=True,
             )
             self._sensors.append(points_sensor)
             monotonic_sensor_time(str(points_sensor.render_product.GetPath()))
