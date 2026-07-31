@@ -1,3 +1,4 @@
+import math
 import os
 import xml.etree.ElementTree as ET
 from collections.abc import Mapping, Sequence
@@ -38,6 +39,7 @@ class SensorCamera(SensorBase):
 
         image: Image
         clip: Clip
+        horizontal_fov: float | None = attrs.field(converter=attrs.converters.optional(float), default=None)
         update_rate: float = attrs.field(converter=attrs.converters.optional(float), default=1.0)
         topic: str | None = attrs.field(converter=attrs.converters.optional(str), default=None)
         camera_info_topic: str | None = attrs.field(converter=attrs.converters.optional(str), default=None)
@@ -45,6 +47,7 @@ class SensorCamera(SensorBase):
         @classmethod
         def parse(cls, config: ET.Element) -> "SensorCamera.Config":
             return cls(
+                horizontal_fov=config.findtext(".//horizontal_fov"),
                 update_rate=config.findtext(".//update_rate"),
                 topic=config.findtext("./topic") or config.findtext(".//topic"),
                 camera_info_topic=config.findtext("./camera/camera_info_topic") or config.findtext(".//camera_info_topic"),
@@ -103,6 +106,11 @@ class SensorCamera(SensorBase):
             resolution=(self.config.image.width, self.config.image.height),
         )
         if camera:
+            if self.config.horizontal_fov is not None:
+                aperture = camera.get_horizontal_aperture()
+                camera.set_focal_length(aperture / (2 * math.tan(self.config.horizontal_fov / 2)))
+                camera.set_vertical_aperture(aperture * self.config.image.height / self.config.image.width)
+            camera.set_clipping_range(self.config.clip.near, self.config.clip.far)
             camera.initialize()
             self.prim_path = camera.prim_path
             self.camera = camera
