@@ -276,7 +276,7 @@ if PHYSICS_ENGINE == "newton":
 world = World()
 if PHYSICS_ENGINE == "newton":
     _newton_apply_solver_cfg()
-world.scene.add_ground_plane(size=100, z_position=0.0)
+world.scene.add_ground_plane(size=100, z_position=-1.0)
 Material.physics(
     parent_prim_path=world_path(),
     key='ground_default',
