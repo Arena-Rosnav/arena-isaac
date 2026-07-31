@@ -6,6 +6,8 @@ from isaacsim_msgs.srv import SpawnPrims
 
 from .utils import Service, on_exception
 
+DEFAULT_LIGHT = '/World/Light_1'
+
 
 @on_exception(False)
 def prim_importer(prim_msg: Prim) -> bool:
@@ -18,8 +20,9 @@ def prim_importer(prim_msg: Prim) -> bool:
         usd_path=usd_path,
         scale=np.array([prim_msg.scale.x, prim_msg.scale.y, prim_msg.scale.z]),
     )
-    if spawned:
-        prim.sanitize_asset(spawned)
+    if spawned and prim.sanitize_asset(spawned):
+        # asset brings its own lights, drop the fallback dome
+        prim.deactivate_prim(DEFAULT_LIGHT)
 
     return True
 

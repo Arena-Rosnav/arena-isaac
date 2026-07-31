@@ -74,16 +74,22 @@ def create_prim_safe(
     return prim
 
 
-def sanitize_asset(root: Usd.Prim) -> None:
-    """Deactivate light prims and strip rigid-body dynamics under root."""
-    lights = []
+def sanitize_asset(root: Usd.Prim) -> bool:
+    """Strip rigid-body dynamics under root, return whether it carries active lights."""
+    has_lights = False
     for prim in Usd.PrimRange(root):
         if prim.HasAPI(UsdLux.LightAPI):
-            lights.append(prim)
+            has_lights = True
         if prim.HasAPI(UsdPhysics.RigidBodyAPI):
             prim.RemoveAPI(UsdPhysics.RigidBodyAPI)
-    for prim in lights:
-        prim.SetActive(False)
+    return has_lights
+
+
+def deactivate_prim(path: str) -> None:
+    """Deactivate the prim at path if it exists."""
+    target = stage.GetPrimAtPath(path)
+    if target:
+        target.SetActive(False)
 
 
 def ensure_path(path: str):
