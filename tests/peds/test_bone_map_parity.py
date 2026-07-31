@@ -35,13 +35,19 @@ _FIXTURE = Path(__file__).parent / "fixtures" / "skeleton_neutral.json"
 
 # (wire DOF, probe angle inside JOINTS.md limits, observed CMU bone)
 _PROBES: tuple[tuple[str, float, str], ...] = (
+    ("r_waist", 0.4, "Spine1"),
+    ("y_waist", 0.5, "Spine1"),
     ("waist", 0.5, "Spine1"),
     ("r_head", 0.5, "Head"),
     ("y_head", 0.5, "Head"),
     ("p_head", 0.5, "Head"),
+    ("l_y_shoulder", 0.5, "LeftArm"),
     ("l_p_shoulder", 0.5, "LeftArm"),
+    ("l_r_shoulder", 0.5, "LeftArm"),
     ("l_elbow", 0.8, "LeftForeArm"),
+    ("r_y_shoulder", 0.5, "RightArm"),
     ("r_p_shoulder", 0.5, "RightArm"),
+    ("r_r_shoulder", 0.5, "RightArm"),
     ("r_elbow", 0.8, "RightForeArm"),
     ("l_y_hip", 0.4, "LeftUpLeg"),
     ("l_p_hip", 0.5, "LeftUpLeg"),
@@ -51,10 +57,10 @@ _PROBES: tuple[tuple[str, float, str], ...] = (
     ("r_p_hip", 0.5, "RightUpLeg"),
     ("r_r_hip", 0.5, "RightUpLeg"),
     ("r_knee", -0.8, "RightLeg"),
+    ("l_ankle", 0.4, "LeftFoot"),
+    ("r_ankle", 0.4, "RightFoot"),
 )
-# semantic_to_rig overrides these with a constant rig posture, the contract renders them as no-ops
-_RESERVED: tuple[str, ...] = ("l_y_shoulder", "l_r_shoulder", "r_y_shoulder", "r_r_shoulder")
-_ALL_DOFS: tuple[str, ...] = tuple(name for name, _, _ in _PROBES) + _RESERVED
+_ALL_DOFS: tuple[str, ...] = tuple(name for name, _, _ in _PROBES)
 
 
 def _quat_to_mat(q: np.ndarray) -> np.ndarray:
@@ -189,9 +195,20 @@ def _urdf_frames(wire: dict[str, float]) -> dict[str, tuple[np.ndarray, np.ndarr
     return frames
 
 
+# The shoulder triple is a conjugated chain (rig.py folds constant pre/post twists
+# into the y and r joints), so per-joint links move even at wire zero. All three
+# DOFs are measured on the composed arm segment, the child of the last chain joint.
+_URDF_MEASURE_JOINT: dict[str, str] = {
+    "l_y_shoulder": "l_r_shoulder",
+    "l_p_shoulder": "l_r_shoulder",
+    "r_y_shoulder": "r_r_shoulder",
+    "r_p_shoulder": "r_r_shoulder",
+}
+
+
 def _urdf_link_for(dof: str) -> str:
     fk, _, _, joints = _contract()
-    return joints[f"{dof}_{fk.PREVIEW_ID}"].child
+    return joints[f"{_URDF_MEASURE_JOINT.get(dof, dof)}_{fk.PREVIEW_ID}"].child
 
 
 # ----------------------------------------------------------- measurements
@@ -270,15 +287,6 @@ def test_dof_parity(dof: str, probe: float, bone: str) -> None:
     assert m["leak"] < 0.02, f"{dof}: mirrored side moved by {m['leak']:.3f}"
 
 
-@pytest.mark.parametrize("dof", _RESERVED)
-def test_reserved_dofs_are_noops(dof: str) -> None:
-    wire = _zero_wire()
-    wire[dof] = 1.0
-    zero, probe = _cmu_frames(_zero_wire()), _cmu_frames(wire)
-    moved = max(_delta_axis_angle(zero[b][0], probe[b][0])[1] for b in zero)
-    assert moved < 1e-6, f"{dof} is reserved (contract renders it as a no-op) but moved the isaac rig by {moved:.3f}"
-
-
 # ------------------------------------------------------------ script mode
 
 
@@ -293,12 +301,6 @@ def _report() -> None:
         print(
             f"{dof:<14}{probe:>7.2f}  {fmt(m['urdf_axis']):<21}{fmt(m['cmu_axis']):<21}{dot:>6.2f}{m['cmu_angle']:>8.3f}{m['leak']:>7.3f}"
         )
-    for dof in _RESERVED:
-        wire = _zero_wire()
-        wire[dof] = 1.0
-        zero, probe_frames = _cmu_frames(_zero_wire()), _cmu_frames(wire)
-        moved = max(_delta_axis_angle(zero[b][0], probe_frames[b][0])[1] for b in zero)
-        print(f"{dof:<14}{'resvd':>7}  contract no-op, cmu moved {moved:.3f}")
 
 
 def _regen() -> None:
@@ -308,9 +310,6 @@ def _regen() -> None:
     print("BONE_MAP = {")
     for dof in _ALL_DOFS:
         targets = BONE_MAP[dof]
-        if dof in _RESERVED or targets is None:
-            print(f"    {dof!r}: None,  # reserved, contract renders as no-op")
-            continue
         probe, bone = next((p, b) for n, p, b in _PROBES if n == dof)
         m = _measure(dof, probe, bone)
         world_axis = body @ m["urdf_axis"]

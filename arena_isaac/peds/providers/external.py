@@ -154,8 +154,6 @@ class ExternalPoseProvider:
         schema_axis: list[tuple[float, float, float]] = []
         schema_gain: list[float] = []
         for name, targets in BONE_MAP.items():
-            if targets is None:
-                continue
             for target in targets:
                 idx = bone_index.get(target.bone)
                 if idx is None:
