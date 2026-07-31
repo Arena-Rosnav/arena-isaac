@@ -142,8 +142,21 @@ class SensorLidar(SensorBase):
         prim = prim_utils.get_prim_at_path(lidar.paths[0])
         prim.GetAttribute("omni:sensor:Core:nearRangeM").Set(float(self.config.range.min))
         prim.GetAttribute("omni:sensor:Core:farRangeM").Set(float(self.config.range.max))
+        self._apply_range_anchor(prim)
         self._apply_scan_pattern(prim)
         return lidar
+
+    def _apply_range_anchor(self, prim) -> None:
+        """Anchor intensity normalization (1.0 = min-reflectance target at anchor range) to this sensor's own max range."""
+        value = float(self.config.range.max)
+        for name in ('omni:sensor:Core:minReflectanceRange', 'omni:sensor:Core:minReflectanceRangeM'):
+            attr = prim.GetAttribute(name)
+            if attr.IsValid():
+                current = attr.Get()
+                attr.Set(type(current)(value) if current is not None else value)
+                return
+        available = sorted(a.GetName() for a in prim.GetAttributes() if a.GetName().startswith('omni:sensor:'))
+        carb.log_warn(f"lidar '{self.name}': minReflectanceRange attribute not found, available: {available}")
 
     def _apply_scan_pattern(self, prim) -> None:
         """Override the preset firing pattern with the URDF scan block.
