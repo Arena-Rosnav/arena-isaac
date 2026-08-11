@@ -145,6 +145,7 @@ import omni.syntheticdata._syntheticdata as sd
 import rclpy
 import rclpy.node
 import std_srvs.srv
+from isaacsim_msgs.srv import StepSimulation
 
 # graphs
 from isaac_utils.graphs.time import PublishTime
@@ -260,6 +261,9 @@ def _newton_apply_solver_cfg() -> None:
     cfg.njmax = 2400
 
 
+# matches Isaac's implicit default, pinned so lockstep step projections are exact
+PHYSICS_DT = 1.0 / 60.0
+
 newton_guard = None
 if PHYSICS_ENGINE == "newton":
     # python.sh does not autoload the newton extensions (only isaac-sim.newton.sh does),
@@ -273,7 +277,7 @@ if PHYSICS_ENGINE == "newton":
     SimulationManager.switch_physics_engine("newton")
     newton_guard = _NewtonStaleGuard(omni.usd.get_context().get_stage())
 
-world = World()
+world = World(physics_dt=PHYSICS_DT, rendering_dt=PHYSICS_DT)
 if PHYSICS_ENGINE == "newton":
     _newton_apply_solver_cfg()
 world.scene.add_ground_plane(size=100, z_position=-1.0)
@@ -323,7 +327,7 @@ class IsaacController(rclpy.node.Node):
     def __init__(self, *args, **kwargs):
         super().__init__(node_name="isaac", *args, **kwargs)
         self._running = True
-        self._should_step_once = False
+        self._pending_steps = 0
 
         self.__pause_srv = self.create_service(
             std_srvs.srv.Trigger,
@@ -340,6 +344,11 @@ class IsaacController(rclpy.node.Node):
             os.path.join('isaac/StepSimulation'),
             self._cb_step,
         )
+        self.__step_n_srv = self.create_service(
+            StepSimulation,
+            os.path.join('isaac/StepSimulationN'),
+            self._cb_step_n,
+        )
 
     def _cb_pause(self, request: std_srvs.srv.Trigger.Request, response: std_srvs.srv.Trigger.Response):
         self._running = False
@@ -352,19 +361,30 @@ class IsaacController(rclpy.node.Node):
         return response
 
     def _cb_step(self, request: std_srvs.srv.Trigger.Request, response: std_srvs.srv.Trigger.Response):
-        self._should_step_once = True
+        self._pending_steps += 1
         response.success = True
         return response
 
-    @property
-    def _step_once(self) -> bool:
-        v = self._should_step_once
-        self._should_step_once = False
-        return v
+    def _cb_step_n(self, request: StepSimulation.Request, response: StepSimulation.Response):
+        if request.steps == 0:
+            response.success = False
+            response.target_sim_time = 0.0
+            response.error_msg = "steps must be > 0"
+            return response
+        self._pending_steps += request.steps
+        response.success = True
+        response.target_sim_time = world.current_time + request.steps * PHYSICS_DT
+        response.error_msg = ""
+        return response
+
+    def consume_step(self) -> None:
+        """Decrement pending steps after a gated frame steps. No-op while free-running."""
+        if not self._running and self._pending_steps > 0:
+            self._pending_steps -= 1
 
     @property
     def running(self):
-        return self._step_once or self._running
+        return self._pending_steps > 0 or self._running
 
     @classmethod
     def wait_for_bridge(cls):
@@ -462,6 +482,7 @@ def main(args=None):
                     world.play()
                     was_playing = True
                     world.step(render=True)
+                    controller.consume_step()
                     if restore_time > 0.0:
                         _newton_restore_sim_time(restore_time)
                     stepped_this_iteration = True
@@ -474,6 +495,7 @@ def main(args=None):
                     newton_bounce_hold = 30
                 else:
                     world.step(render=True)
+                    controller.consume_step()
                     stepped_this_iteration = True
             else:
                 if was_playing:

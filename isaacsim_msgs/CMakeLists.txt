@@ -32,6 +32,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   srv/SpawnUrdf.srv
   srv/SpawnUsd.srv
   srv/SpawnWalls.srv
+  srv/StepSimulation.srv
   DEPENDENCIES std_msgs geometry_msgs
 )
 # uncomment the following section in order to fill in
