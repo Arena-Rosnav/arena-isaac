@@ -1,0 +1,5 @@
+uint32 steps              # number of physics steps to advance
+---
+bool success               # whether the step batch was accepted
+float64 target_sim_time    # projected sim time when steps complete
+string error_msg           # reason on failure
