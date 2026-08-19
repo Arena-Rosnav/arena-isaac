@@ -140,6 +140,7 @@ import numpy as np
 
 import omni.replicator.core as rep
 import omni.syntheticdata._syntheticdata as sd
+from isaacsim.core.simulation_manager import SimulationManager
 
 # rclpy
 import rclpy
@@ -264,6 +265,11 @@ def _newton_apply_solver_cfg() -> None:
 # matches Isaac's implicit default, pinned so lockstep step projections are exact
 PHYSICS_DT = 1.0 / 60.0
 
+
+def _sim_clock() -> float:
+    # what /clock publishes, world.current_time zeroes on every timeline stop
+    return float(SimulationManager._simulation_manager_interface.get_simulation_time_monotonic())
+
 newton_guard = None
 if PHYSICS_ENGINE == "newton":
     # python.sh does not autoload the newton extensions (only isaac-sim.newton.sh does),
@@ -273,7 +279,6 @@ if PHYSICS_ENGINE == "newton":
             carb.log_error(f"failed to enable extension: {_ext}")
     for _ in range(20):
         simulation_app.update()
-    from isaacsim.core.simulation_manager import SimulationManager
     SimulationManager.switch_physics_engine("newton")
     newton_guard = _NewtonStaleGuard(omni.usd.get_context().get_stage())
 
@@ -373,14 +378,14 @@ class IsaacController(rclpy.node.Node):
             return response
         self._pending_steps += request.steps
         response.success = True
-        response.target_sim_time = world.current_time + request.steps * PHYSICS_DT
+        response.target_sim_time = _sim_clock() + request.steps * PHYSICS_DT
         response.error_msg = ""
         return response
 
-    def consume_step(self) -> None:
-        """Decrement pending steps after a gated frame steps. No-op while free-running."""
-        if not self._running and self._pending_steps > 0:
-            self._pending_steps -= 1
+    def consume_steps(self, n: int) -> None:
+        """Consume the steps a gated frame advanced /clock by. No-op while free-running."""
+        if not self._running:
+            self._pending_steps = max(0, self._pending_steps - n)
 
     @property
     def running(self):
@@ -481,8 +486,9 @@ def main(args=None):
                         rebuild_graphs()
                     world.play()
                     was_playing = True
+                    clock_before = _sim_clock()
                     world.step(render=True)
-                    controller.consume_step()
+                    controller.consume_steps(round((_sim_clock() - clock_before) / PHYSICS_DT))
                     if restore_time > 0.0:
                         _newton_restore_sim_time(restore_time)
                     stepped_this_iteration = True
@@ -494,8 +500,9 @@ def main(args=None):
                     was_playing = False
                     newton_bounce_hold = 30
                 else:
+                    clock_before = _sim_clock()
                     world.step(render=True)
-                    controller.consume_step()
+                    controller.consume_steps(round((_sim_clock() - clock_before) / PHYSICS_DT))
                     stepped_this_iteration = True
             else:
                 if was_playing:
