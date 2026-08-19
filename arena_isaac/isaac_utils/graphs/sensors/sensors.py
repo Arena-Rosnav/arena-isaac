@@ -17,14 +17,12 @@ class Sensors:
         self,
         prim_path: str,
         base_frame: str,
-        base_topic: str,
     ):
         self.prim_path: str = prim_path
         self.robot_base_frame: str = base_frame
-        self.robot_base_topic: str = base_topic
 
     def parse_gazebo(self, urdf: str) -> list[SensorBase]:
-        """Parse URDF <sensor> tags, returning sensor objects in creation order.
+        """Parse URDF <sensor> tags, returning simulated (not yet published) sensors in creation order.
 
         Each sensor is created independently, a failure in one (unsupported prim,
         bad config) is logged and skipped so the rest of the robot's sensors still
@@ -72,7 +70,7 @@ class Sensors:
         return reference
 
     def _spawn_sensor(self, sensor: ET.Element, sensor_type: str, sensor_name: str, reference: str, links: set[str]) -> SensorBase | None:
-        """Build, simulate and publish one URDF sensor, None when the type is unsupported."""
+        """Build and simulate one URDF sensor, None when the type is unsupported."""
 
         pose = list(map(float, sensor.findtext('./pose', '0 0 0 0 0 0').split(' ')))
         translation = Translation.parse(pose[:3])
@@ -125,5 +123,4 @@ class Sensors:
             return None
 
         created.simulate(self.prim_path)
-        created.publish(self.robot_base_topic)
         return created

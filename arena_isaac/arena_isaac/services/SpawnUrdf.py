@@ -20,6 +20,8 @@ from isaacsim.asset.importer.urdf import URDFImporter, URDFImporterConfig
 from isaacsim_msgs.srv import SpawnUrdf
 from pxr import Usd, UsdGeom, UsdPhysics
 
+from arena_isaac import run_after_tick_queue
+
 from .utils import Service, on_exception
 
 parent_dir = Path(__file__).resolve().parent.parent
@@ -392,13 +394,19 @@ def spawn_urdf(request: SpawnUrdf.Request) -> str:
             manifest.graph_paths.append(os.path.join(prim_path, 'topic_bridge'))
 
     with open(request.urdf_path) as f:
-        manifest.sensors.extend(
-            sensors.Sensors(
-                prim_path=prim_path,
-                base_frame=request.tf_prefix,
-                base_topic=os.path.dirname(request.cmd_vel_topic),
-            ).parse_gazebo(f.read())
-        )
+        robot_sensors = sensors.Sensors(prim_path=prim_path, base_frame=request.tf_prefix).parse_gazebo(f.read())
+    manifest.sensors.extend(robot_sensors)
+    base_topic = os.path.dirname(request.cmd_vel_topic)
+
+    def publish_sensors() -> None:
+        # writers attach only after the render products rendered one played frame
+        for sensor in robot_sensors:
+            try:
+                sensor.publish(base_topic)
+            except Exception as error:
+                carb.log_error(f"sensor publish failed on {prim_path}, skipping: {error}")
+
+    run_after_tick_queue.put(publish_sensors)
 
     geom.register_robot(
         robot_prim_path=prim_path,
