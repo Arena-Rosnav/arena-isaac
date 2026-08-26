@@ -296,7 +296,7 @@ class SensorLidar(SensorBase):
                     topicName=scan_topic,
                     frameId=frame_id,
                     horizontalFov=360.0,
-                    horizontalResolution=360.0 * rotation_rate / firing_rate,
+                    horizontalResolution=360.0 / float(self.config.horizontal.samples),
                     depthRange=[near_range, far_range],
                     rotationRate=rotation_rate,
                     azimuthRange=[-180.0, 180.0],
