@@ -28,46 +28,46 @@ BONE_MAP: dict[str, tuple[BoneTarget, ...]] = {
     # Spine stack: each wire triple drives its own bone 1:1 (JOINTS.md spine
     # stack), replacing the pre-stack 0.5/0.3/0.2 weighted spread of the
     # lumped waist triple over the chain.
-    "r_waist": (BoneTarget("LowerBack", (-0.1374, 0.0787, 0.9874), 1.0),),  # lumbar roll
-    "y_waist": (BoneTarget("LowerBack", (0.0181, 0.9969, -0.0770), 1.0),),  # lumbar yaw (body torque)
-    "waist": (BoneTarget("LowerBack", (0.9904, -0.0073, 0.1384), 1.0),),  # lumbar forward lean
-    "r_spine": (BoneTarget("Spine", (-0.1428, -0.0795, 0.9865), 1.0),),  # mid-spine roll
-    "y_spine": (BoneTarget("Spine", (-0.0187, 0.9968, 0.0776), 1.0),),  # mid-spine yaw
-    "spine": (BoneTarget("Spine", (0.9896, 0.0074, 0.1439), 1.0),),  # mid-spine forward lean
-    "r_chest": (BoneTarget("Spine1", (-0.1502, -0.0054, 0.9886), 1.0),),  # chest roll
-    "y_chest": (BoneTarget("Spine1", (0.0655, 0.9977, 0.0154), 1.0),),  # chest yaw
-    "chest": (BoneTarget("Spine1", (0.9865, -0.0670, 0.1495), 1.0),),  # chest forward lean
-    "r_head": (BoneTarget("Head", (-0.1353, -0.0169, 0.9907), 1.0),),  # head roll (ear-to-shoulder tilt)
+    "r_waist": (BoneTarget("LowerBack", (-0.0139, 0.1447, 0.9894), 1.0),),  # lumbar roll
+    "y_waist": (BoneTarget("LowerBack", (0.0026, 0.9895, -0.1447), 1.0),),  # lumbar yaw (body torque)
+    "waist": (BoneTarget("LowerBack", (0.9999, -0.0006, 0.0141), 1.0),),  # lumbar forward lean
+    "r_spine": (BoneTarget("Spine", (-0.0226, -0.0083, 0.9997), 1.0),),  # mid-spine roll
+    "y_spine": (BoneTarget("Spine", (-0.0006, 1.0000, 0.0083), 1.0),),  # mid-spine yaw
+    "spine": (BoneTarget("Spine", (0.9997, 0.0004, 0.0226), 1.0),),  # mid-spine forward lean
+    "r_chest": (BoneTarget("Spine1", (-0.0273, 0.4378, 0.8987), 1.0),),  # chest roll
+    "y_chest": (BoneTarget("Spine1", (-0.0100, 0.8988, -0.4382), 1.0),),  # chest yaw
+    "chest": (BoneTarget("Spine1", (0.9996, 0.0209, 0.0202), 1.0),),  # chest forward lean
+    "r_head": (BoneTarget("Head", (-0.0131, 0.1115, 0.9937), 1.0),),  # head roll (ear-to-shoulder tilt)
     "y_head": (  # head yaw (look left/right), neck twist plus head
-        BoneTarget("Neck1", (-0.0186, 0.9373, 0.3481), 1.0, 0.6),
-        BoneTarget("Head", (-0.0058, 0.9999, 0.0163), 1.0, 0.4),
+        BoneTarget("Neck1", (-0.0001, 0.8652, -0.5015), 1.0, 0.6),
+        BoneTarget("Head", (-0.0007, 0.9938, -0.1116), 1.0, 0.4),
     ),
     "p_head": (  # head pitch (nod up/down), neck plus head
-        BoneTarget("Neck", (-0.9878, -0.0127, -0.1554), 1.0, 0.35),
-        BoneTarget("Head", (-0.9908, -0.0036, -0.1354), 1.0, 0.65),
+        BoneTarget("Neck", (-1.0000, -0.0042, -0.0073), 1.0, 0.35),
+        BoneTarget("Head", (-0.9999, -0.0021, -0.0129), 1.0, 0.65),
     ),
-    "l_y_collar": (BoneTarget("LeftShoulder", (0.9332, -0.2937, -0.2072), 1.0),),  # L clavicle protraction
-    "l_p_collar": (BoneTarget("LeftShoulder", (0.1022, -0.3358, 0.9364), 1.0),),  # L clavicle elevation (shrug)
-    "l_y_shoulder": (BoneTarget("LeftArm", (-0.1005, -0.9944, 0.0325), 1.0),),  # L arm azimuth about body-up
-    "l_p_shoulder": (BoneTarget("LeftArm", (0.9498, -0.0861, 0.3008), 1.0),),  # L shoulder flexion, primary arm swing
-    "l_r_shoulder": (BoneTarget("LeftArm", (0.1005, 0.9944, -0.0325), 1.0),),  # L arm twist about the limb axis
-    "l_elbow": (BoneTarget("LeftForeArm", (0.9249, -0.1620, 0.3439), 1.0),),  # L elbow flexion
-    "r_y_collar": (BoneTarget("RightShoulder", (0.9571, 0.2599, 0.1282), 1.0),),  # R clavicle protraction
-    "r_p_collar": (BoneTarget("RightShoulder", (0.1355, -0.0103, -0.9907), 1.0),),  # R clavicle elevation (shrug)
-    "r_y_shoulder": (BoneTarget("RightArm", (0.0646, -0.9964, 0.0551), 1.0),),  # R arm azimuth about body-up
-    "r_p_shoulder": (BoneTarget("RightArm", (0.8758, 0.0301, -0.4817), 1.0),),  # R shoulder flexion, primary arm swing
-    "r_r_shoulder": (BoneTarget("RightArm", (-0.0646, 0.9964, -0.0551), 1.0),),  # R arm twist about the limb axis
-    "r_elbow": (BoneTarget("RightForeArm", (0.8678, 0.0362, -0.4956), 1.0),),  # R elbow flexion
-    "l_y_hip": (BoneTarget("LeftUpLeg", (0.1576, 0.9663, -0.2038), 1.0),),  # L hip yaw (internal/external rotation)
-    "l_p_hip": (BoneTarget("LeftUpLeg", (0.1258, 0.1850, 0.9746), 1.0),),  # L hip abduction (leg out to the side)
-    "l_r_hip": (BoneTarget("LeftUpLeg", (0.9795, -0.1792, -0.0924), 1.0),),  # L hip flexion, primary leg swing
-    "l_knee": (BoneTarget("LeftLeg", (0.9797, -0.1270, -0.1550), 1.0),),  # L knee flexion
-    "r_y_hip": (BoneTarget("RightUpLeg", (-0.0389, 0.9870, -0.1561), 1.0),),  # R hip yaw
-    "r_p_hip": (BoneTarget("RightUpLeg", (0.0365, -0.1548, -0.9873), 1.0),),  # R hip abduction
-    "r_r_hip": (BoneTarget("RightUpLeg", (0.9986, 0.0441, 0.0300), 1.0),),  # R hip flexion, primary leg swing
-    "r_knee": (BoneTarget("RightLeg", (0.9986, 0.0312, 0.0418), 1.0),),  # R knee flexion
-    "l_y_ankle": (BoneTarget("LeftFoot", (-0.1937, 0.1402, 0.9710), 1.0),),  # L foot yaw (toe direction)
-    "l_ankle": (BoneTarget("LeftFoot", (-0.9203, -0.3689, -0.1303), 1.0),),  # L ankle sagittal, positive dorsiflexion
-    "r_y_ankle": (BoneTarget("RightFoot", (0.1063, 0.2133, 0.9712), 1.0),),  # R foot yaw (toe direction)
-    "r_ankle": (BoneTarget("RightFoot", (-0.9371, 0.3481, 0.0261), 1.0),),  # R ankle sagittal, positive dorsiflexion
+    "l_y_collar": (BoneTarget("LeftShoulder", (0.9797, 0.1839, 0.0800), 1.0),),  # L clavicle protraction
+    "l_p_collar": (BoneTarget("LeftShoulder", (-0.0655, -0.0831, 0.9944), 1.0),),  # L clavicle elevation (shrug)
+    "l_y_shoulder": (BoneTarget("LeftArm", (-0.0593, -0.9803, -0.1883), 1.0),),  # L arm azimuth about body-up
+    "l_p_shoulder": (BoneTarget("LeftArm", (0.9466, -0.1151, 0.3013), 1.0),),  # L shoulder flexion, primary arm swing
+    "l_r_shoulder": (BoneTarget("LeftArm", (0.0593, 0.9803, 0.1883), 1.0),),  # L arm twist about the limb axis
+    "l_elbow": (BoneTarget("LeftForeArm", (0.9396, 0.0062, -0.3421), 1.0),),  # L elbow flexion
+    "r_y_collar": (BoneTarget("RightShoulder", (0.9832, -0.1643, -0.0791), 1.0),),  # R clavicle protraction
+    "r_p_collar": (BoneTarget("RightShoulder", (-0.0752, 0.0295, -0.9967), 1.0),),  # R clavicle elevation (shrug)
+    "r_y_shoulder": (BoneTarget("RightArm", (0.0739, -0.9805, -0.1820), 1.0),),  # R arm azimuth about body-up
+    "r_p_shoulder": (BoneTarget("RightArm", (0.9608, 0.1189, -0.2505), 1.0),),  # R shoulder flexion, primary arm swing
+    "r_r_shoulder": (BoneTarget("RightArm", (-0.0739, 0.9805, 0.1820), 1.0),),  # R arm twist about the limb axis
+    "r_elbow": (BoneTarget("RightForeArm", (0.9253, -0.0049, 0.3791), 1.0),),  # R elbow flexion
+    "l_y_hip": (BoneTarget("LeftUpLeg", (0.0046, 0.9978, -0.0659), 1.0),),  # L hip yaw (internal/external rotation)
+    "l_p_hip": (BoneTarget("LeftUpLeg", (0.0414, -0.0661, -0.9970), 1.0),),  # L hip abduction (leg out to the side)
+    "l_r_hip": (BoneTarget("LeftUpLeg", (-0.9991, 0.0019, -0.0417), 1.0),),  # L hip flexion, primary leg swing
+    "l_knee": (BoneTarget("LeftLeg", (-1.0000, 0.0046, -0.0051), 1.0),),  # L knee flexion
+    "r_y_hip": (BoneTarget("RightUpLeg", (-0.0035, 0.9936, -0.1126), 1.0),),  # R hip yaw
+    "r_p_hip": (BoneTarget("RightUpLeg", (0.0497, 0.1126, 0.9924), 1.0),),  # R hip abduction
+    "r_r_hip": (BoneTarget("RightUpLeg", (-0.9988, 0.0021, 0.0497), 1.0),),  # R hip flexion, primary leg swing
+    "r_knee": (BoneTarget("RightLeg", (-0.9997, 0.0041, 0.0249), 1.0),),  # R knee flexion
+    "l_y_ankle": (BoneTarget("LeftFoot", (-0.3493, 0.4316, 0.8317), 1.0),),  # L foot yaw (toe direction)
+    "l_ankle": (BoneTarget("LeftFoot", (-0.9370, -0.1697, -0.3054), 1.0),),  # L ankle sagittal, positive dorsiflexion
+    "r_y_ankle": (BoneTarget("RightFoot", (0.3754, 0.4375, 0.8171), 1.0),),  # R foot yaw (toe direction)
+    "r_ankle": (BoneTarget("RightFoot", (-0.9268, 0.1697, 0.3350), 1.0),),  # R ankle sagittal, positive dorsiflexion
 }
