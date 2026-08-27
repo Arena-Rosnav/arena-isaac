@@ -145,11 +145,12 @@ from isaacsim.core.simulation_manager import SimulationManager
 # rclpy
 import rclpy
 import rclpy.node
+import rclpy.time
 import std_srvs.srv
+import rosgraph_msgs.msg
 from isaacsim_msgs.srv import StepSimulation
 
 # graphs
-from isaac_utils.graphs.time import PublishTime
 from isaac_utils.utils.material import Material, PhysicsParams
 from isaac_utils.utils.path import world_path
 
@@ -333,6 +334,7 @@ class IsaacController(rclpy.node.Node):
         super().__init__(node_name="isaac", *args, **kwargs)
         self._running = True
         self._pending_steps = 0
+        self._clock_pub = self.create_publisher(rosgraph_msgs.msg.Clock, "/clock", 10)
 
         self.__pause_srv = self.create_service(
             std_srvs.srv.Trigger,
@@ -382,6 +384,12 @@ class IsaacController(rclpy.node.Node):
         response.error_msg = ""
         return response
 
+    def publish_clock(self) -> None:
+        """One /clock per main-loop iteration, paused frames included, from the same clock the step accounting uses."""
+        t = _sim_clock()
+        sec = int(t)
+        self._clock_pub.publish(rosgraph_msgs.msg.Clock(clock=rclpy.time.Time(seconds=sec, nanoseconds=int((t - sec) * 1e9)).to_msg()))
+
     def consume_steps(self, n: int) -> None:
         """Consume the steps a gated frame advanced /clock by. No-op while free-running."""
         if not self._running:
@@ -426,7 +434,6 @@ def main(args=None):
     for subscription in subscriptions:
         subscription.create(controller, qos_profile=QoSProfile(depth=10))
 
-    PublishTime('/World/publish_time')
     world.reset()
     if PHYSICS_ENGINE == "newton":
         # the solver consumes the extension cfg at first play, before the resume path
@@ -509,6 +516,7 @@ def main(args=None):
                     world.pause()
                     was_playing = False
                 simulation_app.update()
+            controller.publish_clock()
 
             if stepped_this_iteration:
                 pending_actions = run_after_tick_queue.qsize()
