@@ -358,11 +358,13 @@ class IsaacController(rclpy.node.Node):
         )
 
     def _cb_pause(self, request: std_srvs.srv.Trigger.Request, response: std_srvs.srv.Trigger.Response):
+        carb.log_info(f"arena: pause requested (pending_steps={self._pending_steps} t={_sim_clock():.3f})")
         self._running = False
         response.success = True
         return response
 
     def _cb_unpause(self, request: std_srvs.srv.Trigger.Request, response: std_srvs.srv.Trigger.Response):
+        carb.log_info(f"arena: unpause requested (pending_steps={self._pending_steps} t={_sim_clock():.3f})")
         self._running = True
         response.success = True
         return response
@@ -378,6 +380,8 @@ class IsaacController(rclpy.node.Node):
             response.target_sim_time = 0.0
             response.error_msg = "steps must be > 0"
             return response
+        if self._running:
+            carb.log_warn(f"arena: step {request.steps} requested while unpaused (pending_steps={self._pending_steps} t={_sim_clock():.3f})")
         self._pending_steps += request.steps
         response.success = True
         response.target_sim_time = _sim_clock() + request.steps * PHYSICS_DT
@@ -493,6 +497,10 @@ def main(args=None):
                         rebuild_graphs()
                     world.play()
                     was_playing = True
+                    carb.log_info(
+                        f"arena: play (playing={omni.timeline.get_timeline_interface().is_playing()} "
+                        f"pending_steps={controller._pending_steps} t={_sim_clock():.3f})"
+                    )
                     clock_before = _sim_clock()
                     world.step(render=True)
                     controller.consume_steps(round((_sim_clock() - clock_before) / PHYSICS_DT))
@@ -515,6 +523,7 @@ def main(args=None):
                 if was_playing:
                     world.pause()
                     was_playing = False
+                    carb.log_info(f"arena: paused (pending_steps={controller._pending_steps} t={_sim_clock():.3f})")
                 simulation_app.update()
             controller.publish_clock()
 
