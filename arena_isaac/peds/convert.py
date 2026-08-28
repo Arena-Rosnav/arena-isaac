@@ -5,8 +5,9 @@ standalone ``character.usda`` (SkelRoot + Skeleton + one skinned Mesh per skin
 controller). Clips are not converted: the runtime renders the arena_peds wire
 (peds.providers.external), and the only animation input consumed is the idle
 clip's first frame, extracted into meta.json as the neutral stance wire angles
-compose over. pxr is imported lazily inside the authoring helpers so this
-module stays importable without pxr (e.g. for SDF parsing and cache digests).
+compose over (root pinned to rest, the prim Xform owns the pose). pxr is
+imported lazily inside the authoring helpers so this module stays importable
+without pxr (e.g. for SDF parsing and cache digests).
 """
 
 from __future__ import annotations
@@ -34,7 +35,7 @@ _ROUGHNESS_BOUNDS = (0.05, 1.0)
 
 # Bump whenever convert_actor's output changes shape, cache.py salts its digest
 # with this so stale disk caches rebuild instead of serving old geometry.
-CONVERTER_VERSION = 5
+CONVERTER_VERSION = 6
 
 
 @dataclass(eq=False)
@@ -551,12 +552,12 @@ def _neutral_pose(
 ) -> tuple[list[list[float]], list[list[float]]]:
     """First-frame joint-local pose of a clip: (xyzw quaternions, translations).
 
-    Joints without a channel hold their rest transform. This is the neutral
-    standing stance the runtime composes wire angles over."""
+    Joints without a channel hold their rest transform, and so does the root.
+    This is the neutral standing stance the runtime composes wire angles over."""
     rotations: list[list[float]] = []
     translations: list[list[float]] = []
     for joint in joints:
-        local = channels[joint.name][1][0] if joint.name in channels else joint.rest
+        local = channels[joint.name][1][0] if joint.name in channels and joint.parent >= 0 else joint.rest
         w, x, y, z = _matrix_to_quat(_orthonormalize(local[:3, :3]))
         rotations.append([float(x), float(y), float(z), float(w)])
         translations.append([float(v) for v in local[:3, 3]])

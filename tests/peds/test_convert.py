@@ -68,10 +68,11 @@ def _gf_to_np(matrix: Gf.Matrix4d) -> np.ndarray:
     return np.array([list(matrix.GetRow(i)) for i in range(4)], dtype=float)
 
 
-def _dae_text(*, textured: bool = False, idref_joints: bool = False) -> str:
+def _dae_text(*, textured: bool = False, idref_joints: bool = False, root_offset: np.ndarray | None = None) -> str:
     rest = _fmt(REST_LOCAL)
     inv_bind = _fmt(INV_BIND_SKIN.reshape(-1))
-    a0 = f"{_fmt(_compose(np.zeros(3), np.eye(3)))} {_fmt(_compose(np.array([ROOT_DRIFT[0], ROOT_DRIFT[1], ROOT_BOB_Z]), np.eye(3)))}"
+    root_start = np.zeros(3) if root_offset is None else root_offset
+    a0 = f"{_fmt(_compose(root_start, _rot_z(np.pi / 4)))} {_fmt(_compose(np.array([ROOT_DRIFT[0], ROOT_DRIFT[1], ROOT_BOB_Z]), np.eye(3)))}"
     a1 = f"{_fmt(_compose(np.zeros(3), np.eye(3)))} {_fmt(_compose(np.zeros(3), _rot_z(np.pi / 2)))}"
     a2 = f"{_fmt(_compose(np.zeros(3), np.eye(3)))} {_fmt(_compose(np.zeros(3), _rot_x(np.pi / 2)))}"
 
@@ -202,6 +203,17 @@ def built(tmp_path: pathlib.Path) -> pathlib.Path:
     out = tmp_path / "out"
     spec = parse_actor_sdf(str(sdf))  # exercises the required entry point
     assert set(spec) == {"walk", "idle"}
+    convert_actor(str(sdf), {str(dae): str(dae)}, out)
+    return out
+
+
+@pytest.fixture()
+def built_travelling(tmp_path: pathlib.Path) -> pathlib.Path:
+    dae = tmp_path / "synth_travel.dae"
+    dae.write_text(_dae_text(root_offset=np.array([-0.1, -1.9, 0.9])))
+    sdf = tmp_path / "actor.sdf"
+    sdf.write_text(_sdf_text(str(dae)))
+    out = tmp_path / "out"
     convert_actor(str(sdf), {str(dae): str(dae)}, out)
     return out
 
@@ -362,14 +374,20 @@ def test_no_clips_authored(built: pathlib.Path) -> None:
     assert not (built / "clips").exists()
 
 
-def test_meta_neutral_stance_from_idle_first_frame(built: pathlib.Path) -> None:
+def test_meta_neutral_root_is_rest_others_from_idle_first_frame(built: pathlib.Path) -> None:
     meta = json.loads((built / "meta.json").read_text())
     assert meta["actor"] == "synth"
     assert meta["up_axis"] == "Z"
     assert meta["joints"] == list(CANONICAL_PATHS)
-    # The synthetic idle channels all start at identity with zero translation.
+    # root pinned to rest, other joints from the identity first idle frame
     np.testing.assert_allclose(meta["neutral"]["rotations_xyzw"], [[0.0, 0.0, 0.0, 1.0]] * 3, atol=1e-9)
-    np.testing.assert_allclose(meta["neutral"]["translations"], [[0.0, 0.0, 0.0]] * 3, atol=1e-9)
+    np.testing.assert_allclose(meta["neutral"]["translations"], [list(REST_LOCAL[:3, 3])] + [[0.0, 0.0, 0.0]] * 2, atol=1e-9)
+
+
+def test_meta_neutral_root_ignores_idle_root_travel(built_travelling: pathlib.Path) -> None:
+    meta = json.loads((built_travelling / "meta.json").read_text())
+    np.testing.assert_allclose(meta["neutral"]["translations"][0], REST_LOCAL[:3, 3], atol=1e-9)
+    np.testing.assert_allclose(meta["neutral"]["rotations_xyzw"][0], [0.0, 0.0, 0.0, 1.0], atol=1e-9)
 
 
 def test_convert_actor_requires_idle(tmp_path: pathlib.Path) -> None:
