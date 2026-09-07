@@ -1,4 +1,3 @@
-
 import typing
 
 import omni.graph.core as og
@@ -44,7 +43,7 @@ class _Node:
         values: typing.Iterable[tuple[str, typing.Any]] | None = None,
         connections: typing.Iterable[tuple[str, "_Node", str]] | None = None,
     ) -> None:
-        self._master: "Graph" = master
+        self._master: Graph = master
         self._name: str = name
         self._type: str = type_
 
@@ -70,7 +69,7 @@ class _Node:
 
     def create_attribute(self, attribute: str, type_: str):
         if attribute.startswith('outputs:'):
-            attr_name = attribute[len('outputs:'):]
+            attr_name = attribute[len('outputs:') :]
             self._master.add_action(
                 lambda: og.Controller.create_attribute(
                     self.path,
@@ -80,30 +79,13 @@ class _Node:
                 )
             )
         else:
-            self._master.add_action(
-                lambda: og.Controller.create_attribute(
-                    self.path,
-                    attribute,
-                    type_
-                )
-            )
+            self._master.add_action(lambda: og.Controller.create_attribute(self.path, attribute, type_))
 
-    def attribute(self, input_: str, value: typing.Any):
-        self._master.add_action(
-            lambda: og.Controller.attribute(
-                f"{self.path}.inputs:{input_}"
-            ).set(
-                value
-            )
-        )
+    def attribute(self, input_: str, value: object):
+        self._master.add_action(lambda: og.Controller.attribute(f"{self.path}.inputs:{input_}").set(value))
 
     def connect(self, output: str, node: "_Node", input_: str, *, outputs_prefix: str = 'outputs:'):
-        self._master.add_action(
-            lambda: og.Controller.connect(
-                f"{self.path}.{outputs_prefix}{output}",
-                f"{node.path}.inputs:{input_}"
-            )
-        )
+        self._master.add_action(lambda: og.Controller.connect(f"{self.path}.{outputs_prefix}{output}", f"{node.path}.inputs:{input_}"))
 
 
 class Graph:
@@ -116,7 +98,7 @@ class Graph:
     def path(self) -> str:
         return self._path
 
-    def node(self, name: str, type_: str, **kwargs) -> _Node:
+    def node(self, name: str, type_: str, **kwargs: object) -> _Node:
         self._nodes.append(node := _Node(self, name, type_, **kwargs))
         return node
 
@@ -128,7 +110,7 @@ class Graph:
             {"graph_path": self.path, "evaluator_name": "execution"},
             {
                 og.Controller.Keys.CREATE_NODES: [(node.name, node.type) for node in self._nodes],
-            }
+            },
         )
 
         for action in self._actions:
@@ -146,6 +128,7 @@ class Graph:
 
     def load_extensions(self):
         from isaacsim.core.utils import extensions
+
         extensions.enable_extension("omni.graph.nodes")
 
         for node in self._nodes:

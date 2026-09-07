@@ -1,20 +1,20 @@
 from __future__ import annotations
 
+import builtins
 import threading
 import typing
 
 import attrs
 import carb
 import geometry_msgs.msg
+import isaacsim_msgs.msg
 import numpy as np
-from isaacsim.core.experimental.prims import RigidPrim, XformPrim, Articulation
+from isaacsim.core.experimental.prims import Articulation, RigidPrim, XformPrim
 from isaacsim.core.utils.rotations import euler_angles_to_quat, quat_to_euler_angles
 from pxr import Gf, Usd, UsdGeom, UsdPhysics
 
-import isaacsim_msgs.msg
 from isaac_utils.graphs import physics_engine
 from isaac_utils.utils.prim import resolve_paths, resolve_prim
-
 
 _robot_articulation_registry: dict[str, str] = {}
 _robot_articulation_registry_lock = threading.RLock()
@@ -37,10 +37,7 @@ def unregister_robot(prim_path: str):
 
     with _robot_articulation_registry_lock:
         _robot_articulation_registry.pop(normalized_path, None)
-        to_remove = [
-            robot_path for robot_path, articulation_path in _robot_articulation_registry.items()
-            if articulation_path == normalized_path
-        ]
+        to_remove = [robot_path for robot_path, articulation_path in _robot_articulation_registry.items() if articulation_path == normalized_path]
         for robot_path in to_remove:
             _robot_articulation_registry.pop(robot_path, None)
 
@@ -77,7 +74,7 @@ class Translation:
             z=self.z * other,
         )
 
-    def tuple(self) -> typing.Tuple[float, float, float]:
+    def tuple(self) -> builtins.tuple[float, float, float]:
         return self.x, self.y, self.z
 
     def Vec3d(self) -> Gf.Vec3d:
@@ -102,9 +99,7 @@ class Translation:
                 0.0,
             )
 
-        raise ValueError(
-            f"Translation must be [x,y] or [x,y,z], got {values}"
-        )
+        raise ValueError(f"Translation must be [x,y] or [x,y,z], got {values}")
 
 
 @attrs.define
@@ -136,10 +131,10 @@ class Rotation:
             z=self.z * other.z,
         )
 
-    def quat(self, convention: str = 'wxyz') -> typing.List[float]:
+    def quat(self, convention: str = 'wxyz') -> list[float]:
         return [float(getattr(self, axis)) for axis in convention if axis in 'wxyz']
 
-    def euler(self, convention: str = 'xyz') -> typing.List[float]:
+    def euler(self, convention: str = 'xyz') -> list[float]:
         x, y, z = quat_to_euler_angles(self.quat())
         axes: dict[str, float] = dict(
             x=x,
@@ -162,18 +157,12 @@ class Rotation:
             )
 
         if len(values) == 4:
-            return cls(
-                *values
-            )
+            return cls(*values)
 
         if len(values) == 3:
-            return cls(
-                *euler_angles_to_quat(values)
-            )
+            return cls(*euler_angles_to_quat(values))
 
-        raise ValueError(
-            f"Rotation must be [x,y,z] or [w,x,y,z], got {values}"
-        )
+        raise ValueError(f"Rotation must be [x,y,z] or [w,x,y,z], got {values}")
 
 
 @attrs.define
@@ -201,7 +190,7 @@ class Scale:
             z=self.z * other,
         )
 
-    def tuple(self) -> typing.Tuple[float, float, float]:
+    def tuple(self) -> builtins.tuple[float, float, float]:
         return self.x, self.y, self.z
 
     def Vec3d(self) -> Gf.Vec3d:
@@ -233,9 +222,7 @@ class Scale:
                 1.0,
             )
 
-        raise ValueError(
-            f"Scale must be a single float or [x,y] or [x,y,z], got {values}"
-        )
+        raise ValueError(f"Scale must be a single float or [x,y] or [x,y,z], got {values}")
 
 
 def move(
@@ -250,7 +237,7 @@ def move(
     if prim is None:
         return
 
-    def physics_view():
+    def physics_view() -> Articulation | RigidPrim | None:
         if all(p.HasAPI(UsdPhysics.ArticulationRootAPI) for p in prim.prims):
             try:
                 return Articulation(prim_path)
@@ -266,13 +253,13 @@ def move(
     positions = np.array(np.atleast_2d(translation.tuple())) if translation is not None else None
     orientations = np.array(np.atleast_2d(rotation.quat())) if rotation is not None else None
 
-    def write(target) -> None:
+    def write(target: Articulation | RigidPrim | XformPrim) -> None:
         if local:
             target.set_local_poses(positions, orientations)
         else:
             target.set_world_poses(positions, orientations)
 
-    def zero_velocities(view) -> None:
+    def zero_velocities(view: Articulation | RigidPrim) -> None:
         # teleports must not preserve momentum
         view.set_velocities(np.zeros((1, 3)), np.zeros((1, 3)))
         if isinstance(view, Articulation):

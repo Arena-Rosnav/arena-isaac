@@ -1,6 +1,5 @@
 import abc
 import os
-import typing
 from collections.abc import Sequence
 
 import omni.usd
@@ -13,9 +12,7 @@ def monotonic_sensor_time(render_product_path: str) -> None:
     tf across newton stop-cycles."""
     import omni.syntheticdata
 
-    omni.syntheticdata.SyntheticData.Get().set_node_attributes(
-        'IsaacReadSimulationTime', {'inputs:resetOnStop': False}, render_product_path
-    )
+    omni.syntheticdata.SyntheticData.Get().set_node_attributes('IsaacReadSimulationTime', {'inputs:resetOnStop': False}, render_product_path)
 
 
 def join_topic(base_topic: str, *parts: str) -> str:
@@ -59,12 +56,10 @@ def resolve_link_prim(robot_root: str, link_name: str, *, require_rigid_body: bo
 
 class SensorBase(abc.ABC):
     @abc.abstractmethod
-    def simulate(self, base_prim: str) -> typing.Any:
-        ...
+    def simulate(self, base_prim: str) -> object: ...
 
     @abc.abstractmethod
-    def publish(self, base_topic: str) -> typing.Any:
-        ...
+    def publish(self, base_topic: str) -> object: ...
 
     def paths(self) -> Sequence[str]:
         return ()

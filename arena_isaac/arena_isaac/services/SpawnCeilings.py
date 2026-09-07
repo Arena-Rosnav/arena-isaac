@@ -1,10 +1,11 @@
+from isaacsim_msgs.msg import Ceiling
+from isaacsim_msgs.srv import SpawnCeilings
+from pxr import UsdGeom
+
 from isaac_utils.utils.geom import Scale, Translation
 from isaac_utils.utils.mesh import create_plane
 from isaac_utils.utils.path import world_path
 from isaac_utils.utils.prim import stage
-from isaacsim_msgs.msg import Ceiling
-from isaacsim_msgs.srv import SpawnCeilings
-from pxr import UsdGeom
 
 from .utils import Service, on_exception
 
@@ -26,15 +27,11 @@ def spawn_ceiling(ceiling: Ceiling) -> bool:
     return True
 
 
-def spawn_ceilings_callback(request: SpawnCeilings.Request, response: SpawnCeilings.Response):
+def spawn_ceilings_callback(request: SpawnCeilings.Request, response: SpawnCeilings.Response) -> SpawnCeilings.Response:
     response.ret = list(map(spawn_ceiling, request.ceilings))
     return response
 
 
-spawn_ceilings_service = Service(
-    srv_type=SpawnCeilings,
-    srv_name='isaac/SpawnCeilings',
-    callback=spawn_ceilings_callback
-)
+spawn_ceilings_service = Service(srv_type=SpawnCeilings, srv_name='isaac/SpawnCeilings', callback=spawn_ceilings_callback)
 
 __all__ = ['spawn_ceilings_service']

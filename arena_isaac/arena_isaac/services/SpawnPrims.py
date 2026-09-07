@@ -1,8 +1,9 @@
 import numpy as np
-from isaac_utils.utils import geom, prim
-from isaac_utils.utils.path import world_path
 from isaacsim_msgs.msg import Prim
 from isaacsim_msgs.srv import SpawnPrims
+
+from isaac_utils.utils import geom, prim
+from isaac_utils.utils.path import world_path
 
 from .utils import Service, on_exception
 
@@ -27,16 +28,12 @@ def prim_importer(prim_msg: Prim) -> bool:
     return True
 
 
-def spawn_prims_callback(request: SpawnPrims.Request, response: SpawnPrims.Response):
+def spawn_prims_callback(request: SpawnPrims.Request, response: SpawnPrims.Response) -> SpawnPrims.Response:
     response.ret = list(map(prim_importer, request.prims))
     return response
 
 
-spawn_prims_service = Service(
-    srv_type=SpawnPrims,
-    srv_name='isaac/SpawnPrims',
-    callback=spawn_prims_callback
-)
+spawn_prims_service = Service(srv_type=SpawnPrims, srv_name='isaac/SpawnPrims', callback=spawn_prims_callback)
 
 
 __all__ = ['spawn_prims_service']

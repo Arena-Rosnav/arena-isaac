@@ -1,12 +1,12 @@
-
 import omni.usd
+from isaacsim_msgs.msg import Floor
+from isaacsim_msgs.srv import SpawnFloors
+from pxr import UsdGeom
+
 from isaac_utils.utils.geom import Scale, Translation
 from isaac_utils.utils.material import Material, PhysicsParams
 from isaac_utils.utils.mesh import create_cube
 from isaac_utils.utils.path import world_path
-from isaacsim_msgs.msg import Floor
-from isaacsim_msgs.srv import SpawnFloors
-from pxr import UsdGeom
 
 from .utils import Service, on_exception
 
@@ -32,7 +32,7 @@ def spawn_floor(floor: Floor) -> bool:
         collide=False,
     )
 
-    if (material := Material.from_msg(floor.material)):
+    if material := Material.from_msg(floor.material):
         material.bind_to(prim_path)
 
     # a thick mesh box is the only floor collider newton both holds and grips on
@@ -59,15 +59,11 @@ def spawn_floor(floor: Floor) -> bool:
     return True
 
 
-def spawn_floors_callback(request: SpawnFloors.Request, response: SpawnFloors.Response):
+def spawn_floors_callback(request: SpawnFloors.Request, response: SpawnFloors.Response) -> SpawnFloors.Response:
     response.ret = list(map(spawn_floor, request.floors))
     return response
 
 
-spawn_floors_service = Service(
-    srv_type=SpawnFloors,
-    srv_name='isaac/SpawnFloors',
-    callback=spawn_floors_callback
-)
+spawn_floors_service = Service(srv_type=SpawnFloors, srv_name='isaac/SpawnFloors', callback=spawn_floors_callback)
 
 __all__ = ['spawn_floors_service']

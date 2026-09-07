@@ -1,10 +1,10 @@
 import os
-from pxr import Usd, UsdGeom, UsdLux, UsdPhysics
-from isaacsim.core.experimental.prims import Prim
-from isaacsim.core.utils.prims import create_prim
-from typing import Optional
 
 import omni.usd
+from isaacsim.core.experimental.prims import Prim
+from isaacsim.core.utils.prims import create_prim
+from pxr import Usd, UsdGeom, UsdLux, UsdPhysics
+
 stage = omni.usd.get_context().get_stage()
 
 
@@ -22,7 +22,7 @@ def resolve_prim(prim_path: str) -> Prim | None:
     return Prim(paths, resolve_paths=False)
 
 
-def get_default_prim(stage: Usd.Stage) -> Optional[Usd.Prim]:
+def get_default_prim(stage: Usd.Stage) -> Usd.Prim | None:
     if not stage:
         return None
     default_prim_obj = stage.GetDefaultPrim()
@@ -34,8 +34,8 @@ def get_default_prim(stage: Usd.Stage) -> Optional[Usd.Prim]:
 def create_prim_safe(
     prim_path: str,
     usd_path: str,
-    **kwargs,
-) -> Optional[Usd.Prim]:
+    **kwargs: object,
+) -> Usd.Prim | None:
     """
     create_prim wrapper that sets default_prim to first Xform if missing
     """
@@ -67,10 +67,7 @@ def create_prim_safe(
     if not prim or not prim.IsValid():
         raise RuntimeError(f"Failed to create placeholder prim at '{prim_path}'.")
 
-    prim.GetReferences().AddReference(
-        assetPath=usd_path,
-        primPath=xform_prim
-    )
+    prim.GetReferences().AddReference(assetPath=usd_path, primPath=xform_prim)
     return prim
 
 

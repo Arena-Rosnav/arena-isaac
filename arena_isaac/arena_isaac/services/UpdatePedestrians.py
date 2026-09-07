@@ -19,9 +19,7 @@ def update_pedestrian(pedestrian: Pedestrian, stamp_sec: float) -> int:
     return UpdatePedestrians.Response.SUCCESS if found else UpdatePedestrians.Response.NOT_FOUND
 
 
-def update_pedestrians_callback(
-    request: UpdatePedestrians.Request, response: UpdatePedestrians.Response
-) -> UpdatePedestrians.Response:
+def update_pedestrians_callback(request: UpdatePedestrians.Request, response: UpdatePedestrians.Response) -> UpdatePedestrians.Response:
     stamp_sec = request.stamp.sec + request.stamp.nanosec * 1e-9
     response.results = [update_pedestrian(pedestrian, stamp_sec) for pedestrian in request.pedestrians]
     return response
@@ -34,16 +32,8 @@ def update_pedestrians_msg(msg: Pedestrians) -> None:
         update_pedestrian(pedestrian, stamp_sec)
 
 
-update_pedestrians_service = Service(
-    srv_type=UpdatePedestrians,
-    srv_name='isaac/UpdatePedestrians',
-    callback=update_pedestrians_callback
-)
+update_pedestrians_service = Service(srv_type=UpdatePedestrians, srv_name='isaac/UpdatePedestrians', callback=update_pedestrians_callback)
 
-update_pedestrians_subscription = Subscription(
-    msg_type=Pedestrians,
-    topic='isaac/arena_peds',
-    callback=update_pedestrians_msg
-)
+update_pedestrians_subscription = Subscription(msg_type=Pedestrians, topic='isaac/arena_peds', callback=update_pedestrians_msg)
 
 __all__ = ['update_pedestrians_service', 'update_pedestrians_subscription']

@@ -33,8 +33,6 @@ services: collections.abc.Iterable[Service] = (
     spawn_walls_service,
 )
 
-subscriptions: collections.abc.Iterable[Subscription] = (
-    update_pedestrians_subscription,
-)
+subscriptions: collections.abc.Iterable[Subscription] = (update_pedestrians_subscription,)
 
 __all__ = ["services", "subscriptions"]

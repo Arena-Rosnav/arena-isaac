@@ -1,17 +1,23 @@
+from __future__ import annotations
+
 import math
 import os
+import typing
 import xml.etree.ElementTree as ET
 from collections.abc import Sequence
 
 import attrs
 import carb
-from arena_robots.sensors import output_topics
 import isaacsim.core.utils.prims as prim_utils
+from arena_robots.sensors import output_topics
 from isaacsim.sensors.experimental.rtx import Lidar, LidarSensor
 
 from isaac_utils.utils.geom import Rotation, Translation
 
 from . import SensorBase, join_topic, monotonic_sensor_time, resolve_link_prim
+
+if typing.TYPE_CHECKING:
+    from pxr import Usd
 
 # Built-in RTX rotary configs carry a complete firing pattern (azimuth/elevation
 # sampling), a lidar authored from bare attributes scans nothing. The presets only
@@ -61,7 +67,7 @@ class SensorLidar(SensorBase):
         update_rate: float = attrs.field(converter=attrs.converters.optional(float), default=1.0)
 
         @classmethod
-        def parse(cls, config: ET.Element) -> "SensorLidar.Config":
+        def parse(cls, config: ET.Element) -> SensorLidar.Config:
             return cls(
                 topic=config.findtext("./topic") or config.findtext(".//topic") or config.findtext(".//topicName") or 'lidar',
                 update_rate=float(config.findtext(".//update_rate") or 1.0),
@@ -94,7 +100,7 @@ class SensorLidar(SensorBase):
         robot_base_frame: str,
         parent_frame: str,
         name: str,
-        config: "SensorLidar.Config",
+        config: SensorLidar.Config,
         translation: Translation,
         rotation: Rotation,
     ):
@@ -134,9 +140,7 @@ class SensorLidar(SensorBase):
                 tick_rate=float(max(1e-3, self.config.update_rate)),
             )
         except Exception as error:
-            carb.log_warn(
-                f"Lidar create failed for '{self.name}' at '{prim_path}': {error}"
-            )
+            carb.log_warn(f"Lidar create failed for '{self.name}' at '{prim_path}': {error}")
             return None
 
         prim = prim_utils.get_prim_at_path(lidar.paths[0])
@@ -146,7 +150,7 @@ class SensorLidar(SensorBase):
         self._apply_scan_pattern(prim)
         return lidar
 
-    def _apply_range_anchor(self, prim) -> None:
+    def _apply_range_anchor(self, prim: Usd.Prim) -> None:
         """Anchor intensity normalization (1.0 = min-reflectance target at anchor range) to this sensor's own max range."""
         value = float(self.config.range.max)
         for name in ('omni:sensor:Core:minReflectanceRange', 'omni:sensor:Core:minReflectanceRangeM'):
@@ -158,7 +162,7 @@ class SensorLidar(SensorBase):
         available = sorted(a.GetName() for a in prim.GetAttributes() if a.GetName().startswith('omni:sensor:'))
         carb.log_warn(f"lidar '{self.name}': minReflectanceRange attribute not found, available: {available}")
 
-    def _apply_scan_pattern(self, prim) -> None:
+    def _apply_scan_pattern(self, prim: Usd.Prim) -> None:
         """Override the preset firing pattern with the URDF scan block.
 
         The OmniLidar pattern attribute names are undocumented, so each value is
@@ -248,9 +252,7 @@ class SensorLidar(SensorBase):
         """
 
         if self.prim_path_points is None or self.prim_path_scan is None:
-            carb.log_warn(
-                f"Lidar publish skipped for '{self.name}': sensor not simulated (points/scan prim paths missing)."
-            )
+            carb.log_warn(f"Lidar publish skipped for '{self.name}': sensor not simulated (points/scan prim paths missing).")
             return False
 
         outputs = output_topics('gpu_lidar', self.config.topic)
@@ -270,9 +272,7 @@ class SensorLidar(SensorBase):
             self._sensors.append(points_sensor)
             monotonic_sensor_time(str(points_sensor.render_product.GetPath()))
         except Exception as error:
-            carb.log_warn(
-                f"Lidar PointCloud publish failed for '{self.name}': {error}"
-            )
+            carb.log_warn(f"Lidar PointCloud publish failed for '{self.name}': {error}")
             points_ok = False
 
         scan_ok = True
@@ -284,10 +284,7 @@ class SensorLidar(SensorBase):
             far_range = float(prim.GetAttribute("omni:sensor:Core:farRangeM").Get() or 0)
 
             if rotation_rate <= 0 or firing_rate <= 0:
-                carb.log_warn(
-                    f"Lidar LaserScan writer skipped for '{self.name}': "
-                    f"invalid rotation_rate={rotation_rate} firing_rate={firing_rate}."
-                )
+                carb.log_warn(f"Lidar LaserScan writer skipped for '{self.name}': invalid rotation_rate={rotation_rate} firing_rate={firing_rate}.")
                 scan_ok = False
             else:
                 scan_sensor = LidarSensor(self._scan_lidar, annotators=[])
@@ -304,9 +301,7 @@ class SensorLidar(SensorBase):
                 self._sensors.append(scan_sensor)
                 monotonic_sensor_time(str(scan_sensor.render_product.GetPath()))
         except Exception as error:
-            carb.log_warn(
-                f"Lidar LaserScan publish failed for '{self.name}': {error}"
-            )
+            carb.log_warn(f"Lidar LaserScan publish failed for '{self.name}': {error}")
             scan_ok = False
 
         return points_ok and scan_ok

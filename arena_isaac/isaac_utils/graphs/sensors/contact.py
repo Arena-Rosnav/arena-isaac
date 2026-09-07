@@ -14,7 +14,6 @@ from . import SensorBase, resolve_link_prim
 
 
 class SensorContact(SensorBase):
-
     @attrs.define
     class Config:
         collision: str = attrs.field(validator=attrs.validators.instance_of(str))
@@ -76,7 +75,7 @@ class SensorContact(SensorBase):
             return ()
         return (self.prim_path, os.path.join(self.prim_path, 'ContactPublisher'))
 
-    def publish(self, base_topic: str):
+    def publish(self, base_topic: str) -> bool:
         if self.prim_path is None:
             raise RuntimeError("Contact sensor not spawned. Call simulate() first.")
 

@@ -1,4 +1,5 @@
 """Process-wide registry of arena_isaac-spawned entities for symmetric teardown."""
+
 from __future__ import annotations
 
 import threading
@@ -9,6 +10,7 @@ import attrs
 import carb
 import omni.kit.commands
 import omni.usd
+
 from isaac_utils.utils import geom
 from isaac_utils.utils.prim import resolve_paths
 

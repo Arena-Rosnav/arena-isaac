@@ -5,20 +5,21 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import carb
+import isaacsim.core.utils.prims as prim_utils
+import omni.usd
+from isaacsim.asset.importer.urdf import URDFImporter, URDFImporterConfig
+from isaacsim_msgs.srv import SpawnUrdf
+from pxr import Usd, UsdGeom, UsdPhysics
+
 import isaac_utils.graphs.joint_states as joint_states
 import isaac_utils.graphs.odom as odom
 import isaac_utils.graphs.sensors.sensors as sensors
-import isaacsim.core.utils.prims as prim_utils
-import omni.usd
 from isaac_utils.graphs import control
 from isaac_utils.managers import entity_lifecycle
 from isaac_utils.utils import geom
 from isaac_utils.utils.material import Material, PhysicsParams
 from isaac_utils.utils.path import world_path
 from isaac_utils.utils.prim import ensure_path
-from isaacsim.asset.importer.urdf import URDFImporter, URDFImporterConfig
-from isaacsim_msgs.srv import SpawnUrdf
-from pxr import Usd, UsdGeom, UsdPhysics
 
 from .utils import Service, on_exception
 
@@ -67,11 +68,7 @@ def _resolve_body_prim(robot_prim: str, articulation_prim: str) -> str:
     if not holder.IsValid() or not robot.IsValid():
         return articulation_prim
 
-    bodies = [
-        prim
-        for prim in Usd.PrimRange(holder)
-        if prim.GetPath() != holder.GetPath() and prim.HasAPI(UsdPhysics.RigidBodyAPI)
-    ]
+    bodies = [prim for prim in Usd.PrimRange(holder) if prim.GetPath() != holder.GetPath() and prim.HasAPI(UsdPhysics.RigidBodyAPI)]
     if not bodies:
         return articulation_prim
 
@@ -141,7 +138,7 @@ def sanitize_urdf_for_isaac(urdf_path: str) -> str:
                 continue
 
             if original_abs_path.startswith('file://'):
-                original_abs_path = original_abs_path[len('file://'):]
+                original_abs_path = original_abs_path[len('file://') :]
 
             filename = os.path.basename(original_abs_path)
 
@@ -180,19 +177,9 @@ def sanitize_urdf_for_isaac(urdf_path: str) -> str:
         except ValueError:
             continue
 
-        det = (
-            ixx * (iyy * izz - iyz * iyz)
-            - ixy * (ixy * izz - iyz * ixz)
-            + ixz * (ixy * iyz - iyy * ixz)
-        )
+        det = ixx * (iyy * izz - iyz * iyz) - ixy * (ixy * izz - iyz * ixz) + ixz * (ixy * iyz - iyy * ixz)
 
-        degenerate = (
-            mass < 1e-6
-            or ixx < 1e-6
-            or iyy < 1e-6
-            or izz < 1e-6
-            or det < 1e-12
-        )
+        degenerate = mass < 1e-6 or ixx < 1e-6 or iyy < 1e-6 or izz < 1e-6 or det < 1e-12
 
         if degenerate:
             link.remove(inertial)
@@ -245,10 +232,7 @@ def _extract_gazebo_physics(urdf_path: str) -> dict[str, PhysicsParams]:
 
     all_links = set(mu1_per_link) | set(mu2_per_link)
     for ref in sorted(all_links & directional):
-        carb.log_warn(
-            f'{urdf_path}: link {ref!r} declares directional friction (fdir1), a gz '
-            'tuning an isotropic material cannot honor, keeping the solver default'
-        )
+        carb.log_warn(f'{urdf_path}: link {ref!r} declares directional friction (fdir1), a gz tuning an isotropic material cannot honor, keeping the solver default')
     all_links -= directional
     warned_asymmetric = False
     result: dict[str, PhysicsParams] = {}
@@ -260,15 +244,10 @@ def _extract_gazebo_physics(urdf_path: str) -> dict[str, PhysicsParams]:
         if mu1 is None and mu2 is None:
             continue
 
-        mu = ((mu1 or 0.0) + (mu2 or 0.0)) / (
-            (1 if mu1 is not None else 0) + (1 if mu2 is not None else 0)
-        )
+        mu = ((mu1 or 0.0) + (mu2 or 0.0)) / ((1 if mu1 is not None else 0) + (1 if mu2 is not None else 0))
 
         if not warned_asymmetric and mu1 is not None and mu2 is not None and mu1 != mu2:
-            carb.log_warn(
-                f'{urdf_path}: anisotropic friction (mu1 != mu2) is not supported '
-                'in USD-PhysX, collapsing to the mean'
-            )
+            carb.log_warn(f'{urdf_path}: anisotropic friction (mu1 != mu2) is not supported in USD-PhysX, collapsing to the mean')
             warned_asymmetric = True
 
         result[link_name] = PhysicsParams(
@@ -281,7 +260,7 @@ def _extract_gazebo_physics(urdf_path: str) -> dict[str, PhysicsParams]:
     return result
 
 
-def _link_collider_prims(stage, robot_prim: str, link_name: str) -> list[str]:
+def _link_collider_prims(stage: Usd.Stage, robot_prim: str, link_name: str) -> list[str]:
     """Collider prims of one imported link. The importer applies CollisionAPI to
     collision children inside the nested Geometry link tree (there is no flat
     /colliders scope), and child links nest under their parent link, so the walk
@@ -415,17 +394,14 @@ def spawn_urdf(request: SpawnUrdf.Request) -> str:
     return prim_path
 
 
-def spawn_urdf_callback(request, response):
+def spawn_urdf_callback(request: SpawnUrdf.Request, response: SpawnUrdf.Response) -> SpawnUrdf.Response:
     response.path = spawn_urdf(request)
     return response
+
 
 # Urdf importer service callback.
 
 
-spawn_urdf_service = Service(
-    srv_type=SpawnUrdf,
-    srv_name='isaac/SpawnUrdf',
-    callback=spawn_urdf_callback
-)
+spawn_urdf_service = Service(srv_type=SpawnUrdf, srv_name='isaac/SpawnUrdf', callback=spawn_urdf_callback)
 
 __all__ = ['spawn_urdf_service']

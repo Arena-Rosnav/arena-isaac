@@ -62,8 +62,8 @@ def odom(
 
     publish_map.attribute('parentFrameId', map_frame_id)
     publish_map.attribute('childFrameId', odom_frame_id)
-    publish_map.attribute('translation', [0., 0., 0.])
-    publish_map.attribute('rotation', [0., 0., 0., 1.])
+    publish_map.attribute('translation', [0.0, 0.0, 0.0])
+    publish_map.attribute('rotation', [0.0, 0.0, 0.0, 1.0])
 
     if odom_topic:
         publish_odom_topic = graph.node('publish_odom_topic', 'isaacsim.ros2.bridge.ROS2PublishOdometry')

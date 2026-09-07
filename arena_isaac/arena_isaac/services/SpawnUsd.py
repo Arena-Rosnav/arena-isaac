@@ -1,18 +1,26 @@
+from __future__ import annotations
+
 import os
+import typing
 
 import isaacsim.core.utils.prims as prim_utils
 import numpy as np
-from isaac_utils.utils import geom
+import omni.usd
 from isaacsim_msgs.srv import SpawnUsd
 from rclpy.qos import QoSProfile
 
+from isaac_utils.utils import geom
+
 from .utils import Service, on_exception
+
+if typing.TYPE_CHECKING:
+    from pxr import Usd
 
 profile = QoSProfile(depth=2000)
 
 
 @on_exception(False)
-def spawn_usd(stage, request: SpawnUsd.Request) -> bool:
+def spawn_usd(stage: Usd.Stage, request: SpawnUsd.Request) -> bool:
     name = request.name
     usd_path = request.usd_path
     prim_path = request.prim_path
@@ -34,11 +42,7 @@ def spawn_usd_callback(request: SpawnUsd.Request, response: SpawnUsd.Response):
     response.ret = spawn_usd(stage, request)
 
 
-spawn_usd_service = Service(
-    srv_type=SpawnUsd,
-    srv_name='isaac/SpawnUsd',
-    callback=spawn_usd
-)
+spawn_usd_service = Service(srv_type=SpawnUsd, srv_name='isaac/SpawnUsd', callback=spawn_usd)
 
 
 __all__ = ['spawn_usd_service']

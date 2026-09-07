@@ -128,14 +128,7 @@ class UsdrtSkelWriter(_RootWriter):
                 ]
             )
         )
-        handle[1].Set(
-            usdrt.Vt.Vec3fArray(
-                [
-                    usdrt.Gf.Vec3f(float(translations[j, 0]), float(translations[j, 1]), float(translations[j, 2]))
-                    for j in range(joints)
-                ]
-            )
-        )
+        handle[1].Set(usdrt.Vt.Vec3fArray([usdrt.Gf.Vec3f(float(translations[j, 0]), float(translations[j, 1]), float(translations[j, 2])) for j in range(joints)]))
 
     def _handle(self, ped: Ped) -> tuple[Any, Any] | None:
         cached = self._handles.get(ped.sim_path)
@@ -184,11 +177,7 @@ class UsdSkelWriter(_RootWriter):
                 ]
             )
         )
-        handle[1].Set(
-            Vt.Vec3fArray(
-                [Gf.Vec3f(float(translations[j, 0]), float(translations[j, 1]), float(translations[j, 2])) for j in range(joints)]
-            )
-        )
+        handle[1].Set(Vt.Vec3fArray([Gf.Vec3f(float(translations[j, 0]), float(translations[j, 1]), float(translations[j, 2])) for j in range(joints)]))
 
     def _handle(self, ped: Ped) -> tuple[Any, Any] | None:
         cached = self._handles.get(ped.sim_path)

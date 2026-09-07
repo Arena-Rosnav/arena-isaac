@@ -32,7 +32,7 @@ _POSITION_DRIVE_KP_KD_RATIO_NEWTON = 20.0
 _POSITION_DRIVE_EFFORT_FALLBACK_NEWTON = 25.0
 
 
-def _set_drive(joint_prim, stiffness: float, damping: float, max_force: float | None = None) -> None:
+def _set_drive(joint_prim: Usd.Prim, stiffness: float, damping: float, max_force: float | None = None) -> None:
     for axis in ('angular', 'linear'):
         drive = UsdPhysics.DriveAPI(joint_prim, axis)
         stiffness_attr = drive.GetStiffnessAttr()
@@ -106,20 +106,14 @@ class Control:
     def _dispatch_bridge(self) -> bool:
         joints_velocity, joints_position, effort_limits = _joints_from_urdf(self.urdf_path)
         if not joints_velocity and not joints_position:
-            carb.log_error(
-                f"topic_bridge: no ros2_control joints found in URDF '{self.urdf_path}'"
-            )
+            carb.log_error(f"topic_bridge: no ros2_control joints found in URDF '{self.urdf_path}'")
             return False
 
         stage = omni.usd.get_context().get_stage()
         root = stage.GetPrimAtPath(self.prim_path)
         # The URDF importer nests joints under `<prim_path>/Physics/<name>`, so
         # index them by name from the subtree rather than a fixed path.
-        joint_prims = {
-            prim.GetName(): prim
-            for prim in Usd.PrimRange(root)
-            if prim.IsA(UsdPhysics.Joint)
-        } if root.IsValid() else {}
+        joint_prims = {prim.GetName(): prim for prim in Usd.PrimRange(root) if prim.IsA(UsdPhysics.Joint)} if root.IsValid() else {}
 
         newton = physics_engine() == 'newton'
         velocity_damping = _VELOCITY_DRIVE_DAMPING_NEWTON if newton else _VELOCITY_DRIVE_DAMPING

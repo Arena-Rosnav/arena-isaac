@@ -1,8 +1,9 @@
 import omni.kit.commands as commands
 import omni.usd
+from isaacsim_msgs.srv import ResetWorld
+
 from isaac_utils.utils.path import world_path
 from isaac_utils.utils.prim import resolve_paths
-from isaacsim_msgs.srv import ResetWorld
 
 from .utils import Service, on_exception
 
@@ -20,7 +21,7 @@ def reset_world() -> bool:
     return True
 
 
-def reset_world_callback(request: ResetWorld.Request, response: ResetWorld.Response):
+def reset_world_callback(request: ResetWorld.Request, response: ResetWorld.Response) -> ResetWorld.Response:
     del request
     response.ret = reset_world()
     return response

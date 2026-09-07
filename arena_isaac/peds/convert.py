@@ -547,9 +547,7 @@ def _matrix_to_quat(rotation: np.ndarray) -> np.ndarray:
     return quat / np.linalg.norm(quat)
 
 
-def _neutral_pose(
-    joints: list[JointNode], channels: dict[str, tuple[np.ndarray, np.ndarray]]
-) -> tuple[list[list[float]], list[list[float]]]:
+def _neutral_pose(joints: list[JointNode], channels: dict[str, tuple[np.ndarray, np.ndarray]]) -> tuple[list[list[float]], list[list[float]]]:
     """First-frame joint-local pose of a clip: (xyzw quaternions, translations).
 
     Joints without a channel hold their rest transform, and so does the root.

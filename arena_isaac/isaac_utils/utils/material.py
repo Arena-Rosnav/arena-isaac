@@ -3,20 +3,18 @@ from __future__ import annotations
 import functools
 import os
 import re
-from pathlib import Path
 import tempfile
+from pathlib import Path
 
 import attrs
 import carb
 import omni
+from isaacsim_msgs.msg import Material as MaterialMsg
+from isaacsim_msgs.msg import PhysicsParams as PhysicsParamsMsg
 from pxr import PhysxSchema, UsdPhysics, UsdShade
 
 from isaac_utils.utils.path import sanitize_path_component, world_path
 from isaac_utils.utils.prim import ensure_path
-
-from isaacsim_msgs.msg import Material as MaterialMsg
-from isaacsim_msgs.msg import PhysicsParams as PhysicsParamsMsg
-
 
 _COMBINE_FROM_UINT: dict[int, str | None] = {
     PhysicsParamsMsg.COMBINE_DEFAULT: None,
@@ -62,10 +60,8 @@ def _apply_physics_apis(material_prim_path: str, params: PhysicsParams) -> None:
     prim = stage.GetPrimAtPath(material_prim_path)
 
     # tripwire, physics material must never carry collider/body apis
-    assert not prim.HasAPI(UsdPhysics.CollisionAPI), \
-        f'physics material {material_prim_path} unexpectedly has CollisionAPI'
-    assert not prim.HasAPI(UsdPhysics.RigidBodyAPI), \
-        f'physics material {material_prim_path} unexpectedly has RigidBodyAPI'
+    assert not prim.HasAPI(UsdPhysics.CollisionAPI), f'physics material {material_prim_path} unexpectedly has CollisionAPI'
+    assert not prim.HasAPI(UsdPhysics.RigidBodyAPI), f'physics material {material_prim_path} unexpectedly has RigidBodyAPI'
 
     usd_phys = UsdPhysics.MaterialAPI.Apply(prim)
     usd_phys.CreateStaticFrictionAttr().Set(params.static_friction)
@@ -107,7 +103,7 @@ class MdlPreprocessor:
 
         base_path = mdl_path.parent
 
-        with open(mdl_path, 'r') as f:
+        with open(mdl_path) as f:
             mdl_content = f.read()
 
         replacer_fn = functools.partial(cls.relative_to_absolute, base_path)
@@ -144,10 +140,7 @@ class Material:
         physics_entries = list(msg.physics)
 
         if len(physics_entries) > 1:
-            carb.log_warn(
-                f'MaterialMsg carries {len(physics_entries)} PhysicsParams entries, '
-                'expected at most 1, using the first.'
-            )
+            carb.log_warn(f'MaterialMsg carries {len(physics_entries)} PhysicsParams entries, expected at most 1, using the first.')
         has_physics = len(physics_entries) >= 1
 
         if not has_visual and not has_physics:
@@ -195,12 +188,7 @@ class Material:
         mtl = stage.GetPrimAtPath(material_path)
 
         if not (mtl and mtl.IsValid()):
-            if not omni.kit.commands.execute(
-                'CreateMdlMaterialPrimCommand',
-                mtl_url=str(path),
-                mtl_name=name,
-                mtl_path=material_path
-            ):
+            if not omni.kit.commands.execute('CreateMdlMaterialPrimCommand', mtl_url=str(path), mtl_name=name, mtl_path=material_path):
                 return None
 
         obj = cls()

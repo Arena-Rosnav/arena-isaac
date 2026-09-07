@@ -1,9 +1,8 @@
-
-
 import typing
 
 import attrs
 import carb
+import carb.events
 import omni.kit.actions.core
 from omni.kit.viewport.utility import get_active_viewport
 
@@ -58,7 +57,6 @@ class RenderSettings:
 
     @attrs.define
     class PostProcessing:
-        ...
         # TODO
 
         def apply(self):
@@ -107,7 +105,7 @@ class RenderSettings:
         app = omni.kit.app.get_app()
         update_stream = app.get_update_event_stream()
 
-        def callback(event):
+        def callback(event: carb.events.IEvent):
             self.apply()
             if subscription:
                 subscription.unsubscribe()
@@ -136,5 +134,5 @@ PRESET_PHOTOREAL: RenderSettings = RenderSettings(
     ray_tracing=RenderSettings.RayTracing(
         DLSS='Quality',
     ),
-    post_processing=RenderSettings.PostProcessing()
+    post_processing=RenderSettings.PostProcessing(),
 )

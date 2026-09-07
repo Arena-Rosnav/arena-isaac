@@ -5,11 +5,7 @@ import omni.graph.core as og
 from isaac_utils.graphs import Graph, register_rebuilder
 
 
-def joint_states(
-    graph_path: str,
-    prim_path: str,
-    joint_states_topic: str
-) -> bool:
+def joint_states(graph_path: str, prim_path: str, joint_states_topic: str) -> bool:
     """
     Creates an OmniGraph Action Graph to publish nav2 - type odometry information for a given prim
     using ROS2.
@@ -45,8 +41,12 @@ def joint_states(
     on_playback_tick.connect('tick', read_joint_state, 'execIn')
     read_joint_state.connect('execOut', publish_joint_state, 'execIn')
     for attr in (
-        'jointNames', 'jointPositions', 'jointVelocities',
-        'jointEfforts', 'jointDofTypes', 'stageMetersPerUnit',
+        'jointNames',
+        'jointPositions',
+        'jointVelocities',
+        'jointEfforts',
+        'jointDofTypes',
+        'stageMetersPerUnit',
     ):
         read_joint_state.connect(attr, publish_joint_state, attr)
     read_sim_time.connect('simulationTime', publish_joint_state, 'timeStamp')

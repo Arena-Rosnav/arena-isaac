@@ -1,14 +1,20 @@
+from __future__ import annotations
+
+import typing
+
+if typing.TYPE_CHECKING:
+    from pxr import Sdf, Usd
+
 # fmt: off
 
 
 # preload attrs
 import os
 import sys
-import arena_simulation_setup
-import arena_simulation_setup.utils.cattrs
 
 # Use the isaacsim to import SimulationApp
 from isaacsim import SimulationApp
+
 
 def _arg_bool(name: str, default: bool) -> bool:
     if name in sys.argv:
@@ -39,7 +45,6 @@ CONFIG = {
 PHYSICS_ENGINE = _arg_str("--physics", "physx")
 if PHYSICS_ENGINE not in ("physx", "newton"):
     raise ValueError(f"unknown physics engine: {PHYSICS_ENGINE}")
-#import parent directory
 from pathlib import Path
 
 simulation_app = SimulationApp(CONFIG)
@@ -48,16 +53,12 @@ sys.path.insert(0,str(parent_dir))
 
 # stdlib
 import queue
-import random
 import traceback
 
 # Import Isaac Sim dependencies
-
 import carb
-import omni.kit.commands as commands
 import omni.timeline
 import omni.usd
-import yaml
 from isaacsim.core.utils.extensions import enable_extension
 
 enable_extension("isaacsim.asset.importer.urdf")
@@ -80,7 +81,8 @@ for ext_material in EXTENSIONS_MATERIAL:
 
 import tomllib
 
-def enable_extensions_from_kit(kit_path):
+
+def enable_extensions_from_kit(kit_path: str):
     with open(kit_path, "rb") as f:
         data = tomllib.load(f)
         dependencies = data.get("dependencies", {})
@@ -126,6 +128,7 @@ for _ in range(20):
 # publish nothing. perSensorTickTlas (the per-sensor motion BVH) must stay off,
 # with it on Isaac segfaults a few minutes in and basic lidar/camera do not need it.
 import carb.settings
+
 _carb_settings = carb.settings.get_settings()
 _carb_settings.set("/rtx/hydra/supportMultiTickRate", True)
 _carb_settings.set("/rtx/rendering/perSensorTickTlas", False)
@@ -136,10 +139,15 @@ _carb_settings.set("/rtx/rendering/perSensorTickTlas", False)
 # own test configs do.
 _carb_settings.set("/exts/isaacsim.ros2.bridge/publish_without_verification", True)
 
-import numpy as np
+#Import services
+# isaacsim.sensors.physics ships in extsDeprecated, but `isaacsim.sensors` was
+# already imported from the sibling sensor extensions, so its cached __path__
+# never picks up the deprecated portion and the physics import resolves to an
+# empty namespace ("unknown location"). Drop the cached namespace so the import
+# below rebuilds __path__ across every enabled portion.
+import importlib
 
-import omni.replicator.core as rep
-import omni.syntheticdata._syntheticdata as sd
+import numpy as np
 
 # rclpy
 import rclpy
@@ -152,31 +160,22 @@ from isaac_utils.graphs.time import PublishTime
 from isaac_utils.utils.material import Material, PhysicsParams
 from isaac_utils.utils.path import world_path
 
-#Import services
-# isaacsim.sensors.physics ships in extsDeprecated, but `isaacsim.sensors` was
-# already imported from the sibling sensor extensions, so its cached __path__
-# never picks up the deprecated portion and the physics import resolves to an
-# empty namespace ("unknown location"). Drop the cached namespace so the import
-# below rebuilds __path__ across every enabled portion.
-import importlib
 importlib.invalidate_caches()
 for _mod in [_m for _m in sys.modules if _m == "isaacsim.sensors" or _m.startswith("isaacsim.sensors.physics")]:
     del sys.modules[_mod]
-from arena_isaac.services import services, subscriptions
 from peds import runtime as pedestrian_runtime
 from rclpy.qos import QoSProfile
+
 from arena_isaac import run_after_tick_queue
+from arena_isaac.services import services, subscriptions
 
 # fmt: on
 # ======================================Base======================================
 # Setting up world and enable ros2_bridge extentions.
 # BACKGROUND_STAGE_PATH = "/background"
 # BACKGROUND_USD_PATH = "/Isaac/Environments/Simple_Warehouse/warehouse_with_forklifts.usd"
-plane_material_paths = [
-    'https://omniverse-content-production.s3.us-west-2.amazonaws.com/Materials/2023_1/Base/Wood/Walnut_Planks.mdl',
-    # 'https://omniverse-content-production.s3.us-west-2.amazonaws.com/Materials/2023_1/vMaterials_2/Ceramic/Ceramic_Tiles_Glazed_Diamond.mdl',
-    # 'https://omniverse-content-production.s3.us-west-2.amazonaws.com/Materials/2023_1/vMaterials_2/Ceramic/Ceramic_Tiles_Glazed_Diamond.mdl'
-]
+
+
 class _NewtonStaleGuard:
     """Tracks structural stage edits that newton cannot see.
 
@@ -189,19 +188,27 @@ class _NewtonStaleGuard:
     # resyncs on these prim types (or their descendants) never change the physics
     # model, and graph/material/render churn arrives every frame, which would keep
     # the guard dirty forever and starve the sim in a pause/rebuild cycle
-    _SKIP_TYPES = frozenset((
-        'Shader', 'Material', 'OmniGraph', 'OmniGraphNode',
-        'RenderProduct', 'RenderVar', 'RenderSettings',
-    ))
+    _SKIP_TYPES = frozenset(
+        (
+            'Shader',
+            'Material',
+            'OmniGraph',
+            'OmniGraphNode',
+            'RenderProduct',
+            'RenderVar',
+            'RenderSettings',
+        )
+    )
 
-    def __init__(self, stage) -> None:
+    def __init__(self, stage: Usd.Stage) -> None:
         from pxr import Tf, Usd
+
         self._stage = stage
         self._dirty = False
         self._quiet = 0
         self._key = Tf.Notice.Register(Usd.Notice.ObjectsChanged, self._on_changed, stage)
 
-    def _relevant(self, path) -> bool:
+    def _relevant(self, path: Sdf.Path) -> bool:
         prim = self._stage.GetPrimAtPath(path.GetPrimPath())
         while prim and prim.IsValid():
             if str(prim.GetTypeName()) in self._SKIP_TYPES:
@@ -209,7 +216,7 @@ class _NewtonStaleGuard:
             prim = prim.GetParent()
         return True
 
-    def _on_changed(self, notice, _sender) -> None:
+    def _on_changed(self, notice: Usd.Notice.ObjectsChanged, _sender: Usd.Stage) -> None:
         if any(self._relevant(p) for p in notice.GetResyncedPaths()):
             self._dirty = True
             self._quiet = 0
@@ -229,6 +236,7 @@ class _NewtonStaleGuard:
 
 def _newton_sim_time() -> float:
     import isaacsim.physics.newton as newton_ext
+
     ns = newton_ext.acquire_stage()
     return 0.0 if ns is None else float(ns.sim_time)
 
@@ -238,6 +246,7 @@ def _newton_restore_sim_time(t: float) -> None:
     # backward /clock jump and wedges every use_sim_time consumer (controller_manager
     # update loop, controller switches), keep it monotonic across rebuilds
     import isaacsim.physics.newton as newton_ext
+
     ns = newton_ext.acquire_stage()
     if ns is not None and ns.initialized and ns.sim_time < t:
         ns.sim_time = t
@@ -245,6 +254,7 @@ def _newton_restore_sim_time(t: float) -> None:
 
 def _newton_apply_solver_cfg() -> None:
     import isaacsim.physics.newton as newton_ext
+
     ns = newton_ext.acquire_stage()
     if ns is None:
         carb.log_warn("arena: newton stage not attached yet, solver cfg not applied")
@@ -274,6 +284,7 @@ if PHYSICS_ENGINE == "newton":
     for _ in range(20):
         simulation_app.update()
     from isaacsim.core.simulation_manager import SimulationManager
+
     SimulationManager.switch_physics_engine("newton")
     newton_guard = _NewtonStaleGuard(omni.usd.get_context().get_stage())
 
@@ -291,32 +302,9 @@ Material.physics(
         combine_mode='min',
     ),
 ).bind_to('/World/groundPlane/collisionPlane')
-_stage = omni.usd.get_context().get_stage()
-plane_mdl_path = random.choice(plane_material_paths)
-plane_mtl_name = plane_mdl_path.split('/')[-1][:-4]
-plane_mtl_path = "/World/Looks/PlaneMaterial"
-plane_mtl = _stage.GetPrimAtPath(plane_mtl_path)
-# if not (plane_mtl and plane_mtl.IsValid()):
-#     create_res = omni.kit.commands.execute('CreateMdlMaterialPrimCommand',
-#                                                 mtl_url=plane_mdl_path,
-#                                                 mtl_name=plane_mtl_name,
-#                                                 mtl_path=plane_mtl_path)
-
-#     bind_res = omni.kit.commands.execute('BindMaterialCommand',
-#                                             prim_path="/World/groundPlane",
-#                                             material_path=plane_mtl_path)
 simulation_app.update()  # update the simulation once for update ros2_bridge.
 simulation_context = SimulationContext(stage_units_in_meters=1.0)  # currently we use 1m for simulation.
-light_1 = prims.create_prim(
-    "/World/Light_1",
-    "DomeLight",
-    position=np.array([1.0, 1.0, 1.0]),
-    attributes={
-        "inputs:texture:format": "latlong",
-        "inputs:intensity": 1000.0,
-        "inputs:color": (1.0, 1.0, 1.0)
-    }
-)
+light_1 = prims.create_prim("/World/Light_1", "DomeLight", position=np.array([1.0, 1.0, 1.0]), attributes={"inputs:texture:format": "latlong", "inputs:intensity": 1000.0, "inputs:color": (1.0, 1.0, 1.0)})
 # =================================================================================
 
 # ===================================controller====================================
@@ -324,8 +312,8 @@ light_1 = prims.create_prim(
 
 
 class IsaacController(rclpy.node.Node):
-    def __init__(self, *args, **kwargs):
-        super().__init__(node_name="isaac", *args, **kwargs)
+    def __init__(self, *args: object, **kwargs: object) -> None:
+        super().__init__(*args, node_name="isaac", **kwargs)
         self._running = True
         self._pending_steps = 0
 
@@ -350,22 +338,22 @@ class IsaacController(rclpy.node.Node):
             self._cb_step_n,
         )
 
-    def _cb_pause(self, request: std_srvs.srv.Trigger.Request, response: std_srvs.srv.Trigger.Response):
+    def _cb_pause(self, request: std_srvs.srv.Trigger.Request, response: std_srvs.srv.Trigger.Response) -> std_srvs.srv.Trigger.Response:
         self._running = False
         response.success = True
         return response
 
-    def _cb_unpause(self, request: std_srvs.srv.Trigger.Request, response: std_srvs.srv.Trigger.Response):
+    def _cb_unpause(self, request: std_srvs.srv.Trigger.Request, response: std_srvs.srv.Trigger.Response) -> std_srvs.srv.Trigger.Response:
         self._running = True
         response.success = True
         return response
 
-    def _cb_step(self, request: std_srvs.srv.Trigger.Request, response: std_srvs.srv.Trigger.Response):
+    def _cb_step(self, request: std_srvs.srv.Trigger.Request, response: std_srvs.srv.Trigger.Response) -> std_srvs.srv.Trigger.Response:
         self._pending_steps += 1
         response.success = True
         return response
 
-    def _cb_step_n(self, request: StepSimulation.Request, response: StepSimulation.Response):
+    def _cb_step_n(self, request: StepSimulation.Request, response: StepSimulation.Response) -> StepSimulation.Response:
         if request.steps == 0:
             response.success = False
             response.target_sim_time = 0.0
@@ -383,7 +371,7 @@ class IsaacController(rclpy.node.Node):
             self._pending_steps -= 1
 
     @property
-    def running(self):
+    def running(self) -> bool:
         return self._pending_steps > 0 or self._running
 
     @classmethod
@@ -392,6 +380,7 @@ class IsaacController(rclpy.node.Node):
         simulation_app.update()
 
         from isaacsim.ros2.core.bindings._ros2_core import acquire_ros2_core_interface
+
         ros2_bridge = acquire_ros2_core_interface()
         while not ros2_bridge.get_startup_status():
             simulation_app.update()
@@ -402,7 +391,7 @@ class IsaacController(rclpy.node.Node):
 # ======================================main=======================================
 
 
-def main(args=None):
+def main(args: list[str] | None = None):
     """
     Main function to initialize the simulation, create the ROS 2 node,
     and run the simulation loop.
@@ -431,6 +420,7 @@ def main(args=None):
 
     # set photoreal settings
     import isaac_utils.config.photoreal as photoreal
+
     if os.environ.get('RENDER_PRESET', 'photoreal') != 'boring':
         photoreal.PRESET_PHOTOREAL.apply()
     else:
@@ -478,6 +468,7 @@ def main(args=None):
                         # prim deletions during the pause invalidate the tensor
                         # views cached in bridge graph nodes
                         from isaac_utils.graphs import rebuild_graphs
+
                         rebuild_graphs()
                     world.play()
                     was_playing = True

@@ -190,11 +190,4 @@ def _publish(tmp: pathlib.Path, final: pathlib.Path) -> None:
 
 def _attribution(spec: ActorSpec) -> str:
     sources = "\n".join(f"- {uri}" for uri in spec.consumed_uris)
-    return (
-        f"# Attribution\n\n"
-        f"The skin and animation clips for actor `{spec.name}` are converted from\n"
-        f"Gazebo Fuel assets:\n\n"
-        f"{sources}\n\n"
-        f"(c) Mingfei, distributed via Gazebo Fuel under CC-BY-4.0.\n"
-        f"This USD conversion redistributes them under the same license.\n"
-    )
+    return f"# Attribution\n\nThe skin and animation clips for actor `{spec.name}` are converted from\nGazebo Fuel assets:\n\n{sources}\n\n(c) Mingfei, distributed via Gazebo Fuel under CC-BY-4.0.\nThis USD conversion redistributes them under the same license.\n"

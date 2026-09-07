@@ -14,11 +14,11 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 import omni.usd
-from isaac_utils.utils.path import world_path
-from isaac_utils.utils.prim import ensure_path
 from isaacsim.core.utils.prims import create_prim, delete_prim
 from pxr import Gf, Sdf, Usd, UsdSkel, Vt
 
+from isaac_utils.utils.path import world_path
+from isaac_utils.utils.prim import ensure_path
 from peds.cache import convert_cached
 from peds.ped import Ped
 from peds.providers.external import ExternalPoseProvider
@@ -124,9 +124,7 @@ class PedRuntime:
         anim = UsdSkel.Animation.Define(stage, anim_path)
         anim.CreateJointsAttr(Vt.TokenArray(list(joint_order)))
 
-        anim.CreateTranslationsAttr(
-            Vt.Vec3fArray([Gf.Vec3f(float(t[0]), float(t[1]), float(t[2])) for t in rest_translations])
-        )
+        anim.CreateTranslationsAttr(Vt.Vec3fArray([Gf.Vec3f(float(t[0]), float(t[1]), float(t[2])) for t in rest_translations]))
         anim.CreateRotationsAttr(Vt.QuatfArray([Gf.Quatf(1.0, 0.0, 0.0, 0.0) for _ in joint_order]))
         anim.CreateScalesAttr(Vt.Vec3hArray([Gf.Vec3h(1.0, 1.0, 1.0) for _ in joint_order]))
 

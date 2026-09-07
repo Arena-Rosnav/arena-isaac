@@ -90,12 +90,7 @@ def _dae_text(*, textured: bool = False, idref_joints: bool = False, root_offset
 
     joint_array_tag = "IDREF_array" if idref_joints else "Name_array"
     joint_param_type = "IDREF" if idref_joints else "name"
-    uv_source = (
-        '<source id="g-uv"><float_array id="gua" count="6">0 0 1 0 0 1</float_array>'
-        '<technique_common><accessor source="#gua" count="3" stride="2"><param name="S" type="float"/><param name="T" type="float"/></accessor></technique_common></source>'
-        if textured
-        else ""
-    )
+    uv_source = '<source id="g-uv"><float_array id="gua" count="6">0 0 1 0 0 1</float_array><technique_common><accessor source="#gua" count="3" stride="2"><param name="S" type="float"/><param name="T" type="float"/></accessor></technique_common></source>' if textured else ""
     uv_input = '<input semantic="TEXCOORD" source="#g-uv" offset="2"/>' if textured else ""
     p_text = "0 0 0 1 1 1 2 2 2" if textured else "0 0 1 1 2 2"
     if textured:
@@ -110,12 +105,7 @@ def _dae_text(*, textured: bool = False, idref_joints: bool = False, root_offset
         )
         images = f'<library_images><image id="skin-image"><init_from>./{TEXTURE_REL}</init_from></image></library_images>'
     else:
-        effect = (
-            '<effect id="mat-effect"><profile_COMMON><technique sid="common"><phong>'
-            f"<diffuse><color>{MATERIAL_DIFFUSE[0]} {MATERIAL_DIFFUSE[1]} {MATERIAL_DIFFUSE[2]} 1</color></diffuse>"
-            f"<shininess><float>{MATERIAL_SHININESS}</float></shininess>"
-            "</phong></technique></profile_COMMON></effect>"
-        )
+        effect = f'<effect id="mat-effect"><profile_COMMON><technique sid="common"><phong><diffuse><color>{MATERIAL_DIFFUSE[0]} {MATERIAL_DIFFUSE[1]} {MATERIAL_DIFFUSE[2]} 1</color></diffuse><shininess><float>{MATERIAL_SHININESS}</float></shininess></phong></technique></profile_COMMON></effect>'
         images = ""
 
     return f"""<?xml version="1.0"?>
@@ -394,9 +384,7 @@ def test_convert_actor_requires_idle(tmp_path: pathlib.Path) -> None:
     dae = tmp_path / "synth.dae"
     dae.write_text(_dae_text())
     sdf = tmp_path / "actor.sdf"
-    sdf.write_text(
-        _sdf_text(str(dae)).replace(f'<animation name="idle"><filename>{dae}</filename></animation>', "")
-    )
+    sdf.write_text(_sdf_text(str(dae)).replace(f'<animation name="idle"><filename>{dae}</filename></animation>', ""))
     with pytest.raises(ValueError, match="no idle animation"):
         convert_actor(str(sdf), {str(dae): str(dae)}, tmp_path / "out")
 

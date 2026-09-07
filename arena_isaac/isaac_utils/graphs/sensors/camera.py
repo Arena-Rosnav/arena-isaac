@@ -4,11 +4,12 @@ import xml.etree.ElementTree as ET
 from collections.abc import Mapping, Sequence
 
 import attrs
+import numpy as np
 import omni
-from arena_robots.sensors import output_topics
 import omni.graph.core as og
 import omni.replicator.core as rep
 import omni.syntheticdata._syntheticdata as sd
+from arena_robots.sensors import output_topics
 from isaacsim.ros2.core import read_camera_info
 from isaacsim.sensors.camera import Camera
 
@@ -87,7 +88,7 @@ class SensorCamera(SensorBase):
         self.parent_frame: str = parent_frame
         self.optical_frame: str = optical_frame or parent_frame
         self.name: str = name
-        self.config: "SensorCamera.Config" = config
+        self.config: SensorCamera.Config = config
         self.translation: Translation = translation
         self.rotation: Rotation = rotation
         self.is_rgbd: bool = is_rgbd
@@ -137,7 +138,7 @@ class SensorCamera(SensorBase):
         camera_topic = join_topic(base_topic, self.name)
         return camera_topic + '/image', camera_topic + '/camera_info'
 
-    def publish(self, base_topic: str):
+    def publish(self, base_topic: str) -> tuple[str, str, str, int, int]:
         if self.prim_path is None or self.camera is None:
             raise RuntimeError('Camera not simulated. Call simulate() first.')
 
@@ -151,15 +152,15 @@ class SensorCamera(SensorBase):
         return render_product, frame, node_namespace, queue_size, step_size
 
     @staticmethod
-    def _reshape_param(value, columns: int):
-        if hasattr(value, "reshape"):
+    def _reshape_param(value: object, columns: int) -> object:
+        if isinstance(value, np.ndarray):
             return value.reshape([1, columns])
         if isinstance(value, (list, tuple)):
             return [list(value)]
         return value
 
     @staticmethod
-    def _first_available(source, *keys):
+    def _first_available(source: object, *keys: str) -> object | None:
         for key in keys:
             if isinstance(source, Mapping) and key in source:
                 return source[key]
@@ -168,7 +169,7 @@ class SensorCamera(SensorBase):
         return None
 
     @classmethod
-    def _normalize_camera_info(cls, camera_info):
+    def _normalize_camera_info(cls, camera_info: object) -> dict[str, object]:
         if isinstance(camera_info, Mapping):
             normalized = {
                 "width": cls._first_available(camera_info, "width"),
@@ -225,14 +226,14 @@ class SensorCamera(SensorBase):
         )
         if all(hasattr(camera_info, attr) for attr in required_attrs):
             return {
-                "width": getattr(camera_info, "width"),
-                "height": getattr(camera_info, "height"),
-                "projectionType": getattr(camera_info, "projectionType"),
-                "k": cls._reshape_param(getattr(camera_info, "k"), 9),
-                "r": cls._reshape_param(getattr(camera_info, "r"), 9),
-                "p": cls._reshape_param(getattr(camera_info, "p"), 12),
-                "physicalDistortionModel": getattr(camera_info, "physicalDistortionModel"),
-                "physicalDistortionCoefficients": getattr(camera_info, "physicalDistortionCoefficients"),
+                "width": camera_info.width,
+                "height": camera_info.height,
+                "projectionType": camera_info.projectionType,
+                "k": cls._reshape_param(camera_info.k, 9),
+                "r": cls._reshape_param(camera_info.r, 9),
+                "p": cls._reshape_param(camera_info.p, 12),
+                "physicalDistortionModel": camera_info.physicalDistortionModel,
+                "physicalDistortionCoefficients": camera_info.physicalDistortionCoefficients,
             }
 
         alt_required_attrs = (
@@ -247,14 +248,14 @@ class SensorCamera(SensorBase):
         )
         if all(hasattr(camera_info, attr) for attr in alt_required_attrs):
             return {
-                "width": getattr(camera_info, "width"),
-                "height": getattr(camera_info, "height"),
-                "projectionType": getattr(camera_info, "projection_type"),
-                "k": cls._reshape_param(getattr(camera_info, "k"), 9),
-                "r": cls._reshape_param(getattr(camera_info, "r"), 9),
-                "p": cls._reshape_param(getattr(camera_info, "p"), 12),
-                "physicalDistortionModel": getattr(camera_info, "distortion_model"),
-                "physicalDistortionCoefficients": getattr(camera_info, "distortion_coefficients"),
+                "width": camera_info.width,
+                "height": camera_info.height,
+                "projectionType": camera_info.projection_type,
+                "k": cls._reshape_param(camera_info.k, 9),
+                "r": cls._reshape_param(camera_info.r, 9),
+                "p": cls._reshape_param(camera_info.p, 12),
+                "physicalDistortionModel": camera_info.distortion_model,
+                "physicalDistortionCoefficients": camera_info.distortion_coefficients,
             }
 
         ros_camera_info_attrs = (
@@ -268,14 +269,14 @@ class SensorCamera(SensorBase):
         )
         if all(hasattr(camera_info, attr) for attr in ros_camera_info_attrs):
             return {
-                "width": getattr(camera_info, "width"),
-                "height": getattr(camera_info, "height"),
+                "width": camera_info.width,
+                "height": camera_info.height,
                 "projectionType": "pinhole",
-                "k": cls._reshape_param(getattr(camera_info, "k"), 9),
-                "r": cls._reshape_param(getattr(camera_info, "r"), 9),
-                "p": cls._reshape_param(getattr(camera_info, "p"), 12),
-                "physicalDistortionModel": getattr(camera_info, "distortion_model"),
-                "physicalDistortionCoefficients": getattr(camera_info, "d"),
+                "k": cls._reshape_param(camera_info.k, 9),
+                "r": cls._reshape_param(camera_info.r, 9),
+                "p": cls._reshape_param(camera_info.p, 12),
+                "physicalDistortionModel": camera_info.distortion_model,
+                "physicalDistortionCoefficients": camera_info.d,
             }
 
         tuple_len = len(camera_info) if isinstance(camera_info, (tuple, list)) else None
@@ -301,26 +302,17 @@ class SensorCamera(SensorBase):
             physicalDistortionCoefficients=camera_info["physicalDistortionCoefficients"],
         )
         writer_camera_info.attach([render_product])
-        gate_path_camera_info = omni.syntheticdata.SyntheticData._get_node_path(
-            "PostProcessDispatch" + "IsaacSimulationGate", render_product
-        )
+        gate_path_camera_info = omni.syntheticdata.SyntheticData._get_node_path("PostProcessDispatch" + "IsaacSimulationGate", render_product)
         og.Controller.attribute(gate_path_camera_info + ".inputs:step").set(step_size)
 
     @classmethod
     def _publish_rgb(cls, render_product: str, frame: str, node_namespace: str, queue_size: int, topic_name: str, step_size: int):
         rv = omni.syntheticdata.SyntheticData.convert_sensor_type_to_rendervar(sd.SensorType.Rgb.name)
         writer = rep.writers.get(rv + "ROS2PublishImage")
-        writer.initialize(
-            frameId=frame,
-            nodeNamespace=node_namespace,
-            queueSize=queue_size,
-            topicName=topic_name
-        )
+        writer.initialize(frameId=frame, nodeNamespace=node_namespace, queueSize=queue_size, topicName=topic_name)
         writer.attach([render_product])
 
-        gate_path = omni.syntheticdata.SyntheticData._get_node_path(
-            rv + "IsaacSimulationGate", render_product
-        )
+        gate_path = omni.syntheticdata.SyntheticData._get_node_path(rv + "IsaacSimulationGate", render_product)
         og.Controller.attribute(gate_path + ".inputs:step").set(step_size)
 
 
@@ -337,7 +329,7 @@ class SensorCameraRGBD(SensorCamera):
             join_topic(base_topic, outputs['pointcloud']),
         )
 
-    def publish(self, base_topic: str):
+    def publish(self, base_topic: str) -> tuple[str, str, str, int, int]:
         if self.prim_path is None or self.camera is None:
             raise RuntimeError('Camera not simulated. Call simulate() first.')
 
@@ -354,39 +346,21 @@ class SensorCameraRGBD(SensorCamera):
 
     @classmethod
     def _publish_pointcloud(cls, render_product: str, frame: str, node_namespace: str, queue_size: int, topic_name: str, step_size: int):
-        rv = omni.syntheticdata.SyntheticData.convert_sensor_type_to_rendervar(
-            sd.SensorType.DistanceToImagePlane.name
-        )
+        rv = omni.syntheticdata.SyntheticData.convert_sensor_type_to_rendervar(sd.SensorType.DistanceToImagePlane.name)
 
         writer = rep.writers.get(rv + "ROS2PublishPointCloud")
-        writer.initialize(
-            frameId=frame,
-            nodeNamespace=node_namespace,
-            queueSize=queue_size,
-            topicName=topic_name
-        )
+        writer.initialize(frameId=frame, nodeNamespace=node_namespace, queueSize=queue_size, topicName=topic_name)
         writer.attach([render_product])
 
-        gate_path = omni.syntheticdata.SyntheticData._get_node_path(
-            rv + "IsaacSimulationGate", render_product
-        )
+        gate_path = omni.syntheticdata.SyntheticData._get_node_path(rv + "IsaacSimulationGate", render_product)
         og.Controller.attribute(gate_path + ".inputs:step").set(step_size)
 
     @classmethod
     def _publish_depth(cls, render_product: str, frame: str, node_namespace: str, queue_size: int, topic_name: str, step_size: int):
-        rv = omni.syntheticdata.SyntheticData.convert_sensor_type_to_rendervar(
-            sd.SensorType.DistanceToImagePlane.name
-        )
+        rv = omni.syntheticdata.SyntheticData.convert_sensor_type_to_rendervar(sd.SensorType.DistanceToImagePlane.name)
         writer = rep.writers.get(rv + "ROS2PublishImage")
-        writer.initialize(
-            frameId=frame,
-            nodeNamespace=node_namespace,
-            queueSize=queue_size,
-            topicName=topic_name
-        )
+        writer.initialize(frameId=frame, nodeNamespace=node_namespace, queueSize=queue_size, topicName=topic_name)
         writer.attach([render_product])
 
-        gate_path = omni.syntheticdata.SyntheticData._get_node_path(
-            rv + "IsaacSimulationGate", render_product
-        )
+        gate_path = omni.syntheticdata.SyntheticData._get_node_path(rv + "IsaacSimulationGate", render_product)
         og.Controller.attribute(gate_path + ".inputs:step").set(step_size)

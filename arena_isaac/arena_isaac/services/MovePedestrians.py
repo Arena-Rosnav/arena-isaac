@@ -16,17 +16,11 @@ def move_pedestrian(pedestrian: Pedestrian) -> int:
     return MovePedestrians.Response.SUCCESS if found else MovePedestrians.Response.NOT_FOUND
 
 
-def move_pedestrians_callback(
-    request: MovePedestrians.Request, response: MovePedestrians.Response
-) -> MovePedestrians.Response:
+def move_pedestrians_callback(request: MovePedestrians.Request, response: MovePedestrians.Response) -> MovePedestrians.Response:
     response.results = [move_pedestrian(pedestrian) for pedestrian in request.pedestrians]
     return response
 
 
-move_pedestrians_service = Service(
-    srv_type=MovePedestrians,
-    srv_name='isaac/MovePedestrians',
-    callback=move_pedestrians_callback
-)
+move_pedestrians_service = Service(srv_type=MovePedestrians, srv_name='isaac/MovePedestrians', callback=move_pedestrians_callback)
 
 __all__ = ['move_pedestrians_service']

@@ -25,17 +25,11 @@ def spawn_pedestrian(item: SpawnPedestrian) -> int:
     return SpawnPedestrians.Response.SUCCESS
 
 
-def spawn_pedestrians_callback(
-    request: SpawnPedestrians.Request, response: SpawnPedestrians.Response
-) -> SpawnPedestrians.Response:
+def spawn_pedestrians_callback(request: SpawnPedestrians.Request, response: SpawnPedestrians.Response) -> SpawnPedestrians.Response:
     response.results = [spawn_pedestrian(item) for item in request.pedestrians]
     return response
 
 
-spawn_pedestrians_service = Service(
-    srv_type=SpawnPedestrians,
-    srv_name='isaac/SpawnPedestrians',
-    callback=spawn_pedestrians_callback
-)
+spawn_pedestrians_service = Service(srv_type=SpawnPedestrians, srv_name='isaac/SpawnPedestrians', callback=spawn_pedestrians_callback)
 
 __all__ = ['spawn_pedestrians_service']

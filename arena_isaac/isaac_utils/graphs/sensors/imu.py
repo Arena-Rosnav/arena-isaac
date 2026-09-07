@@ -12,7 +12,6 @@ from . import SensorBase, join_topic, resolve_link_prim
 
 
 class SensorIMU(SensorBase):
-
     @attrs.define
     class Config:
         topic: str = attrs.field(validator=attrs.validators.instance_of(str))
@@ -60,7 +59,7 @@ class SensorIMU(SensorBase):
             return ()
         return (self.prim_path, os.path.join(self.prim_path, 'IMUPublisher'))
 
-    def publish(self, base_topic: str):
+    def publish(self, base_topic: str) -> bool:
         if not self.prim_path:
             raise RuntimeError("Contact sensor not initialized. Call simulate() first.")
 

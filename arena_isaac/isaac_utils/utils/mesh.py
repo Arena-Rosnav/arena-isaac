@@ -1,5 +1,5 @@
-"""Create simple meshes at runtime.
-"""
+"""Create simple meshes at runtime."""
+
 import os
 
 import omni.kit.commands
@@ -18,19 +18,12 @@ def create_mesh(
     rotation: geom.Rotation | None = None,
     scale: geom.Scale | None = None,
     collide: bool = True,
-    **kwargs,
+    **kwargs: object,
 ):
-    """Create a mesh prim of the given type.
-    """
+    """Create a mesh prim of the given type."""
 
     ensure_path(os.path.dirname(prim_path))
-    omni.kit.commands.execute(
-        "CreateMeshPrimWithDefaultXform",
-        prim_type=mesh_type,
-        prim_path=prim_path,
-        select_new_prim=False,
-        **kwargs
-    )
+    omni.kit.commands.execute("CreateMeshPrimWithDefaultXform", prim_type=mesh_type, prim_path=prim_path, select_new_prim=False, **kwargs)
     if collide:
         prim = resolve_prim(prim_path)
         if prim is not None:
@@ -59,10 +52,9 @@ def create_cube(
     rotation: geom.Rotation | None = None,
     scale: geom.Scale | None = None,
     collide: bool = True,
-    **kwargs,
-):
-    """Create a cube mesh prim.
-    """
+    **kwargs: object,
+) -> None:
+    """Create a cube mesh prim."""
 
     return create_mesh(
         prim_path,
@@ -82,10 +74,9 @@ def create_plane(
     rotation: geom.Rotation | None = None,
     scale: geom.Scale | None = None,
     collide: bool = True,
-    **kwargs,
-):
-    """Create a plane mesh prim.
-    """
+    **kwargs: object,
+) -> None:
+    """Create a plane mesh prim."""
 
     return create_mesh(
         prim_path,

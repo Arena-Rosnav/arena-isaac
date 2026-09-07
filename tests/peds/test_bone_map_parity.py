@@ -16,6 +16,7 @@ Script mode: `python3 test_bone_map_parity.py report` prints the per-DOF table,
 measured contract axes (needs xacro + human_description + rviz_utils, so run
 in-container).
 """
+
 from __future__ import annotations
 
 import json
@@ -293,9 +294,7 @@ def test_dof_parity(dof: str, probe: float, bone: str) -> None:
     assert m["cmu_axis"] is not None, f"{dof}: isaac rig did not move"
     dot = float(np.dot(m["urdf_axis"], m["cmu_axis"]))
     assert dot > 0.98, f"{dof}: axis mismatch, urdf {m['urdf_axis']} vs cmu {m['cmu_axis']} (dot {dot:.3f})"
-    assert abs(m["cmu_angle"] - abs(probe)) < 0.1 * abs(probe) + 0.05, (
-        f"{dof}: magnitude {m['cmu_angle']:.3f} vs probe {abs(probe):.3f}"
-    )
+    assert abs(m["cmu_angle"] - abs(probe)) < 0.1 * abs(probe) + 0.05, f"{dof}: magnitude {m['cmu_angle']:.3f} vs probe {abs(probe):.3f}"
     assert m["leak"] < 0.02, f"{dof}: mirrored side moved by {m['leak']:.3f}"
 
 
@@ -310,9 +309,7 @@ def _report() -> None:
     for dof, probe, bone in _PROBES:
         m = _measure(dof, probe, bone)
         dot = float(np.dot(m["urdf_axis"], m["cmu_axis"])) if m["urdf_axis"] is not None and m["cmu_axis"] is not None else float("nan")
-        print(
-            f"{dof:<14}{probe:>7.2f}  {fmt(m['urdf_axis']):<21}{fmt(m['cmu_axis']):<21}{dot:>6.2f}{m['cmu_angle']:>8.3f}{m['leak']:>7.3f}"
-        )
+        print(f"{dof:<14}{probe:>7.2f}  {fmt(m['urdf_axis']):<21}{fmt(m['cmu_axis']):<21}{dot:>6.2f}{m['cmu_angle']:>8.3f}{m['leak']:>7.3f}")
 
 
 def _regen() -> None:
