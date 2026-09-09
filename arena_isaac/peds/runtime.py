@@ -73,6 +73,7 @@ class PedRuntime:
         self,
         name: str,
         position: tuple[float, float, float],
+        orientation: tuple[float, float, float, float],
         velocity: tuple[float, float],
         animation_state: int,
         joint_names: list[str],
@@ -90,6 +91,7 @@ class PedRuntime:
 
         ped.update_command(
             np.asarray(position, dtype=float),
+            np.asarray(orientation, dtype=float),
             np.asarray(velocity, dtype=float),
             float(self._world.current_time),
             stamp_sec=stamp_sec,
@@ -167,13 +169,14 @@ def spawn(name: str, position: np.ndarray, orientation: np.ndarray, model_source
 def update(
     name: str,
     position: tuple[float, float, float],
+    orientation: tuple[float, float, float, float],
     velocity: tuple[float, float],
     animation_state: int,
     joint_names: list[str],
     joint_positions: list[float],
     stamp_sec: float,
 ) -> bool:
-    return _get().update(name, position, velocity, animation_state, joint_names, joint_positions, stamp_sec)
+    return _get().update(name, position, orientation, velocity, animation_state, joint_names, joint_positions, stamp_sec)
 
 
 def move(name: str, position: tuple[float, float, float], orientation: tuple[float, float, float, float]) -> bool:

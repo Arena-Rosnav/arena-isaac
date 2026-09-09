@@ -10,6 +10,7 @@ def update_pedestrian(pedestrian: Pedestrian, stamp_sec: float) -> int:
     found = runtime.update(
         pedestrian.name,
         (pedestrian.pose.position.x, pedestrian.pose.position.y, pedestrian.pose.position.z),
+        (pedestrian.pose.orientation.x, pedestrian.pose.orientation.y, pedestrian.pose.orientation.z, pedestrian.pose.orientation.w),
         (pedestrian.twist.linear.x, pedestrian.twist.linear.y),
         pedestrian.animation_state,
         list(pedestrian.joint_state.name),
