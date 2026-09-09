@@ -426,6 +426,13 @@ def main(args: list[str] | None = None):
     else:
         photoreal.PRESET_DEFAULT.apply()
 
+    # the viewport camera only exists in the GUI, headless has nothing to drive
+    viewport = None
+    if not CONFIG["headless"]:
+        from isaac_utils.viewport import ViewportNode
+
+        viewport = ViewportNode(controller)
+
     # hard reset once
     omni.timeline.get_timeline_interface().stop()
 
@@ -438,6 +445,9 @@ def main(args: list[str] | None = None):
             # bounded drain, a single callback per frame backs up under call bursts
             for _ in range(16):
                 rclpy.spin_once(controller, timeout_sec=0)
+            if viewport is not None:
+                # before the render, so the drawn frame uses the new pose
+                viewport.apply()
             if controller.running:
                 if newton_guard is not None:
                     newton_guard.tick()
