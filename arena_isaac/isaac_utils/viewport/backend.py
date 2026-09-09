@@ -77,7 +77,8 @@ class CameraBackend:
         prim = resolve_prim(path)
         if prim is None:
             return
-        xform = UsdGeom.Xformable(prim.prims[0])
+        usd_prim = prim.prims[0]
+        xform = UsdGeom.Xformable(usd_prim)
         w, x, y, z = _to_usd(pose.orientation)
         local = Gf.Matrix4d().SetTransform(
             Gf.Rotation(Gf.Quatd(w, Gf.Vec3d(x, y, z))),
@@ -87,12 +88,14 @@ class CameraBackend:
         parent = xform.ComputeParentToWorldTransform(Usd.TimeCode.Default())
         if parent != Gf.Matrix4d(1.0):
             local = local * parent.GetInverse()
-        for op in xform.GetOrderedXformOps():
-            if op.GetOpType() == UsdGeom.XformOp.TypeTransform:
-                op.Set(local)
-                return
-        xform.ClearXformOpOrder()
-        xform.AddTransformOp().Set(local)
+        stage = usd_prim.GetStage()
+        with Usd.EditContext(stage, stage.GetSessionLayer()):
+            for op in xform.GetOrderedXformOps():
+                if op.GetOpType() == UsdGeom.XformOp.TypeTransform:
+                    op.Set(local)
+                    return
+            xform.ClearXformOpOrder()
+            xform.AddTransformOp().Set(local)
 
     def set_hfov(self, fov: float) -> None:
         """Set the horizontal field of view in radians, solved into a focal length."""
