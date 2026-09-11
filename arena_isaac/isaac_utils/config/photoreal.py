@@ -4,7 +4,7 @@ import attrs
 import carb
 import carb.events
 import omni.kit.actions.core
-from omni.kit.viewport.utility import get_active_viewport
+from omni.kit.viewport.utility import get_active_viewport, get_active_viewport_window
 
 
 @attrs.define
@@ -15,13 +15,13 @@ class RenderSettings:
         scale: float = 1.0
 
         def apply(self):
-            viewport_api = get_active_viewport()
+            widget = get_active_viewport_window().viewport_widget
 
             if self.resolution == 'dynamic':
-                viewport_api.fill_frame = True
+                widget.fill_frame = True
             else:
-                viewport_api.resolution = self.resolution
-            viewport_api.render_scale = self.scale
+                widget.set_resolution(self.resolution)
+            get_active_viewport().resolution_scale = self.scale
 
     @attrs.define
     class ViewportDisplay:
