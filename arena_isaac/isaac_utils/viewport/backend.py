@@ -70,7 +70,7 @@ class CameraBackend:
         return Pose(pose.position, _from_usd(pose.orientation)) if pose is not None else None
 
     def set_world_pose(self, pose: Pose) -> None:
-        """Write the pose as a single transform op, the form Kit's viewport camera uses."""
+        """Write into the camera's existing xform ops: Fabric mirrors only the ops it populated, a replaced op stack never reaches the renderer."""
         path = self._resolve()
         if path is None:
             return
@@ -94,6 +94,12 @@ class CameraBackend:
                 if op.GetOpType() == UsdGeom.XformOp.TypeTransform:
                     op.Set(local)
                     return
+            common = UsdGeom.XformCommonAPI(usd_prim)
+            if common:
+                z, y, x = local.ExtractRotation().Decompose(Gf.Vec3d.ZAxis(), Gf.Vec3d.YAxis(), Gf.Vec3d.XAxis())
+                common.SetTranslate(local.ExtractTranslation())
+                common.SetRotate(Gf.Vec3f(x, y, z), UsdGeom.XformCommonAPI.RotationOrderXYZ)
+                return
             xform.ClearXformOpOrder()
             xform.AddTransformOp().Set(local)
 
