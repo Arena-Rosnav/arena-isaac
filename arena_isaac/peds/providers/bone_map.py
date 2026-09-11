@@ -70,4 +70,8 @@ BONE_MAP: dict[str, tuple[BoneTarget, ...]] = {
     "l_ankle": (BoneTarget("LeftFoot", (-0.9370, -0.1697, -0.3054), 1.0),),  # L ankle sagittal, positive dorsiflexion
     "r_y_ankle": (BoneTarget("RightFoot", (0.3754, 0.4375, 0.8171), 1.0),),  # R foot yaw (toe direction)
     "r_ankle": (BoneTarget("RightFoot", (-0.9268, 0.1697, 0.3350), 1.0),),  # R ankle sagittal, positive dorsiflexion
+    "l_r_wrist": (BoneTarget("LeftHand", (0.1182, 0.9531, 0.2785), 1.0),),  # L forearm pronation, rendered on the hand
+    "l_wrist": (BoneTarget("LeftHand", (0.1229, -0.2923, 0.9484), 1.0),),  # L wrist, positive extension
+    "r_r_wrist": (BoneTarget("RightHand", (0.1961, -0.9596, -0.2018), 1.0),),  # R forearm pronation, rendered on the hand
+    "r_wrist": (BoneTarget("RightHand", (0.1261, 0.2288, -0.9653), 1.0),),  # R wrist, positive extension
 }
