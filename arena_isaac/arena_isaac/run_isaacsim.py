@@ -146,6 +146,7 @@ _carb_settings.set("/exts/isaacsim.ros2.bridge/publish_without_verification", Tr
 # empty namespace ("unknown location"). Drop the cached namespace so the import
 # below rebuilds __path__ across every enabled portion.
 import importlib
+import time
 
 import numpy as np
 
@@ -153,7 +154,9 @@ import numpy as np
 import rclpy
 import rclpy.node
 import std_srvs.srv
+from builtin_interfaces.msg import Time as TimeMsg
 from isaacsim_msgs.srv import StepSimulation
+from rosgraph_msgs.msg import Clock
 
 # graphs
 from isaac_utils.graphs.time import PublishTime
@@ -164,7 +167,7 @@ importlib.invalidate_caches()
 for _mod in [_m for _m in sys.modules if _m == "isaacsim.sensors" or _m.startswith("isaacsim.sensors.physics")]:
     del sys.modules[_mod]
 from peds import runtime as pedestrian_runtime
-from rclpy.qos import QoSProfile
+from rclpy.qos import QoSProfile, ReliabilityPolicy
 
 from arena_isaac import run_after_tick_queue
 from arena_isaac.services import services, subscriptions
@@ -249,7 +252,7 @@ def _newton_restore_sim_time(t: float) -> None:
 
     ns = newton_ext.acquire_stage()
     if ns is not None and ns.initialized and ns.sim_time < t:
-        ns.sim_time = t
+        ns.sim_time += t
 
 
 def _newton_apply_solver_cfg() -> None:
@@ -311,11 +314,20 @@ light_1 = prims.create_prim("/World/Light_1", "DomeLight", position=np.array([1.
 # create controller node for isaacsim.
 
 
+_CLOCK_ATTR = "/World/publish_time/read_simulation_time.outputs:simulationTime"
+_CLOCK_REPEAT_S = 0.25
+_IDLE_GRACE_S = 2.0
+
+
 class IsaacController(rclpy.node.Node):
     def __init__(self, *args: object, **kwargs: object) -> None:
         super().__init__(*args, node_name="isaac", **kwargs)
         self._running = True
         self._pending_steps = 0
+        self._clock_pub = self.create_publisher(Clock, "/clock", QoSProfile(depth=1, reliability=ReliabilityPolicy.BEST_EFFORT))
+        self._clock_attr = None
+        self._last_clock: float | None = None
+        self._clock_repeated = 0.0
 
         self.__pause_srv = self.create_service(
             std_srvs.srv.Trigger,
@@ -361,9 +373,34 @@ class IsaacController(rclpy.node.Node):
             return response
         self._pending_steps += request.steps
         response.success = True
-        response.target_sim_time = world.current_time + request.steps * PHYSICS_DT
+        current = _newton_sim_time() if PHYSICS_ENGINE == "newton" else world.current_time
+        response.target_sim_time = current + request.steps * PHYSICS_DT
         response.error_msg = ""
         return response
+
+    def publish_clock(self) -> None:
+        """Publish what the clock graph stamped this frame."""
+        import omni.graph.core as og
+
+        try:
+            if self._clock_attr is None:
+                self._clock_attr = og.Controller.attribute(_CLOCK_ATTR)
+            self._last_clock = float(og.Controller.get(self._clock_attr))
+        except Exception as e:
+            if self._last_clock is not None:
+                carb.log_warn(f"arena: clock graph read failed: {e}")
+            self._clock_attr = None
+            self._last_clock = None
+            return
+        self.repeat_clock(force=True)
+
+    def repeat_clock(self, force: bool = False) -> None:
+        now = time.monotonic()
+        if self._last_clock is None or (not force and now - self._clock_repeated < _CLOCK_REPEAT_S):
+            return
+        self._clock_repeated = now
+        sec = int(self._last_clock)
+        self._clock_pub.publish(Clock(clock=TimeMsg(sec=sec, nanosec=int(round((self._last_clock - sec) * 1e9)))))
 
     def consume_step(self) -> None:
         """Decrement pending steps after a gated frame steps. No-op while free-running."""
@@ -439,6 +476,7 @@ def main(args: list[str] | None = None):
     # mainloop
     was_playing: bool = False
     newton_bounce_hold: int = 0
+    last_step_at: float = 0.0
     try:
         while simulation_app.is_running():
             stepped_this_iteration: bool = False
@@ -482,10 +520,15 @@ def main(args: list[str] | None = None):
                         rebuild_graphs()
                     world.play()
                     was_playing = True
-                    world.step(render=True)
-                    controller.consume_step()
                     if restore_time > 0.0:
                         _newton_restore_sim_time(restore_time)
+                    world.step(render=True)
+                    controller.publish_clock()
+                    controller.consume_step()
+                    last_step_at = time.monotonic()
+                    if restore_time > 0.0:
+                        _newton_restore_sim_time(restore_time)
+                        carb.log_info(f"arena: newton resume, sim time restored to {restore_time:.4f}")
                     stepped_this_iteration = True
                 elif newton_guard is not None and newton_guard.pending(settle_frames=30):
                     # spawns during an open clock window never cross a pause->play
@@ -496,13 +539,21 @@ def main(args: list[str] | None = None):
                     newton_bounce_hold = 30
                 else:
                     world.step(render=True)
+                    controller.publish_clock()
                     controller.consume_step()
+                    last_step_at = time.monotonic()
                     stepped_this_iteration = True
+            elif was_playing and time.monotonic() - last_step_at < _IDLE_GRACE_S:
+                controller.repeat_clock()
+                time.sleep(0.002)
+                continue
             else:
                 if was_playing:
                     world.pause()
                     was_playing = False
+                    controller.repeat_clock(force=True)
                 simulation_app.update()
+                controller.repeat_clock()
 
             if stepped_this_iteration:
                 pending_actions = run_after_tick_queue.qsize()
