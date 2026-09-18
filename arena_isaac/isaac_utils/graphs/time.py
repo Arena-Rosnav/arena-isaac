@@ -13,6 +13,9 @@ def PublishTime(graph_path: str) -> bool:
     # timeline stop cycles (newton rebuilds) must never publish a backward
     # /clock jump, use_sim_time consumers wedge on it
     read_simulation_time.attribute('resetOnStop', False)
+    # the node only keeps simulationTime evaluated, run_isaacsim publishes /clock from
+    # it: two publishers stamp a tick 1 ns apart and that steps /clock backwards
+    publish_clock.attribute('topicName', 'isaac/graph_clock')
 
     on_playback_tick.connect('tick', publish_clock, 'execIn')
     read_simulation_time.connect('simulationTime', publish_clock, 'timeStamp')

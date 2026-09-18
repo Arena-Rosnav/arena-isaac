@@ -220,6 +220,8 @@ class ViewportController:
         self._ref_target: Pose | None = None
 
         self._applied: Pose | None = None
+        # set when a manual camera move released the tracked entity: (offset m, angle rad)
+        self.released: tuple[float, float] | None = None
 
     @property
     def tracked_entity(self) -> str:
@@ -232,6 +234,16 @@ class ViewportController:
     def set_view(self, eye: Vec3, target: Vec3, fov: float) -> None:
         self._local = Pose(eye, look_at(eye, target))
         self._world_orientation = False
+        self._one_shot = True
+        self._streaming = False
+        self._local_set = True
+        if fov > 0.0:
+            self._pending_fov = fov
+
+    def set_local(self, local: Pose, world_orientation: bool, fov: float) -> None:
+        """Snap to an explicit local pose, the capture path's set_view."""
+        self._local = local
+        self._world_orientation = world_orientation
         self._one_shot = True
         self._streaming = False
         self._local_set = True
@@ -280,14 +292,14 @@ class ViewportController:
         if self._streaming and now - self._last_view > STREAM_TIMEOUT:
             self._streaming = False  # went quiet, release to manual
 
+        # the local pose persists past a one-shot or a finished stream, so a tracked
+        # reference keeps its offset instead of collapsing onto the entity
         sampled_fov = 0.0
-        if one_shot:
-            local, world_orientation = self._local, self._world_orientation
-        else:
+        if self._streaming and not one_shot:
             sample = sample_buffer(self._buffer, now)
-            local = sample.local if sample else Pose()
-            world_orientation = sample.world_orientation if sample else False
-            sampled_fov = sample.fov if sample else 0.0
+            if sample:
+                self._local, self._world_orientation, sampled_fov = sample.local, sample.world_orientation, sample.fov
+        local, world_orientation = self._local, self._world_orientation
 
         fov, self._pending_fov = self._pending_fov, None
         if fov is None and sampled_fov > 0.0:
@@ -298,6 +310,7 @@ class ViewportController:
         # from what we last set means the user grabbed it, so hand the view back
         follow_only = self._ref_target is not None and self._local_set and not self._streaming and not one_shot
         if follow_only and self._applied is not None and self._moved(camera_pose, self._applied):
+            self.released = (math.dist(camera_pose.position, self._applied.position), q_angle(camera_pose.orientation, self._applied.orientation))
             self._ref_entity = ""
             self._ref_pose = Pose()
             self._ref_mode = FULL
