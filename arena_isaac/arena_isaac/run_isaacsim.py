@@ -45,6 +45,14 @@ CONFIG = {
 PHYSICS_ENGINE = _arg_str("--physics", "physx")
 if PHYSICS_ENGINE not in ("physx", "newton"):
     raise ValueError(f"unknown physics engine: {PHYSICS_ENGINE}")
+VIEWPORT_ARGS = {
+    "preset": _arg_str("--viewport.preset", "photoreal"),
+    "resolution": _arg_str("--viewport.resolution", ""),
+    "scale": _arg_str("--viewport.scale", ""),
+    "dlss": _arg_str("--viewport.dlss", ""),
+    "lighting": _arg_str("--viewport.lighting", ""),
+    "overlays": _arg_str("--viewport.overlays", ""),
+}
 from pathlib import Path
 
 simulation_app = SimulationApp(CONFIG)
@@ -408,6 +416,11 @@ class IsaacController(rclpy.node.Node):
             self._pending_steps -= 1
 
     @property
+    def sim_time(self) -> float | None:
+        """The last /clock sample this node published, None before the first."""
+        return self._last_clock
+
+    @property
     def running(self) -> bool:
         return self._pending_steps > 0 or self._running
 
@@ -455,13 +468,9 @@ def main(args: list[str] | None = None):
 
     pedestrian_runtime.initialize(world)
 
-    # set photoreal settings
     import isaac_utils.config.photoreal as photoreal
 
-    if os.environ.get('RENDER_PRESET', 'photoreal') != 'boring':
-        photoreal.PRESET_PHOTOREAL.apply()
-    else:
-        photoreal.PRESET_DEFAULT.apply()
+    photoreal.resolve(**VIEWPORT_ARGS).apply()
 
     # the viewport camera only exists in the GUI, headless has nothing to drive
     viewport = None

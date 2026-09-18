@@ -21,6 +21,17 @@ def generate_launch_description():
         default_value='False',
     )
 
+    physics = LaunchArgument(
+        name='physics',
+        default_value='physx',
+        choices=['physx', 'newton'],
+    )
+
+    viewport = {
+        key: LaunchArgument(name=f'viewport.{key}', default_value=default)
+        for key, default in (('preset', 'photoreal'), ('resolution', ''), ('scale', ''), ('dlss', ''), ('lighting', ''), ('overlays', ''))
+    }
+
     run_isaacsim_path = ExecutableInPackage(
         executable='run_isaacsim',
         package='arena_isaac',
@@ -39,6 +50,8 @@ def generate_launch_description():
                 run_isaacsim_path,
                 '--log-level', logger.substitution,
                 '--headless', headless.substitution,
+                ['physics:=', physics.substitution],
+                *([f'viewport.{key}:=', arg.substitution] for key, arg in viewport.items()),
             ],
             output='screen',
         ),
