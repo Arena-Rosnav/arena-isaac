@@ -72,6 +72,10 @@ _PROBES: tuple[tuple[str, float, str], ...] = (
     ("l_ankle", 0.4, "LeftFoot"),
     ("r_y_ankle", 0.4, "RightFoot"),
     ("r_ankle", 0.4, "RightFoot"),
+    ("l_r_wrist", 0.5, "LeftHand"),
+    ("l_wrist", 0.5, "LeftHand"),
+    ("r_r_wrist", 0.5, "RightHand"),
+    ("r_wrist", 0.5, "RightHand"),
 )
 _ALL_DOFS: tuple[str, ...] = tuple(name for name, _, _ in _PROBES)
 
