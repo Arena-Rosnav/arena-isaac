@@ -3,6 +3,7 @@ import re
 
 
 def sanitize_path_component(component: str) -> str:
+    component = re.sub(r'[^a-zA-Z0-9_]', '_', component)
     if component and not re.match(r'^[a-zA-Z_]', component):
         return f'_{component}'
     return component
