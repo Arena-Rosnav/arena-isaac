@@ -526,7 +526,8 @@ def main(args: list[str] | None = None):
                         # views cached in bridge graph nodes
                         from isaac_utils.graphs import rebuild_graphs
 
-                        rebuild_graphs()
+                        if not os.path.exists("/opt/arena_ws/log/earshot_no_rebuild"):
+                            rebuild_graphs()
                     world.play()
                     was_playing = True
                     if restore_time > 0.0:
