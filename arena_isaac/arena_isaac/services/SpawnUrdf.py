@@ -14,7 +14,7 @@ from pxr import Usd, UsdGeom, UsdPhysics
 import isaac_utils.graphs.joint_states as joint_states
 import isaac_utils.graphs.odom as odom
 import isaac_utils.graphs.sensors.sensors as sensors
-from isaac_utils.graphs import control
+from isaac_utils.graphs import control, physics_engine
 from isaac_utils.managers import entity_lifecycle
 from isaac_utils.utils import geom
 from isaac_utils.utils.material import Material, PhysicsParams
@@ -311,6 +311,7 @@ def spawn_urdf(request: SpawnUrdf.Request) -> str:
     prim_utils.create_prim(prim_path, "Xform", usd_path=usd_path)
 
     stage = omni.usd.get_context().get_stage()
+    stage.GetPrimAtPath(prim_path).GetVariantSet("Physics").SetVariantSelection("physics" if physics_engine() == "newton" else "physx")
 
     friction_params = _extract_gazebo_physics(urdf_path)
     for link_name, params in friction_params.items():

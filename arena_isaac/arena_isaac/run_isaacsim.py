@@ -263,23 +263,35 @@ def _newton_restore_sim_time(t: float) -> None:
         ns.sim_time += t
 
 
+_newton_mjc_scene_paths: list[str] = []
+
+
 def _newton_apply_solver_cfg() -> None:
     import isaacsim.physics.newton as newton_ext
+    from isaacsim.core.simulation_manager import NewtonMjcScene
+    from pxr import UsdPhysics
 
     ns = newton_ext.acquire_stage()
     if ns is None:
         carb.log_warn("arena: newton stage not attached yet, solver cfg not applied")
         return
-    cfg = ns.cfg.solver_cfg
-    if cfg.solver_type != "mujoco":
+    stage = omni.usd.get_context().get_stage()
+    if not _newton_mjc_scene_paths:
+        _newton_mjc_scene_paths.extend(str(prim.GetPath()) for prim in stage.Traverse() if prim.IsA(UsdPhysics.Scene) and prim.HasAPI("MjcSceneAPI"))
+    if not _newton_mjc_scene_paths:
+        carb.log_warn("arena: no MuJoCo physics scene on the stage, solver cfg not applied")
         return
-    # elliptic cone at impratio 1 can neither turn a skid-steer in place nor
-    # grip quadruped feet, 0.05 is bench-validated for both
-    cfg.cone = "pyramidal"
-    cfg.impratio = 0.05
+    for path in _newton_mjc_scene_paths:
+        scene = NewtonMjcScene(path)
+        # elliptic cone at impratio 1 can neither turn a skid-steer in place nor
+        # grip quadruped feet, 0.05 is bench-validated for both
+        scene.set_cone("pyramidal")
+        scene.set_impratio(0.05)
+    if not isinstance(ns.cfg.solver_cfg, newton_ext.MuJoCoSolverConfig):
+        ns.cfg.solver_cfg = newton_ext.MuJoCoSolverConfig()
     # mjwarp specializes its tile kernels on these sizes
-    cfg.nconmax = 400
-    cfg.njmax = 2400
+    ns.cfg.solver_cfg.nconmax = 400
+    ns.cfg.solver_cfg.njmax = 2400
 
 
 # matches Isaac's implicit default, pinned so lockstep step projections are exact
