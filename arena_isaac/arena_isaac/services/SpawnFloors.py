@@ -1,7 +1,7 @@
 import omni.usd
 from isaacsim_msgs.msg import Floor
 from isaacsim_msgs.srv import SpawnFloors
-from pxr import UsdGeom
+from pxr import Gf, UsdGeom, UsdPhysics
 
 from isaac_utils.utils.geom import Scale, Translation
 from isaac_utils.utils.material import Material, PhysicsParams
@@ -35,14 +35,13 @@ def spawn_floor(floor: Floor) -> bool:
     if material := Material.from_msg(floor.material):
         material.bind_to(prim_path)
 
-    # a thick mesh box is the only floor collider newton both holds and grips on
     collider_path = f'{prim_path}_collider'
-    create_cube(
-        prim_path=collider_path,
-        scale=Scale(x_len, y_len, _COLLIDER_THICKNESS),
-        position=Translation(pos.x, pos.y, top - _COLLIDER_THICKNESS / 2.0),
-    )
     stage = omni.usd.get_context().get_stage()
+    collider = UsdGeom.Cube.Define(stage, collider_path)
+    collider.CreateSizeAttr(1.0)
+    collider.AddTranslateOp().Set(Gf.Vec3d(pos.x, pos.y, top - _COLLIDER_THICKNESS / 2.0))
+    collider.AddScaleOp().Set(Gf.Vec3f(x_len, y_len, _COLLIDER_THICKNESS))
+    UsdPhysics.CollisionAPI.Apply(collider.GetPrim())
     UsdGeom.Imageable(stage.GetPrimAtPath(collider_path)).MakeInvisible()
 
     Material.physics(
