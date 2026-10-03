@@ -292,6 +292,8 @@ def _newton_apply_solver_cfg() -> None:
     # mjwarp specializes its tile kernels on these sizes
     ns.cfg.solver_cfg.nconmax = 400
     ns.cfg.solver_cfg.njmax = 2400
+    # odd, an even count leaves tensor-api writes such as teleports on the stale state buffer
+    ns.cfg.num_substeps = 3
 
 
 # matches Isaac's implicit default, pinned so lockstep step projections are exact
