@@ -4,7 +4,7 @@ import xml.etree.ElementTree as ET
 
 import carb
 import omni.usd
-from pxr import Usd, UsdPhysics
+from pxr import Sdf, Usd, UsdPhysics
 
 from isaac_utils.graphs import physics_engine, register_rebuilder
 
@@ -16,7 +16,7 @@ _RAD2DEG = 180.0 / math.pi
 # can't hold setpoints (gravity wins) and velocity drives can't apply force.
 # These values let the articulation actually track commands fed via TopicBasedSystem.
 _POSITION_DRIVE_STIFFNESS = 4.0e5
-_POSITION_DRIVE_DAMPING = 4.0e4
+_POSITION_DRIVE_DAMPING = 4.0e3
 _VELOCITY_DRIVE_DAMPING = 1.0e4
 # mjwarp applies velocity-actuator feedback per step, the physx-scale gain
 # (5.7e5 N m s/rad after deg conversion) explodes wheel DOFs to NaN within
@@ -25,11 +25,12 @@ _VELOCITY_DRIVE_DAMPING = 1.0e4
 _VELOCITY_DRIVE_DAMPING_NEWTON = 0.35
 _VELOCITY_DRIVE_MAX_FORCE_NEWTON = 16.0
 # physx-scale position gains saturate mjwarp's implicit integrator, newton
-# derives per-joint gains from the urdf effort limit instead: kp = 4*effort
+# derives per-joint gains from the urdf effort limit instead: kp = 8*effort
 # N m/rad, kd = kp/20, torque clamped at the effort limit
-_POSITION_DRIVE_KP_PER_EFFORT_NEWTON = 4.0
+_POSITION_DRIVE_KP_PER_EFFORT_NEWTON = 8.0
 _POSITION_DRIVE_KP_KD_RATIO_NEWTON = 20.0
 _POSITION_DRIVE_EFFORT_FALLBACK_NEWTON = 25.0
+_POSITION_DRIVE_ARMATURE_NEWTON = 0.01
 
 
 def _set_drive(joint_prim: Usd.Prim, stiffness: float, damping: float, max_force: float | None = None) -> None:
@@ -126,6 +127,7 @@ class Control:
                     effort = effort_limits.get(joint_name, _POSITION_DRIVE_EFFORT_FALLBACK_NEWTON)
                     kp = _POSITION_DRIVE_KP_PER_EFFORT_NEWTON * effort / _RAD2DEG
                     _set_drive(joint_prim, kp, kp / _POSITION_DRIVE_KP_KD_RATIO_NEWTON, max_force=effort)
+                    joint_prim.CreateAttribute('newton:armature', Sdf.ValueTypeNames.Float).Set(_POSITION_DRIVE_ARMATURE_NEWTON)
                 else:
                     _set_drive(joint_prim, _POSITION_DRIVE_STIFFNESS, _POSITION_DRIVE_DAMPING)
             else:

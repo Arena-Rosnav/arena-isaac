@@ -184,6 +184,13 @@ def sanitize_urdf_for_isaac(urdf_path: str) -> str:
         if degenerate:
             link.remove(inertial)
 
+    child_links = {child.attrib.get('link') for joint in root.iter('joint') for child in joint.iter('child')}
+    for link in root.iter('link'):
+        if link.attrib.get('name') in child_links or link.find('inertial') is not None or link.find('collision') is not None:
+            continue
+        for visual in link.findall('visual'):
+            link.remove(visual)
+
     tmp_urdf = tempfile.NamedTemporaryFile(delete=False, suffix="_sanitized.urdf", mode='w')
     tree.write(tmp_urdf.name, encoding='unicode', xml_declaration=True)
 
