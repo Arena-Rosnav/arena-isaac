@@ -13,8 +13,8 @@ magnitude, and no rotation leaking to the mirrored side.
 
 Script mode: `python3 test_bone_map_parity.py report` prints the per-DOF table,
 `python3 test_bone_map_parity.py regen` prints a BONE_MAP regenerated from the
-measured contract axes (needs xacro + human_description + rviz_utils, so run
-in-container).
+measured contract axes and rewrites arena_peds_pose's bone_map.json from it (needs
+xacro + human_description + rviz_utils, so run in-container).
 """
 
 from __future__ import annotations
@@ -29,10 +29,11 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from peds.providers.bone_map import BONE_MAP
+from peds.providers.bone_map import BONE_MAP, BoneTarget
 from peds.providers.external import ExternalPoseProvider
 
 _FIXTURE = Path(__file__).parent / "fixtures" / "skeleton_neutral.json"
+_JSON = Path(__file__).resolve().parents[3] / "utils" / "arena_peds_pose" / "arena_peds_pose" / "bone_map.json"
 
 # (wire DOF, probe angle inside JOINTS.md limits, observed CMU bone)
 _PROBES: tuple[tuple[str, float, str], ...] = (
@@ -276,6 +277,14 @@ def test_probe_table_covers_bone_map() -> None:
     assert set(_ALL_DOFS) == set(BONE_MAP)
 
 
+def _as_json(bone_map: dict[str, tuple[BoneTarget, ...]]) -> dict[str, list[dict[str, object]]]:
+    return {dof: [{"bone": t.bone, "axis": list(t.axis), "sign": t.sign, "scale": t.scale} for t in targets] for dof, targets in bone_map.items()}
+
+
+def test_bone_map_json_matches_source() -> None:
+    assert json.loads(_JSON.read_text()) == _as_json(BONE_MAP)
+
+
 def test_left_bones_are_on_the_left() -> None:
     frames = _cmu_frames(_zero_wire())
     body = _cmu_body_frame(frames)
@@ -317,25 +326,31 @@ def _report() -> None:
 
 
 def _regen() -> None:
-    """Print BONE_MAP entries rebuilt from the measured contract axes."""
+    """Print BONE_MAP rebuilt from the measured contract axes and write bone_map.json from it."""
     cmu_zero = _cmu_frames(_zero_wire())
     body = _cmu_body_frame(cmu_zero)
-    print("BONE_MAP = {")
+    rebuilt: dict[str, tuple[BoneTarget, ...]] = {}
     for dof in _ALL_DOFS:
-        targets = BONE_MAP[dof]
         probe, bone = next((p, b) for n, p, b in _PROBES if n == dof)
         m = _measure(dof, probe, bone)
         world_axis = body @ m["urdf_axis"]
+        targets = []
+        for target in BONE_MAP[dof]:
+            local = cmu_zero[target.bone][0].T @ world_axis
+            local = local / np.linalg.norm(local)
+            axis = (float(f"{local[0]:.4f}"), float(f"{local[1]:.4f}"), float(f"{local[2]:.4f}"))
+            targets.append(BoneTarget(target.bone, axis, 1.0, target.scale))
+        rebuilt[dof] = tuple(targets)
+    print("BONE_MAP = {")
+    for dof, targets in rebuilt.items():
         entries = []
         for target in targets:
-            bone_world_r = cmu_zero[target.bone][0]
-            local = bone_world_r.T @ world_axis
-            local = local / np.linalg.norm(local)
             scale = "" if target.scale == 1.0 else f", {target.scale}"
-            entries.append(f"BoneTarget({target.bone!r}, ({local[0]:.4f}, {local[1]:.4f}, {local[2]:.4f}), 1.0{scale})")
+            entries.append(f"BoneTarget({target.bone!r}, ({target.axis[0]:.4f}, {target.axis[1]:.4f}, {target.axis[2]:.4f}), 1.0{scale})")
         joined = " ".join(f"{e}," for e in entries)
         print(f"    {dof!r}: ({joined}),")
     print("}")
+    _JSON.write_text(json.dumps(_as_json(rebuilt), indent=2) + "\n")
 
 
 if __name__ == "__main__":
