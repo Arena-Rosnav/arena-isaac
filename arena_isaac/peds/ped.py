@@ -32,6 +32,7 @@ class Ped:
 
     position: np.ndarray = field(default_factory=lambda: np.zeros(3))
     orientation: np.ndarray = field(default_factory=_identity_orientation)
+    ground_z: float = -0.03
 
     MAX_EXTRAPOLATION: ClassVar[float] = 0.5
 

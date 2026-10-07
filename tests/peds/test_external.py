@@ -131,6 +131,46 @@ def test_staleness_decays_to_neutral_then_ramps_back_on_fresh_push() -> None:
     np.testing.assert_allclose(pose.rotations[0], delta, atol=1e-9)
 
 
+def test_rest_pose_shows_without_wire_and_wire_composes_onto_neutral() -> None:
+    joint_order = ("Hips", "LeftLeg", "WheelL")
+    identity = np.array([0.0, 0.0, 0.0, 1.0])
+    neutral = np.tile(identity, (3, 1))
+    rest = np.stack([identity, axis_angle_quat((1.0, 0.0, 0.0), -1.2), identity])
+    translations = np.array([[0.0, 0.0, 0.9], [0.0, 0.1, -0.4], [0.3, 0.0, 0.0]])
+    provider = ExternalPoseProvider(joint_order, neutral, translations, staleness_s=0.5, blend_s=0.3, rest_rotations=rest, rest_translations=translations)
+
+    pose = provider.evaluate(sim_time=0.0, dt=0.05)
+    np.testing.assert_allclose(pose.rotations, rest, atol=1e-9)
+
+    angle = math.pi / 4.0
+    delta = _expected_delta("l_knee", angle)
+    provider.push(0.0, ["l_knee"], [angle])
+    pose = provider.evaluate(sim_time=0.0, dt=1.0)
+    np.testing.assert_allclose(pose.rotations[1], delta, atol=1e-9)
+    np.testing.assert_allclose(pose.rotations[[0, 2]], neutral[[0, 2]], atol=1e-9)
+
+    pose = provider.evaluate(sim_time=0.6, dt=0.15)
+    np.testing.assert_allclose(pose.rotations[1], quat_slerp(rest[1][None, :], delta[None, :], 0.5)[0], atol=1e-9)
+    pose = provider.evaluate(sim_time=0.75, dt=0.15)
+    np.testing.assert_allclose(pose.rotations, rest, atol=1e-9)
+    np.testing.assert_allclose(pose.translations, translations, atol=1e-9)
+
+
+def test_rest_pose_blends_bones_the_wire_does_not_touch() -> None:
+    joint_order = ("LeftLeg", "RightLeg")
+    identity = np.array([0.0, 0.0, 0.0, 1.0])
+    neutral = np.tile(identity, (2, 1))
+    seated = axis_angle_quat((1.0, 0.0, 0.0), -1.2)
+    rest = np.stack([seated, seated])
+    provider = ExternalPoseProvider(joint_order, neutral, np.zeros((2, 3)), blend_s=0.3, rest_rotations=rest)
+
+    provider.push(0.0, ["l_knee"], [0.0])
+    pose = provider.evaluate(sim_time=0.0, dt=0.15)
+    np.testing.assert_allclose(pose.rotations, quat_slerp(rest, neutral, 0.5), atol=1e-9)
+    pose = provider.evaluate(sim_time=0.05, dt=0.15)
+    np.testing.assert_allclose(pose.rotations, neutral, atol=1e-9)
+
+
 def test_unknown_names_ignored_without_error_or_output(capsys: pytest.CaptureFixture[str]) -> None:
     provider = _provider(("LeftLeg",))
 
@@ -200,3 +240,28 @@ def test_waist_distributes_over_spine_chain() -> None:
         assert target.bone == joint_order[i]
         expected = axis_angle_quat(target.axis, target.sign * target.scale * angle)
         np.testing.assert_allclose(pose.rotations[i], expected, atol=1e-9)
+
+
+def _rotated(quat: np.ndarray, vector: tuple[float, float, float]) -> np.ndarray:
+    conjugate = quat * np.array([-1.0, -1.0, -1.0, 1.0])
+    return quat_multiply(quat_multiply(quat, np.array([*vector, 0.0])), conjugate)[:3]
+
+
+def test_wheel_joints_roll_their_bones_forward_through_whole_turns() -> None:
+    provider = _provider(("Hips", "Hips/WheelL", "Hips/WheelR"))
+
+    provider.push(0.0, ["l_wheel", "r_wheel"], [3.0 * math.tau + 0.5, -0.25])
+    pose = provider.evaluate(sim_time=0.0, dt=1.0)
+
+    np.testing.assert_allclose(_rotated(pose.rotations[1], (0.0, 0.0, 1.0)), [math.sin(0.5), 0.0, math.cos(0.5)], atol=1e-9)
+    np.testing.assert_allclose(_rotated(pose.rotations[2], (0.0, 0.0, 1.0)), [-math.sin(0.25), 0.0, math.cos(0.25)], atol=1e-9)
+    np.testing.assert_allclose(pose.rotations[0], [0.0, 0.0, 0.0, 1.0], atol=1e-9)
+
+
+def test_wheel_joints_leave_a_skeleton_without_wheel_bones_at_neutral() -> None:
+    provider = _provider(("Hips", "Hips/LeftUpLeg"))
+
+    provider.push(0.0, ["l_wheel", "r_wheel"], [4.0, 4.0])
+    pose = provider.evaluate(sim_time=0.0, dt=1.0)
+
+    np.testing.assert_allclose(pose.rotations, np.tile([0.0, 0.0, 0.0, 1.0], (2, 1)), atol=1e-9)

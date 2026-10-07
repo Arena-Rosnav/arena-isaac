@@ -137,6 +137,8 @@ class ExternalPoseProvider:
         maxlen: int = 32,
         staleness_s: float = 0.5,
         blend_s: float = 0.3,
+        rest_rotations: np.ndarray | None = None,
+        rest_translations: np.ndarray | None = None,
     ) -> None:
         self._staleness_s = staleness_s
         self._blend_s = blend_s
@@ -145,6 +147,9 @@ class ExternalPoseProvider:
 
         self._neutral_rotations = quat_normalize(np.asarray(neutral_rotations, dtype=float).reshape(len(joint_order), 4))
         self._neutral_translations = np.asarray(neutral_translations, dtype=float).reshape(len(joint_order), 3)
+        self._rest_rotations = self._neutral_rotations if rest_rotations is None else quat_normalize(np.asarray(rest_rotations, dtype=float).reshape(len(joint_order), 4))
+        self._rest_translations = self._neutral_translations if rest_translations is None else np.asarray(rest_translations, dtype=float).reshape(len(joint_order), 3)
+        self._rest_bones = np.flatnonzero(np.any(self._rest_rotations != self._neutral_rotations, axis=1))
 
         bone_index: dict[str, int] = {}
         for i, name in enumerate(joint_order):
@@ -186,16 +191,16 @@ class ExternalPoseProvider:
 
         self._buffer.append(stamp_sec, angles)
 
-    def _neutral_pose(self) -> JointPose:
-        return JointPose(rotations=self._neutral_rotations.copy(), translations=self._neutral_translations.copy())
+    def _rest_pose(self) -> JointPose:
+        return JointPose(rotations=self._rest_rotations.copy(), translations=self._rest_translations.copy())
 
     def evaluate(self, sim_time: float, dt: float) -> JointPose:
-        """Blend mapped bones from the neutral stance toward the buffered wire angles."""
-        neutral_pose = self._neutral_pose()
+        """Blend from the rest pose toward the buffered wire angles composed onto the neutral stance."""
+        rest_pose = self._rest_pose()
 
         if self._buffer.newest_stamp is None:
             self._weight = 0.0
-            return neutral_pose
+            return rest_pose
 
         stale = self._buffer.staleness(sim_time) > self._staleness_s
         target_weight = 0.0 if stale else 1.0
@@ -206,15 +211,15 @@ class ExternalPoseProvider:
             self._weight = max(target_weight, self._weight - step)
 
         if self._weight <= 0.0:
-            return neutral_pose
+            return rest_pose
 
         interp_delay = _INTERP_DELAY_PERIODS * self._buffer.recent_period()
         angles = self._buffer.evaluate(sim_time - interp_delay)
         if angles is None:
-            return neutral_pose
+            return rest_pose
 
-        rotations = neutral_pose.rotations
-        overridden = rotations.copy()
+        rotations = rest_pose.rotations
+        overridden = self._neutral_rotations.copy()
         touched: list[int] = []
         seen: set[int] = set()
         for k in range(self._schema_bone_idx.shape[0]):
@@ -227,11 +232,12 @@ class ExternalPoseProvider:
                 touched.append(bone_idx)
                 seen.add(bone_idx)
 
-        if touched:
-            idx_arr = np.asarray(touched, dtype=int)
-            rotations[idx_arr] = quat_slerp(self._neutral_rotations[idx_arr], overridden[idx_arr], self._weight)
+        idx_arr = np.union1d(np.asarray(touched, dtype=int), self._rest_bones)
+        if idx_arr.size:
+            rotations[idx_arr] = quat_slerp(self._rest_rotations[idx_arr], overridden[idx_arr], self._weight)
 
-        return JointPose(rotations=rotations, translations=neutral_pose.translations)
+        translations = self._rest_translations + self._weight * (self._neutral_translations - self._rest_translations)
+        return JointPose(rotations=rotations, translations=translations)
 
     def reset_phase(self) -> None:
         self._buffer.clear()

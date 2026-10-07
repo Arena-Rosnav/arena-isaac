@@ -35,7 +35,7 @@ _ROUGHNESS_BOUNDS = (0.05, 1.0)
 
 # Bump whenever convert_actor's output changes shape, cache.py salts its digest
 # with this so stale disk caches rebuild instead of serving old geometry.
-CONVERTER_VERSION = 6
+CONVERTER_VERSION = 7
 
 
 @dataclass(eq=False)
@@ -45,14 +45,16 @@ class ActorSpec:
     name: str
     skin_uri: str
     clips: dict[str, str]  # clip name -> mesh URI
+    ground_z: float | None = None  # z of the actor <pose>, None = the SDF sets no pose
 
     @property
     def consumed_uris(self) -> list[str]:
-        """Unique source URIs the conversion reads: the skin, then the idle clip."""
+        """Unique source URIs the conversion reads: the skin, then the idle and neutral clips."""
         ordered = [self.skin_uri]
-        idle = self.clips.get("idle")
-        if idle is not None and idle not in ordered:
-            ordered.append(idle)
+        for clip in ("idle", "neutral"):
+            uri = self.clips.get(clip)
+            if uri is not None and uri not in ordered:
+                ordered.append(uri)
         return ordered
 
 
@@ -138,7 +140,9 @@ def parse_actor(sdf_path: str) -> ActorSpec:
         if not clip_name or filename is None or not filename.text:
             raise ValueError(f"actor {name} has an <animation> without name/filename")
         clips[clip_name] = _resolve_uri(filename.text.strip(), sdf_dir)
-    return ActorSpec(name=name, skin_uri=_resolve_uri(skin_el.text.strip(), sdf_dir), clips=clips)
+    pose_el = actor.find("pose")
+    ground_z = float(pose_el.text.split()[2]) if pose_el is not None and pose_el.text else None
+    return ActorSpec(name=name, skin_uri=_resolve_uri(skin_el.text.strip(), sdf_dir), clips=clips, ground_z=ground_z)
 
 
 def parse_actor_sdf(sdf_path: str) -> dict[str, str]:
@@ -733,8 +737,9 @@ def convert_actor(sdf_path: str, dae_paths: dict[str, str], out_dir: str | pathl
     """Author character.usda and meta.json into out_dir.
 
     dae_paths maps each consumed SDF URI to a local file. The skeleton and the
-    skinned meshes come from the skin DAE, the neutral stance from the idle
-    clip's first frame. Other clips are not read, the runtime renders the wire.
+    skinned meshes come from the skin DAE, the rest pose from the idle clip's
+    first frame, the neutral stance from the neutral clip's first frame (the
+    idle one when the actor has no neutral clip). Other clips are not read.
     """
     out = pathlib.Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -746,20 +751,27 @@ def convert_actor(sdf_path: str, dae_paths: dict[str, str], out_dir: str | pathl
     materials = _parse_materials(skin_doc)
     _author_character(out, joints, skinned, materials)
 
-    idle_uri = spec.clips.get("idle")
-    if idle_uri is None:
-        raise ValueError(f"actor {spec.name} has no idle animation to take the neutral stance from")
-    idle_path = dae_paths[idle_uri]
-    if not idle_path.lower().endswith(".dae"):
-        raise ValueError(f"actor {spec.name} idle clip {idle_path} is not COLLADA, regenerate the bundle")
-    rotations, translations = _neutral_pose(joints, _parse_animations(_Collada(idle_path)))
+    def first_frame(clip: str) -> tuple[list[list[float]], list[list[float]]] | None:
+        uri = spec.clips.get(clip)
+        if uri is None:
+            return None
+        path = dae_paths[uri]
+        if not path.lower().endswith(".dae"):
+            raise ValueError(f"actor {spec.name} {clip} clip {path} is not COLLADA, regenerate the bundle")
+        return _neutral_pose(joints, _parse_animations(_Collada(path)))
+
+    rest = first_frame("idle")
+    if rest is None:
+        raise ValueError(f"actor {spec.name} has no idle animation to take the rest pose from")
+    neutral = first_frame("neutral") or rest
 
     meta: dict[str, object] = {
         "actor": spec.name,
         "up_axis": "Z",
         "meters_per_unit": 1.0,
         "joints": [joint.path for joint in joints],
-        "neutral": {"rotations_xyzw": rotations, "translations": translations},
+        "neutral": {"rotations_xyzw": neutral[0], "translations": neutral[1]},
+        "rest": {"rotations_xyzw": rest[0], "translations": rest[1]},
     }
     (out / "meta.json").write_text(json.dumps(meta, indent=2))
     return spec

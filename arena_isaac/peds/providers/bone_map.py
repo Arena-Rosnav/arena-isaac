@@ -74,4 +74,6 @@ BONE_MAP: dict[str, tuple[BoneTarget, ...]] = {
     "l_wrist": (BoneTarget("LeftHand", (0.1229, -0.2923, 0.9484), 1.0),),  # L wrist, positive extension
     "r_r_wrist": (BoneTarget("RightHand", (0.1961, -0.9596, -0.2018), 1.0),),  # R forearm pronation, rendered on the hand
     "r_wrist": (BoneTarget("RightHand", (0.1261, 0.2288, -0.9653), 1.0),),  # R wrist, positive extension
+    "l_wheel": (BoneTarget("WheelL", (0.0, 1.0, 0.0), 1.0),),  # L wheel roll, positive forward (rig.yaml driver)
+    "r_wheel": (BoneTarget("WheelR", (0.0, 1.0, 0.0), 1.0),),  # R wheel roll, positive forward (rig.yaml driver)
 }

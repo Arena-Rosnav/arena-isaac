@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import pathlib
+
 import numpy as np
 import pytest
 
+from peds.convert import parse_actor
 from peds.ped import Ped
 from peds.providers.base import JointPose
 
@@ -128,3 +131,18 @@ def test_teleport_resets_gait_phase_when_provider_supports_it() -> None:
 def test_teleport_without_resettable_provider_does_not_error() -> None:
     ped = _ped()
     ped.teleport(position=[0.0, 0.0, 0.0], orientation=[0.0, 0.0, 0.0, 1.0])
+
+
+def _actor_sdf(tmp_path: pathlib.Path, pose: str) -> str:
+    sdf = tmp_path / "actor.sdf"
+    sdf.write_text(f'<sdf version="1.9"><actor name="a">{pose}<skin><filename>skin.dae</filename></skin></actor></sdf>')
+    return str(sdf)
+
+
+def test_parse_actor_reads_the_pose_height(tmp_path: pathlib.Path) -> None:
+    assert parse_actor(_actor_sdf(tmp_path, "<pose>0 0 -0.3316 0 0 0</pose>")).ground_z == -0.3316
+    assert parse_actor(_actor_sdf(tmp_path, "")).ground_z is None
+
+
+def test_ped_ground_height_defaults_to_the_standing_offset() -> None:
+    assert Ped(sim_path="p", prim_path="/World/p", provider=_StaticProvider()).ground_z == -0.03

@@ -20,6 +20,7 @@ from pxr import Gf, Sdf, Usd, UsdSkel, Vt
 from isaac_utils.utils.path import world_path
 from isaac_utils.utils.prim import ensure_path
 from peds.cache import convert_cached
+from peds.convert import parse_actor
 from peds.ped import Ped
 from peds.providers.external import ExternalPoseProvider
 from peds.registry import PedRegistry
@@ -55,14 +56,20 @@ class PedRuntime:
         neutral_rotations = np.asarray(meta["neutral"]["rotations_xyzw"], dtype=float)
         neutral_translations = np.asarray(meta["neutral"]["translations"], dtype=float)
 
-        provider = ExternalPoseProvider(joint_order, neutral_rotations, neutral_translations)
+        rest = meta.get("rest", meta["neutral"])
+        rest_rotations = np.asarray(rest["rotations_xyzw"], dtype=float)
+        rest_translations = np.asarray(rest["translations"], dtype=float)
+        provider = ExternalPoseProvider(joint_order, neutral_rotations, neutral_translations, rest_rotations=rest_rotations, rest_translations=rest_translations)
 
         prim_path = world_path(name)
         ensure_path(os.path.dirname(prim_path))
         create_prim(prim_path, "Xform", usd_path=str(cache_dir / "character.usda"))
-        self._author_animation(prim_path, joint_order, neutral_translations)
+        self._author_animation(prim_path, joint_order, rest_translations)
 
         ped = Ped(sim_path=name, prim_path=prim_path, provider=provider)
+        ground_z = parse_actor(model_source).ground_z
+        if ground_z is not None:
+            ped.ground_z = ground_z
         ped.teleport(np.asarray(position, dtype=float), np.asarray(orientation, dtype=float))
 
         self._registry.spawn(name, ped)

@@ -79,6 +79,7 @@ _PROBES: tuple[tuple[str, float, str], ...] = (
     ("r_wrist", 0.5, "RightHand"),
 )
 _ALL_DOFS: tuple[str, ...] = tuple(name for name, _, _ in _PROBES)
+_DRIVEN: tuple[str, ...] = ("l_wheel", "r_wheel")
 
 
 def _quat_to_mat(q: np.ndarray) -> np.ndarray:
@@ -274,7 +275,8 @@ def _measure(dof: str, probe: float, bone: str) -> dict[str, object]:
 
 
 def test_probe_table_covers_bone_map() -> None:
-    assert set(_ALL_DOFS) == set(BONE_MAP)
+    assert set(_ALL_DOFS) | set(_DRIVEN) == set(BONE_MAP)
+    assert not set(_ALL_DOFS) & set(_DRIVEN)
 
 
 def _as_json(bone_map: dict[str, tuple[BoneTarget, ...]]) -> dict[str, list[dict[str, object]]]:
@@ -341,6 +343,7 @@ def _regen() -> None:
             axis = (float(f"{local[0]:.4f}"), float(f"{local[1]:.4f}"), float(f"{local[2]:.4f}"))
             targets.append(BoneTarget(target.bone, axis, 1.0, target.scale))
         rebuilt[dof] = tuple(targets)
+    rebuilt.update({dof: BONE_MAP[dof] for dof in _DRIVEN})
     print("BONE_MAP = {")
     for dof, targets in rebuilt.items():
         entries = []
