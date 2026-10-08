@@ -9,7 +9,7 @@ import isaacsim.core.utils.prims as prim_utils
 import omni.usd
 from isaacsim.asset.importer.urdf import URDFImporter, URDFImporterConfig
 from isaacsim_msgs.srv import SpawnUrdf
-from pxr import Usd, UsdGeom, UsdPhysics
+from pxr import Sdf, Usd, UsdGeom, UsdPhysics
 
 import isaac_utils.graphs.joint_states as joint_states
 import isaac_utils.graphs.odom as odom
@@ -20,11 +20,14 @@ from isaac_utils.utils import geom
 from isaac_utils.utils.material import Material, PhysicsParams
 from isaac_utils.utils.path import world_path
 from isaac_utils.utils.prim import ensure_path
+from isaac_utils.utils.rollers import expand_roller_wheels
 
 from .utils import Service, on_exception
 
 parent_dir = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(parent_dir))
+
+_ROLLER_ARMATURE_NEWTON = 1.0e-4
 
 
 def _resolve_articulation_prim(prim_path: str, base_frame: str) -> str:
@@ -90,10 +93,11 @@ def _resolve_body_prim(robot_prim: str, articulation_prim: str) -> str:
     return str(min(candidates, key=_offset).GetPath())
 
 
-def sanitize_urdf_for_isaac(urdf_path: str) -> str:
+def sanitize_urdf_for_isaac(urdf_path: str) -> tuple[str, list[str]]:
     # usd hates dashes in names, so i hate usd
     tree = ET.parse(urdf_path)
     root = tree.getroot()
+    roller_joints = [name.replace('-', '_') for name in expand_roller_wheels(root)]
 
     link_name_map: dict[str, str] = {}
     joint_name_map: dict[str, str] = {}
@@ -194,7 +198,7 @@ def sanitize_urdf_for_isaac(urdf_path: str) -> str:
     tmp_urdf = tempfile.NamedTemporaryFile(delete=False, suffix="_sanitized.urdf", mode='w')
     tree.write(tmp_urdf.name, encoding='unicode', xml_declaration=True)
 
-    return tmp_urdf.name
+    return tmp_urdf.name, roller_joints
 
 
 def _extract_gazebo_physics(urdf_path: str) -> dict[str, PhysicsParams]:
@@ -300,7 +304,7 @@ def spawn_urdf(request: SpawnUrdf.Request) -> str:
 
     prim_path = world_path(name)
 
-    urdf_path = sanitize_urdf_for_isaac(urdf_path)
+    urdf_path, roller_joints = sanitize_urdf_for_isaac(urdf_path)
 
     import_config = URDFImporterConfig(
         urdf_path=urdf_path,
@@ -319,6 +323,11 @@ def spawn_urdf(request: SpawnUrdf.Request) -> str:
 
     stage = omni.usd.get_context().get_stage()
     stage.GetPrimAtPath(prim_path).GetVariantSet("Physics").SetVariantSelection("physics" if physics_engine() == "newton" else "physx")
+
+    if roller_joints and physics_engine() == "newton":
+        for prim in Usd.PrimRange(stage.GetPrimAtPath(prim_path)):
+            if prim.IsA(UsdPhysics.Joint) and prim.GetName() in roller_joints:
+                prim.CreateAttribute('newton:armature', Sdf.ValueTypeNames.Float).Set(_ROLLER_ARMATURE_NEWTON)
 
     friction_params = _extract_gazebo_physics(urdf_path)
     for link_name, params in friction_params.items():
