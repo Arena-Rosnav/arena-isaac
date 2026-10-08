@@ -64,13 +64,11 @@ class SensorLidar(SensorBase):
         range: Range
         noise: Noise
         topic: str = attrs.field(validator=attrs.validators.instance_of(str))
-        update_rate: float = attrs.field(converter=attrs.converters.optional(float), default=1.0)
 
         @classmethod
         def parse(cls, config: ET.Element) -> SensorLidar.Config:
             return cls(
                 topic=config.findtext("./topic") or config.findtext(".//topic") or config.findtext(".//topicName") or 'lidar',
-                update_rate=float(config.findtext(".//update_rate") or 1.0),
                 horizontal=SensorLidar.Config.Dimension(
                     samples=int(config.findtext(".//scan/horizontal/samples") or 1),
                     resolution=float(config.findtext(".//scan/horizontal/resolution") or 1.0),
@@ -137,7 +135,9 @@ class SensorLidar(SensorBase):
                 config=config_name,
                 translations=[list(self.translation.tuple())],
                 orientations=[list(self.rotation.quat())],
-                tick_rate=float(max(1e-3, self.config.update_rate)),
+                # isaac 6.1 engine limitation, rtx laserscan stays empty unless every lidar
+                # ticks at the presets' 10 hz, so the urdf update_rate is ignored
+                tick_rate=None,
             )
         except Exception as error:
             carb.log_warn(f"Lidar create failed for '{self.name}' at '{prim_path}': {error}")
@@ -163,13 +163,14 @@ class SensorLidar(SensorBase):
         carb.log_warn(f"lidar '{self.name}': minReflectanceRange attribute not found, available: {available}")
 
     def _apply_scan_pattern(self, prim: Usd.Prim) -> None:
-        """Override the preset firing pattern with the URDF scan block.
+        """Override the preset firing pattern with the URDF scan block, keeping the preset's scan rate.
 
         The OmniLidar pattern attribute names are undocumented, so each value is
         resolved through candidate names, a miss logs the prim's sensor attributes
         so the table can be corrected from one live run.
         """
         horizontal = self.config.horizontal
+        rate = float(prim.GetAttribute('omni:sensor:Core:scanRateBaseHz').Get())
         span = float(horizontal.max_angle) - float(horizontal.min_angle)
         if span <= 0.0:
             carb.log_warn(f"lidar '{self.name}': non-positive azimuth span, keeping preset pattern")
@@ -190,8 +191,8 @@ class SensorLidar(SensorBase):
         overrides: list[tuple[tuple[str, ...], float]] = [
             (('omni:sensor:Core:startAzimuthDeg', 'omni:sensor:Core:validStartAzimuthDeg'), start_deg),
             (('omni:sensor:Core:endAzimuthDeg', 'omni:sensor:Core:validEndAzimuthDeg'), end_deg),
-            (('omni:sensor:Core:rotationRateHz', 'omni:sensor:Core:scanRateBaseHz'), float(self.config.update_rate)),
-            (('omni:sensor:Core:reportRateBaseHz',), per_revolution * float(self.config.update_rate)),
+            (('omni:sensor:Core:rotationRateHz', 'omni:sensor:Core:scanRateBaseHz'), rate),
+            (('omni:sensor:Core:reportRateBaseHz',), per_revolution * rate),
         ]
         missing: list[str] = []
         for candidates, value in overrides:
