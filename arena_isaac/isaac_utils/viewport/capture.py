@@ -39,6 +39,11 @@ class CaptureRequest:
         self.message = message
         self.done.set()
 
+    def due(self, sim_time: float | None) -> bool:
+        """The sim has reached the request's min_sim_time."""
+        # a microsecond of slack: min_sim_time arrives as ns, sim_time is the tick's double
+        return self.min_sim_time <= 0.0 or (sim_time is not None and sim_time + 1e-6 >= self.min_sim_time)
+
 
 def _capsule_pointer(buffer: object, size: int) -> ctypes.Array:
     """The renderer hands the pixels over as a PyCapsule around a raw pointer."""
@@ -98,8 +103,7 @@ class CaptureQueue:
 
     def serve(self, request: CaptureRequest, sim_time: float | None, frame_id: str, place: Callable[[Pose, bool, float], None]) -> None:
         """Advance the request by one render-loop frame: gate, pose, settle, grab."""
-        # a microsecond of slack: min_sim_time arrives as ns, sim_time is the tick's double
-        if request.min_sim_time > 0.0 and (sim_time is None or sim_time + 1e-6 < request.min_sim_time):
+        if not request.due(sim_time):
             return
         if not request.posed:
             place(request.local, request.world_orientation, request.fov)

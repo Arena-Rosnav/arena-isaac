@@ -17,6 +17,7 @@ import rclpy.executors
 import rclpy.node
 import rclpy.time
 import tf2_ros
+from arena_runtime_msgs.msg import LockstepStatus
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from viewport_control_msgs.msg import ViewportView
 from viewport_control_msgs.srv import ViewportCapture, ViewportSetProjection, ViewportSetReferenceFrame, ViewportSetView
@@ -33,6 +34,7 @@ PUBLISH_EVERY_N_FRAMES = 6
 
 # deep enough that every keyframe reaches the buffer, not just the latest
 STREAM_QOS = QoSProfile(depth=64, history=HistoryPolicy.KEEP_LAST, reliability=ReliabilityPolicy.BEST_EFFORT, durability=DurabilityPolicy.VOLATILE)
+LATCHED_QOS = QoSProfile(depth=1, history=HistoryPolicy.KEEP_LAST, durability=DurabilityPolicy.TRANSIENT_LOCAL)
 
 
 def _pose(msg: geometry_msgs.msg.Pose) -> Pose:
@@ -52,12 +54,14 @@ class ViewportNode:
         self._frames = 0
         self._warned_entity = ""
         self._resolved_entity = ""
+        self._ungated_run = False
 
         node.create_service(ViewportSetView, f"{NAMESPACE}/set_view", self._cb_set_view)
         node.create_service(ViewportSetReferenceFrame, f"{NAMESPACE}/set_reference_frame", self._cb_set_reference_frame)
         node.create_service(ViewportSetProjection, f"{NAMESPACE}/set_projection", self._cb_set_projection)
         node.create_subscription(ViewportView, f"{NAMESPACE}/cmd_view", self._cb_cmd_view, STREAM_QOS)
         self._pose_pub = node.create_publisher(geometry_msgs.msg.PoseStamped, f"{NAMESPACE}/camera_pose", 10)
+        node.create_subscription(LockstepStatus, "/arena/state/lockstep", self._cb_lockstep, LATCHED_QOS)
 
         self._captures = CaptureQueue()
         self._side_node = rclpy.node.Node("arena_viewport_side")
@@ -108,6 +112,9 @@ class ViewportNode:
             response.image = pending.image
         return response
 
+    def _cb_lockstep(self, msg: LockstepStatus) -> None:
+        self._ungated_run = msg.active and msg.ungated
+
     def _cb_cmd_view(self, msg: ViewportView) -> None:
         keyframe = Keyframe(
             time=rclpy.time.Time.from_msg(msg.target_time).nanoseconds * 1e-9,
@@ -149,6 +156,14 @@ class ViewportNode:
             x, y, z = pose.position
             self._node.get_logger().info(f"tracking '{entity}' via {source}, now at ({x:.2f}, {y:.2f}, {z:.2f})")
         self._controller.set_reference_target(pose)
+
+    @property
+    def capture_due(self) -> bool:
+        """A capture is past its sim-time gate and no ungated lockstep run can step the sim under it."""
+        if self._ungated_run:
+            return False
+        pending = self._captures.peek()
+        return pending is not None and pending.due(self._node.sim_time)
 
     def apply(self) -> None:
         """Drive the camera for one frame."""

@@ -567,7 +567,7 @@ def main(args: list[str] | None = None):
                     controller.consume_step()
                     last_step_at = time.monotonic()
                     stepped_this_iteration = True
-            elif was_playing and time.monotonic() - last_step_at < _IDLE_GRACE_S:
+            elif was_playing and time.monotonic() - last_step_at < _IDLE_GRACE_S and not (viewport is not None and PHYSICS_ENGINE != "newton" and viewport.capture_due):
                 controller.repeat_clock()
                 time.sleep(0.002)
                 continue
