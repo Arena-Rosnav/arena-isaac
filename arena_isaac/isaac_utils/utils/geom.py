@@ -17,6 +17,7 @@ from isaac_utils.graphs import physics_engine
 from isaac_utils.utils.prim import resolve_paths, resolve_prim
 
 _robot_articulation_registry: dict[str, str] = {}
+_robot_root_offsets: dict[str, Gf.Matrix4d] = {}
 _robot_articulation_registry_lock = threading.RLock()
 
 
@@ -28,8 +29,14 @@ def register_robot(robot_prim_path: str, articulation_prim_path: str):
     robot_path = _normalize_prim_path(robot_prim_path)
     articulation_path = _normalize_prim_path(articulation_prim_path)
 
+    robot = resolve_prim(robot_path)
+    articulation = resolve_prim(articulation_path)
+    cache = UsdGeom.XformCache()
+
     with _robot_articulation_registry_lock:
         _robot_articulation_registry[robot_path] = articulation_path
+        if robot is not None and articulation is not None:
+            _robot_root_offsets[robot_path] = cache.GetLocalToWorldTransform(articulation.prims[0]) * cache.GetLocalToWorldTransform(robot.prims[0]).GetInverse()
 
 
 def unregister_robot(prim_path: str):
@@ -37,9 +44,11 @@ def unregister_robot(prim_path: str):
 
     with _robot_articulation_registry_lock:
         _robot_articulation_registry.pop(normalized_path, None)
+        _robot_root_offsets.pop(normalized_path, None)
         to_remove = [robot_path for robot_path, articulation_path in _robot_articulation_registry.items() if articulation_path == normalized_path]
         for robot_path in to_remove:
             _robot_articulation_registry.pop(robot_path, None)
+            _robot_root_offsets.pop(robot_path, None)
 
 
 def _resolve_robot(prim_path: str) -> str:
@@ -232,6 +241,8 @@ def move(
     rotation: Rotation | None = None,
     local: bool = False,
 ):
+    with _robot_articulation_registry_lock:
+        offset = _robot_root_offsets.get(_normalize_prim_path(prim_path))
     prim_path = _resolve_robot(prim_path)
     prim = resolve_prim(prim_path)
     if prim is None:
@@ -252,6 +263,11 @@ def move(
 
     positions = np.array(np.atleast_2d(translation.tuple())) if translation is not None else None
     orientations = np.array(np.atleast_2d(rotation.quat())) if rotation is not None else None
+    if offset is not None and positions is not None and orientations is not None and not local:
+        root = offset * Gf.Matrix4d().SetTransform(Gf.Rotation(Gf.Quatd(*orientations[0])), Gf.Vec3d(*positions[0]))
+        quat = root.ExtractRotationQuat().GetNormalized()
+        positions = np.array([list(root.ExtractTranslation())])
+        orientations = np.array([[quat.GetReal(), *quat.GetImaginary()]])
 
     def write(target: Articulation | RigidPrim | XformPrim) -> None:
         if local:

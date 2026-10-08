@@ -21,8 +21,8 @@ def spawn_floor(floor: Floor) -> bool:
     y_len = floor.y_length
     height = 0.01
     pos = Translation.parse(floor.pos)
-    top = pos.z + height
-    pos.z += height / 2.0
+    top = pos.z
+    pos.z -= height / 2.0
 
     scale = Scale(x_len, y_len, height)
     create_cube(

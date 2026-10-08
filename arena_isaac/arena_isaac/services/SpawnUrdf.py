@@ -9,7 +9,7 @@ import isaacsim.core.utils.prims as prim_utils
 import omni.usd
 from isaacsim.asset.importer.urdf import URDFImporter, URDFImporterConfig
 from isaacsim_msgs.srv import SpawnUrdf
-from pxr import Sdf, Usd, UsdGeom, UsdPhysics
+from pxr import Gf, Sdf, Usd, UsdGeom, UsdPhysics
 
 import isaac_utils.graphs.joint_states as joint_states
 import isaac_utils.graphs.odom as odom
@@ -28,6 +28,8 @@ parent_dir = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(parent_dir))
 
 _ROLLER_ARMATURE_NEWTON = 1.0e-4
+_ROLLER_SOLREF_NEWTON = (0.004, 1.0)
+_ROLLER_SOLIMP_NEWTON = [0.99, 0.999, 0.001, 0.5, 2.0]
 
 
 def _resolve_articulation_prim(prim_path: str, base_frame: str) -> str:
@@ -325,9 +327,13 @@ def spawn_urdf(request: SpawnUrdf.Request) -> str:
     stage.GetPrimAtPath(prim_path).GetVariantSet("Physics").SetVariantSelection("physics" if physics_engine() == "newton" else "physx")
 
     if roller_joints and physics_engine() == "newton":
+        roller_links = {name.removesuffix('_joint') for name in roller_joints}
         for prim in Usd.PrimRange(stage.GetPrimAtPath(prim_path)):
             if prim.IsA(UsdPhysics.Joint) and prim.GetName() in roller_joints:
                 prim.CreateAttribute('newton:armature', Sdf.ValueTypeNames.Float).Set(_ROLLER_ARMATURE_NEWTON)
+            elif prim.HasAPI(UsdPhysics.CollisionAPI) and prim.GetParent().GetName() in roller_links:
+                prim.CreateAttribute('mjc:solref', Sdf.ValueTypeNames.Double2).Set(Gf.Vec2d(*_ROLLER_SOLREF_NEWTON))
+                prim.CreateAttribute('mjc:solimp', Sdf.ValueTypeNames.DoubleArray).Set(_ROLLER_SOLIMP_NEWTON)
 
     friction_params = _extract_gazebo_physics(urdf_path)
     for link_name, params in friction_params.items():
