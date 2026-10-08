@@ -9,6 +9,7 @@ from collections.abc import Callable
 import attrs
 import carb
 import numpy as np
+import omni.kit.app
 import sensor_msgs.msg
 from builtin_interfaces.msg import Time
 from omni.kit.viewport.utility import capture_viewport_to_buffer, get_active_viewport
@@ -26,12 +27,13 @@ class CaptureRequest:
     local: Pose
     world_orientation: bool
     fov: float
+    clip_near: float
     min_sim_time: float  # 0 = no constraint
     done: threading.Event = attrs.field(factory=threading.Event)
     image: sensor_msgs.msg.Image | None = None
     message: str = ""
     posed: bool = False
-    settle: int = SETTLE_FRAMES
+    posed_at: int = 0  # app update number at posing
     scheduled: bool = False
 
     def finish(self, image: sensor_msgs.msg.Image | None, message: str) -> None:
@@ -101,16 +103,17 @@ class CaptureQueue:
             if self._pending is request:
                 self._pending = None
 
-    def serve(self, request: CaptureRequest, sim_time: float | None, frame_id: str, place: Callable[[Pose, bool, float], None]) -> None:
+    def serve(self, request: CaptureRequest, sim_time: float | None, frame_id: str, place: Callable[[Pose, bool, float, float], None]) -> None:
         """Advance the request by one render-loop frame: gate, pose, settle, grab."""
         if not request.due(sim_time):
             return
+        update = omni.kit.app.get_app().get_update_number()
         if not request.posed:
-            place(request.local, request.world_orientation, request.fov)
+            place(request.local, request.world_orientation, request.fov, request.clip_near)
             request.posed = True
+            request.posed_at = update
             return
-        if request.settle > 0:
-            request.settle -= 1
+        if update - request.posed_at < SETTLE_FRAMES:
             return
         if request.scheduled:
             return

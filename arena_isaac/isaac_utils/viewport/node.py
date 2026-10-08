@@ -78,7 +78,7 @@ class ViewportNode:
     def _cb_set_view(self, request: ViewportSetView.Request, response: ViewportSetView.Response) -> ViewportSetView.Response:
         eye = (request.eye.x, request.eye.y, request.eye.z)
         target = (request.target.x, request.target.y, request.target.z)
-        self._controller.set_view(eye, target, request.fov)
+        self._controller.set_view(eye, target, request.fov, request.clip_near)
         response.success = True
         response.message = "ok"
         return response
@@ -100,6 +100,7 @@ class ViewportNode:
             local=_pose(request.pose),
             world_orientation=request.world_orientation,
             fov=request.fov,
+            clip_near=request.clip_near,
             min_sim_time=rclpy.time.Time.from_msg(request.min_sim_time).nanoseconds * 1e-9,
         )
         self._captures.submit(pending)
@@ -121,6 +122,7 @@ class ViewportNode:
             local=_pose(msg.pose),
             world_orientation=msg.world_orientation,
             fov=msg.fov,
+            clip_near=msg.clip_near,
         )
         self._controller.push_keyframe(keyframe, self._now())
 
@@ -184,6 +186,8 @@ class ViewportNode:
             self._backend.set_projection(frame.projection)
         if frame.fov is not None and frame.fov > 0.0:
             self._backend.set_hfov(frame.fov)
+        if frame.clip_near != 0.0:
+            self._backend.set_clip_near(frame.clip_near)
         if frame.pose is not None:
             self._backend.set_world_pose(frame.pose)
 

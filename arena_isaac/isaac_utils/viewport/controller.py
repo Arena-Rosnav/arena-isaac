@@ -157,6 +157,7 @@ class Keyframe:
     local: Pose
     world_orientation: bool
     fov: float  # <= 0 leaves the fov unchanged
+    clip_near: float = 0.0  # 0 leaves it unchanged, < 0 restores the default
 
 
 @attrs.define
@@ -164,6 +165,7 @@ class Sample:
     local: Pose
     world_orientation: bool
     fov: float
+    clip_near: float
 
 
 def sample_buffer(buffer: deque[Keyframe], now: float) -> Sample | None:
@@ -173,10 +175,10 @@ def sample_buffer(buffer: deque[Keyframe], now: float) -> Sample | None:
         return None
     if now <= buffer[0].time:
         head = buffer[0]
-        return Sample(head.local, head.world_orientation, head.fov)
+        return Sample(head.local, head.world_orientation, head.fov, head.clip_near)
     if now >= buffer[-1].time:
         tail = buffer[-1]
-        return Sample(tail.local, tail.world_orientation, tail.fov)
+        return Sample(tail.local, tail.world_orientation, tail.fov, tail.clip_near)
     i = 1
     while i < len(buffer) and buffer[i].time < now:
         i += 1
@@ -188,6 +190,7 @@ def sample_buffer(buffer: deque[Keyframe], now: float) -> Sample | None:
         Pose(position, q_slerp(alpha, a.local.orientation, b.local.orientation)),
         b.world_orientation,
         b.fov if b.fov > 0.0 else a.fov,
+        b.clip_near if b.clip_near != 0.0 else a.clip_near,
     )
 
 
@@ -197,6 +200,7 @@ class Frame:
 
     pose: Pose | None = None
     fov: float | None = None
+    clip_near: float = 0.0
     projection: str | None = None
 
 
@@ -212,6 +216,7 @@ class ViewportController:
         self._world_orientation = False
         self._buffer: deque[Keyframe] = deque()
         self._pending_fov: float | None = None
+        self._pending_clip_near = 0.0
         self._pending_projection: str | None = None
 
         self._ref_entity = ""
@@ -231,7 +236,7 @@ class ViewportController:
         """Feed the tracked entity's world pose, sampled once per frame."""
         self._ref_target = pose
 
-    def set_view(self, eye: Vec3, target: Vec3, fov: float) -> None:
+    def set_view(self, eye: Vec3, target: Vec3, fov: float, clip_near: float = 0.0) -> None:
         self._local = Pose(eye, look_at(eye, target))
         self._world_orientation = False
         self._one_shot = True
@@ -239,8 +244,10 @@ class ViewportController:
         self._local_set = True
         if fov > 0.0:
             self._pending_fov = fov
+        if clip_near != 0.0:
+            self._pending_clip_near = clip_near
 
-    def set_local(self, local: Pose, world_orientation: bool, fov: float) -> None:
+    def set_local(self, local: Pose, world_orientation: bool, fov: float, clip_near: float = 0.0) -> None:
         """Snap to an explicit local pose, the capture path's set_view."""
         self._local = local
         self._world_orientation = world_orientation
@@ -249,6 +256,8 @@ class ViewportController:
         self._local_set = True
         if fov > 0.0:
             self._pending_fov = fov
+        if clip_near != 0.0:
+            self._pending_clip_near = clip_near
 
     def set_reference_frame(self, entity: str, pose: Pose, has_pose: bool, mode: int) -> str:
         if entity:
@@ -295,15 +304,18 @@ class ViewportController:
         # the local pose persists past a one-shot or a finished stream, so a tracked
         # reference keeps its offset instead of collapsing onto the entity
         sampled_fov = 0.0
+        sampled_clip_near = 0.0
         if self._streaming and not one_shot:
             sample = sample_buffer(self._buffer, now)
             if sample:
                 self._local, self._world_orientation, sampled_fov = sample.local, sample.world_orientation, sample.fov
+                sampled_clip_near = sample.clip_near
         local, world_orientation = self._local, self._world_orientation
 
         fov, self._pending_fov = self._pending_fov, None
         if fov is None and sampled_fov > 0.0:
             fov = sampled_fov
+        clip_near, self._pending_clip_near = self._pending_clip_near or sampled_clip_near, 0.0
         projection, self._pending_projection = self._pending_projection, None
 
         # while following a resolved entity with no live stream, a camera that drifts
@@ -325,7 +337,7 @@ class ViewportController:
         else:
             # forget the applied pose so the next drive snaps from where the camera is
             self._applied = None
-        return Frame(self._applied, fov, projection)
+        return Frame(self._applied, fov, clip_near, projection)
 
     @staticmethod
     def _moved(a: Pose, b: Pose) -> bool:

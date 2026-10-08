@@ -44,6 +44,7 @@ class CameraBackend:
 
     def __init__(self) -> None:
         self._camera_path: str | None = None
+        self._default_clip_near: float | None = None
 
     def _resolve(self) -> str | None:
         if self._camera_path is not None:
@@ -110,6 +111,19 @@ class CameraBackend:
             return
         aperture = float(camera.GetHorizontalApertureAttr().Get())
         camera.GetFocalLengthAttr().Set(aperture / (2.0 * math.tan(fov / 2.0)))
+
+    def set_clip_near(self, clip_near: float) -> None:
+        """Set the near clip distance in m, a negative value restores the camera's own."""
+        camera = self._usd_camera()
+        if camera is None:
+            return
+        attr = camera.GetClippingRangeAttr()
+        near, far = attr.Get()
+        if self._default_clip_near is None:
+            self._default_clip_near = float(near)
+        stage = camera.GetPrim().GetStage()
+        with Usd.EditContext(stage, stage.GetSessionLayer()):
+            attr.Set(Gf.Vec2f(clip_near if clip_near > 0.0 else self._default_clip_near, far))
 
     def set_projection(self, projection: str) -> None:
         camera = self._usd_camera()
