@@ -2,12 +2,10 @@ import numpy as np
 from isaacsim_msgs.msg import Prim
 from isaacsim_msgs.srv import SpawnPrims
 
-from isaac_utils.utils import geom, prim
+from isaac_utils.utils import geom, light, prim
 from isaac_utils.utils.path import world_path
 
 from .utils import Service, on_exception
-
-DEFAULT_LIGHT = '/World/Light_1'
 
 
 @on_exception(False)
@@ -23,7 +21,10 @@ def prim_importer(prim_msg: Prim) -> bool:
     )
     if spawned and prim.sanitize_asset(spawned):
         # asset brings its own lights, drop the fallback dome
-        prim.deactivate_prim(DEFAULT_LIGHT)
+        light.release_default()
+    if spawned:
+        light.demote_emission(spawned)
+        light.bind_glow()
 
     return True
 

@@ -17,17 +17,22 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   msg/Door.msg
   msg/Elevator.msg
   msg/Floor.msg
+  msg/Light.msg
+  msg/LightState.msg
   msg/Material.msg
   msg/PhysicsParams.msg
   msg/Prim.msg
   msg/Scale.msg
   msg/Wall.msg
+  srv/DeleteLights.srv
   srv/DeletePrims.srv
   srv/EditPrims.srv
   srv/GetPrims.srv
   srv/ResetWorld.srv
+  srv/SetLights.srv
   srv/SpawnCeilings.srv
   srv/SpawnFloors.srv
+  srv/SpawnLights.srv
   srv/SpawnPrims.srv
   srv/SpawnUrdf.srv
   srv/SpawnUsd.srv

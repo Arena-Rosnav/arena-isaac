@@ -1,0 +1,4 @@
+Light[] lights
+---
+bool[] ret
+bool[] shared

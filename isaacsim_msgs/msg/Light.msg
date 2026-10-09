@@ -1,0 +1,17 @@
+string name
+string shape
+float32 x_length
+float32 y_length
+float32 radius
+float32 cone_deg
+geometry_msgs/Point[] positions
+geometry_msgs/Vector3 direction
+float32 intensity
+float32 cct_k
+bool cast_shadows
+float32 level
+bool[] alive
+bool intrinsic
+string glow_prim
+string glow
+float32[3] glow_color
