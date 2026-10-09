@@ -41,6 +41,7 @@ def _arg_str(name: str, default: str) -> str:
 CONFIG = {
     "renderer": "Wireframe",
     "headless": _arg_bool("--headless", False),
+    "extra_args": [f"--/exts/omni.services.transport.server.http/port={8011 + int(os.environ.get('ROS_DOMAIN_ID', '0'))}"],
 }
 PHYSICS_ENGINE = _arg_str("--physics", "physx")
 if PHYSICS_ENGINE not in ("physx", "newton"):
