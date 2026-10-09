@@ -13,8 +13,8 @@ without pxr (e.g. for SDF parsing and cache digests).
 from __future__ import annotations
 
 import json
-import math
 import pathlib
+import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -31,11 +31,20 @@ if TYPE_CHECKING:
 
 _DISPLAY_COLOR = (0.72, 0.66, 0.60)
 _SHADING_TAGS = ("phong", "lambert", "blinn")
-_ROUGHNESS_BOUNDS = (0.05, 1.0)
+_MATERIAL_ROUGHNESS: tuple[tuple[re.Pattern[str], float], ...] = (
+    (re.compile(r"eyebrow|eyelash", re.IGNORECASE), 0.45),
+    (re.compile(r"eye|glasses", re.IGNORECASE), 0.1),
+    (re.compile(r"teeth|tongue", re.IGNORECASE), 0.3),
+    (re.compile(r"hair|^(short|long|bob|ponytail|afro|braid)\d", re.IGNORECASE), 0.45),
+    (re.compile(r"shoe|boot", re.IGNORECASE), 0.5),
+    (re.compile(r"skin|^(young|middleage|old)_", re.IGNORECASE), 0.55),
+)
+_CLOTHING_ROUGHNESS = 0.85
+_OPACITY_THRESHOLD = 0.5
 
 # Bump whenever convert_actor's output changes shape, cache.py salts its digest
 # with this so stale disk caches rebuild instead of serving old geometry.
-CONVERTER_VERSION = 7
+CONVERTER_VERSION = 9
 
 
 @dataclass(eq=False)
@@ -92,12 +101,13 @@ class MeshData:
 
 @dataclass(eq=False)
 class MaterialData:
-    """A resolved COLLADA material: constant diffuse plus an optional diffuse map."""
+    """A resolved COLLADA material: constant diffuse plus an optional diffuse map, cut out by its alpha when `cutout`."""
 
     name: str  # polylist material symbol
     diffuse: tuple[float, float, float]
     roughness: float
     diffuse_texture: str | None  # bundle-relative diffuse image path, or None
+    cutout: bool = False
 
 
 @dataclass(eq=False)
@@ -389,8 +399,13 @@ def _parse_skinned_meshes(doc: _Collada) -> list[SkinnedMesh]:
     return skinned
 
 
+def _material_roughness(symbol: str) -> float:
+    """PBR roughness for a MakeHuman material, by its name's class (skin, hair, eyes, shoes, clothing)."""
+    return next((roughness for pattern, roughness in _MATERIAL_ROUGHNESS if pattern.search(symbol)), _CLOTHING_ROUGHNESS)
+
+
 def _parse_materials(doc: _Collada) -> dict[str, MaterialData]:
-    """Resolve each polylist material symbol to a constant diffuse/roughness.
+    """Resolve each polylist material symbol to a constant diffuse and a class roughness.
 
     Follows instance_material (symbol -> material id) -> instance_effect
     (-> effect id) -> profile_COMMON/technique's phong/lambert/blinn block. A
@@ -434,15 +449,11 @@ def _parse_materials(doc: _Collada) -> dict[str, MaterialData]:
         texture_el = diffuse_el.find(doc.ns + "texture")
         diffuse_texture = _resolve_texture(doc, effect_el, texture_el) if texture_el is not None else None
 
-        shininess_el = shading.find(doc.q("shininess", "float"))
-        if shininess_el is not None and shininess_el.text:
-            shininess = float(shininess_el.text)
-            low, high = _ROUGHNESS_BOUNDS
-            roughness = min(high, max(low, math.sqrt(2.0 / (shininess + 2.0))))
-        else:
-            roughness = 1.0
+        transparent_el = shading.find(doc.ns + "transparent")
+        alpha_el = transparent_el.find(doc.ns + "texture") if transparent_el is not None and transparent_el.get("opaque", "A_ONE") == "A_ONE" else None
+        cutout = diffuse_texture is not None and alpha_el is not None and _resolve_texture(doc, effect_el, alpha_el) == diffuse_texture
 
-        materials[symbol] = MaterialData(name=symbol, diffuse=diffuse, roughness=roughness, diffuse_texture=diffuse_texture)
+        materials[symbol] = MaterialData(name=symbol, diffuse=diffuse, roughness=_material_roughness(symbol), diffuse_texture=diffuse_texture, cutout=cutout)
     return materials
 
 
@@ -715,6 +726,10 @@ def _author_material(stage: Usd.Stage, out_dir: pathlib.Path, material_data: Mat
         texture.CreateInput("fallback", Sdf.ValueTypeNames.Float4).Set(Gf.Vec4f(*material_data.diffuse, 1.0))
         texture.CreateOutput("rgb", Sdf.ValueTypeNames.Float3)
         diffuse_input.ConnectToSource(texture.ConnectableAPI(), "rgb")
+        if material_data.cutout:
+            texture.CreateOutput("a", Sdf.ValueTypeNames.Float)
+            shader.CreateInput("opacity", Sdf.ValueTypeNames.Float).ConnectToSource(texture.ConnectableAPI(), "a")
+            shader.CreateInput("opacityThreshold", Sdf.ValueTypeNames.Float).Set(_OPACITY_THRESHOLD)
     else:
         diffuse_input.Set(Gf.Vec3f(*material_data.diffuse))
     return material

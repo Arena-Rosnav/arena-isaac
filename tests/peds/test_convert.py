@@ -8,7 +8,6 @@ with a scrambled joint order, a joint node tree, and matrix animation channels).
 from __future__ import annotations
 
 import json
-import math
 import os
 import pathlib
 from collections.abc import Iterator
@@ -19,7 +18,7 @@ import pytest
 pytest.importorskip("pxr")
 
 from peds.cache import actor_cache_dir, convert_cached
-from peds.convert import _Collada, _parse_materials, convert_actor, parse_actor_sdf
+from peds.convert import _Collada, _material_roughness, _parse_materials, convert_actor, parse_actor_sdf
 from pxr import Gf, Usd, UsdGeom, UsdShade, UsdSkel
 
 # Canonical joint tree J0 -> J1 -> J2. The skin lists joints scrambled to force
@@ -39,7 +38,7 @@ ROOT_DRIFT = np.array([0.4, 0.3])
 ROOT_BOB_Z = 0.1
 MATERIAL_DIFFUSE = (0.8, 0.2, 0.1)
 MATERIAL_SHININESS = 50.0
-MATERIAL_ROUGHNESS_EXPECTED = math.sqrt(2.0 / (MATERIAL_SHININESS + 2.0))
+MATERIAL_ROUGHNESS_EXPECTED = 0.85
 TEXTURE_REL = "textures/skin.png"
 
 
@@ -68,7 +67,7 @@ def _gf_to_np(matrix: Gf.Matrix4d) -> np.ndarray:
     return np.array([list(matrix.GetRow(i)) for i in range(4)], dtype=float)
 
 
-def _dae_text(*, textured: bool = False, idref_joints: bool = False, root_offset: np.ndarray | None = None) -> str:
+def _dae_text(*, textured: bool = False, transparent: bool = False, idref_joints: bool = False, root_offset: np.ndarray | None = None) -> str:
     rest = _fmt(REST_LOCAL)
     inv_bind = _fmt(INV_BIND_SKIN.reshape(-1))
     root_start = np.zeros(3) if root_offset is None else root_offset
@@ -99,9 +98,7 @@ def _dae_text(*, textured: bool = False, idref_joints: bool = False, root_offset
             '<newparam sid="skin-surface"><surface type="2D"><init_from>skin-image</init_from></surface></newparam>'
             '<newparam sid="skin-sampler"><sampler2D><source>skin-surface</source></sampler2D></newparam>'
             '<technique sid="common"><phong>'
-            '<diffuse><texture texture="skin-sampler" texcoord="UVTex"/></diffuse>'
-            f"<shininess><float>{MATERIAL_SHININESS}</float></shininess>"
-            "</phong></technique></profile_COMMON></effect>"
+            '<diffuse><texture texture="skin-sampler" texcoord="UVTex"/></diffuse>' + ('<transparent opaque="A_ONE"><texture texture="skin-sampler" texcoord="UVTex"/></transparent>' if transparent else "") + f"<shininess><float>{MATERIAL_SHININESS}</float></shininess>" + "</phong></technique></profile_COMMON></effect>"
         )
         images = f'<library_images><image id="skin-image"><init_from>./{TEXTURE_REL}</init_from></image></library_images>'
     else:
@@ -210,8 +207,17 @@ def built_travelling(tmp_path: pathlib.Path) -> pathlib.Path:
 
 @pytest.fixture()
 def built_textured(tmp_path: pathlib.Path, arena_data_dir: pathlib.Path) -> pathlib.Path:
+    return _build_textured(tmp_path, transparent=False)
+
+
+@pytest.fixture()
+def built_transparent(tmp_path: pathlib.Path, arena_data_dir: pathlib.Path) -> pathlib.Path:
+    return _build_textured(tmp_path, transparent=True)
+
+
+def _build_textured(tmp_path: pathlib.Path, *, transparent: bool) -> pathlib.Path:
     dae = tmp_path / "synth_tex.dae"
-    dae.write_text(_dae_text(textured=True))
+    dae.write_text(_dae_text(textured=True, transparent=transparent))
     (tmp_path / "textures").mkdir()
     (tmp_path / "textures" / "skin.png").write_bytes(b"\x89PNG\r\n\x1a\n")
     sdf = tmp_path / "actor.sdf"
@@ -309,6 +315,34 @@ def test_parse_materials_resolves_diffuse_and_roughness(tmp_path: pathlib.Path) 
     assert material.roughness == pytest.approx(MATERIAL_ROUGHNESS_EXPECTED, abs=1e-9)
 
 
+@pytest.mark.parametrize(
+    ("symbol", "roughness"),
+    [
+        ("young_caucasian_female", 0.55),
+        ("middleage_cauasian_male", 0.55),
+        ("old_caucasian_male_detailed", 0.55),
+        ("mhair01black", 0.45),
+        ("short04", 0.45),
+        ("ponytail01", 0.45),
+        ("afro01", 0.45),
+        ("eyebrow008", 0.45),
+        ("Eye_brown", 0.1),
+        ("Eyebluegreen", 0.1),
+        ("crudelabglassesMaterial", 0.1),
+        ("teethMaterial", 0.3),
+        ("tongue01Material", 0.3),
+        ("shoes01", 0.5),
+        ("Shoes02", 0.5),
+        ("male_worksuit01", 0.85),
+        ("Scrub_Shirt", 0.85),
+        ("materialMaterial", 0.85),
+        ("shorts01", 0.85),
+    ],
+)
+def test_material_roughness_follows_makehuman_name_class(symbol: str, roughness: float) -> None:
+    assert _material_roughness(symbol) == roughness
+
+
 def test_character_mesh_has_material_subset_bound_to_shader(built: pathlib.Path) -> None:
     stage = Usd.Stage.Open(str(built / "character.usda"))
     mesh_prim = stage.GetPrimAtPath("/Character/Mesh")
@@ -358,6 +392,23 @@ def test_textured_mesh_authors_st_and_diffuse_texture(built_textured: pathlib.Pa
     reader = UsdShade.Shader(reader_source.GetPrim())
     assert reader.GetIdAttr().Get() == "UsdPrimvarReader_float2"
     assert reader.GetInput("varname").Get() == "st"
+    assert not shader.GetInput("opacity")
+
+
+@pytest.mark.parametrize(("transparent", "cutout"), [(False, False), (True, True)])
+def test_parse_materials_reads_cutout_from_transparent_diffuse_map(tmp_path: pathlib.Path, transparent: bool, cutout: bool) -> None:
+    dae = tmp_path / "synth.dae"
+    dae.write_text(_dae_text(textured=True, transparent=transparent))
+    assert _parse_materials(_Collada(str(dae)))["m"].cutout is cutout
+
+
+def test_transparent_mesh_cuts_out_by_diffuse_alpha(built_transparent: pathlib.Path) -> None:
+    stage = Usd.Stage.Open(str(built_transparent / "character.usda"))
+    shader = UsdShade.Shader(stage.GetPrimAtPath("/Character/Materials/m/Shader"))
+    opacity_source, opacity_output, _ = shader.GetInput("opacity").GetConnectedSource()
+    assert opacity_output == "a"
+    assert str(opacity_source.GetPrim().GetPath()) == "/Character/Materials/m/DiffuseTexture"
+    assert shader.GetInput("opacityThreshold").Get() == pytest.approx(0.5)
 
 
 def test_no_clips_authored(built: pathlib.Path) -> None:
