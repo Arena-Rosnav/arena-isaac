@@ -29,7 +29,7 @@ def generate_launch_description():
 
     viewport = {
         key: LaunchArgument(name=f'viewport.{key}', default_value=default)
-        for key, default in (('preset', 'photoreal'), ('resolution', ''), ('scale', ''), ('dlss', ''), ('lighting', ''), ('overlays', ''))
+        for key, default in (('preset', 'photoreal'), ('resolution', ''), ('scale', ''), ('dlss', ''), ('lighting', ''), ('overlays', ''), ('ceilings', ''))
     }
 
     run_isaacsim_path = ExecutableInPackage(

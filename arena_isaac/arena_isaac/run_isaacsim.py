@@ -54,6 +54,10 @@ VIEWPORT_ARGS = {
     "lighting": _arg_str("--viewport.lighting", ""),
     "overlays": _arg_str("--viewport.overlays", ""),
 }
+_CEILING_MODES = {"": None, "auto": None, "on": True, "off": False}
+CEILINGS = _arg_str("--viewport.ceilings", "")
+if CEILINGS not in _CEILING_MODES:
+    raise ValueError(f"unknown ceilings mode: {CEILINGS}, expected auto, on or off")
 from pathlib import Path
 
 simulation_app = SimulationApp(CONFIG)
@@ -362,6 +366,11 @@ class IsaacController(rclpy.node.Node):
             os.path.join('isaac/UnpauseSimulation'),
             self._cb_unpause,
         )
+        self.__ceilings_srv = self.create_service(
+            std_srvs.srv.SetBool,
+            'isaac/ShowCeilings',
+            self._cb_show_ceilings,
+        )
         self.__step_srv = self.create_service(
             std_srvs.srv.Trigger,
             os.path.join('isaac/StepSimulation'),
@@ -372,6 +381,13 @@ class IsaacController(rclpy.node.Node):
             os.path.join('isaac/StepSimulationN'),
             self._cb_step_n,
         )
+
+    def _cb_show_ceilings(self, request: std_srvs.srv.SetBool.Request, response: std_srvs.srv.SetBool.Response) -> std_srvs.srv.SetBool.Response:
+        from isaac_utils.utils import ceilings
+
+        ceilings.force(request.data)
+        response.success = True
+        return response
 
     def _cb_pause(self, request: std_srvs.srv.Trigger.Request, response: std_srvs.srv.Trigger.Response) -> std_srvs.srv.Trigger.Response:
         self._running = False
@@ -486,6 +502,10 @@ def main(args: list[str] | None = None):
     import isaac_utils.config.photoreal as photoreal
 
     photoreal.resolve(**VIEWPORT_ARGS).apply()
+
+    from isaac_utils.utils import ceilings
+
+    ceilings.force(_CEILING_MODES[CEILINGS])
 
     # the viewport camera only exists in the GUI, headless has nothing to drive
     viewport = None
