@@ -145,6 +145,7 @@ import carb.settings
 _carb_settings = carb.settings.get_settings()
 _carb_settings.set("/rtx/hydra/supportMultiTickRate", True)
 _carb_settings.set("/rtx/rendering/perSensorTickTlas", False)
+_carb_settings.set("/rtx/rtpt/gaussian/skipTonemapping/enabled", True)
 
 # ros2 publisher nodes skip publishing when getSubscriptionCount() sees no
 # subscribers, and that count is unreliable (matched DDS subscribers read as 0,
