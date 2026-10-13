@@ -13,7 +13,7 @@ magnitude, and no rotation leaking to the mirrored side.
 
 Script mode: `python3 test_bone_map_parity.py report` prints the per-DOF table,
 `python3 test_bone_map_parity.py regen` prints a BONE_MAP regenerated from the
-measured contract axes and rewrites arena_peds_pose's bone_map.json from it (needs
+measured contract axes and rewrites arena_people_msgs' bone_map.json from it (needs
 xacro + human_description + rviz_utils, so run in-container).
 """
 
@@ -33,7 +33,7 @@ from peds.providers.bone_map import BONE_MAP, BoneTarget
 from peds.providers.external import ExternalPoseProvider
 
 _FIXTURE = Path(__file__).parent / "fixtures" / "skeleton_neutral.json"
-_JSON = Path(__file__).resolve().parents[3] / "utils" / "arena_peds_pose" / "arena_peds_pose" / "bone_map.json"
+_JSON = Path(__file__).resolve().parents[3] / "utils" / "msgs" / "arena_people_msgs" / "bone_map.json"
 
 # (wire DOF, probe angle inside JOINTS.md limits, observed CMU bone)
 _PROBES: tuple[tuple[str, float, str], ...] = (
