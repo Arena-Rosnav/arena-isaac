@@ -14,7 +14,6 @@ from .SpawnLights import spawn_lights_service
 from .SpawnPedestrians import spawn_pedestrians_service
 from .SpawnPrims import spawn_prims_service
 from .SpawnUrdf import spawn_urdf_service
-from .SpawnUsd import spawn_usd_service
 from .SpawnWalls import spawn_walls_service
 from .UpdatePedestrians import update_pedestrians_service, update_pedestrians_subscription
 from .utils import Service, Subscription
@@ -32,7 +31,6 @@ services: collections.abc.Iterable[Service] = (
     spawn_pedestrians_service,
     update_pedestrians_service,
     spawn_urdf_service,
-    spawn_usd_service,
     spawn_walls_service,
     spawn_lights_service,
     set_lights_service,

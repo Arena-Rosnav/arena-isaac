@@ -98,8 +98,15 @@ class Graph:
     def path(self) -> str:
         return self._path
 
-    def node(self, name: str, type_: str, **kwargs: object) -> _Node:
-        self._nodes.append(node := _Node(self, name, type_, **kwargs))
+    def node(
+        self,
+        name: str,
+        type_: str,
+        *,
+        values: typing.Iterable[tuple[str, typing.Any]] | None = None,
+        connections: typing.Iterable[tuple[str, _Node, str]] | None = None,
+    ) -> _Node:
+        self._nodes.append(node := _Node(self, name, type_, values=values, connections=connections))
         return node
 
     def add_action(self, action: typing.Callable[[], typing.Any]):

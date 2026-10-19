@@ -256,7 +256,9 @@ class SensorLidar(SensorBase):
             carb.log_warn(f"Lidar publish skipped for '{self.name}': sensor not simulated (points/scan prim paths missing).")
             return False
 
+        assert self._points_lidar is not None and self._scan_lidar is not None
         outputs = output_topics('gpu_lidar', self.config.topic)
+        assert outputs is not None
         scan_topic = join_topic(base_topic, outputs['laserscan'])
         points_topic = join_topic(base_topic, outputs['pointcloud'])
         frame_id = f'{self.robot_base_frame}{self.parent_frame}'

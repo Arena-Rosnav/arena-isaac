@@ -1,6 +1,6 @@
 import isaacsim.storage.native
 
-_assets_root_path: str = None
+_assets_root_path: str | None = None
 
 
 def get_assets_root_path_safe(fallback: str = '/', *, reload: bool = False) -> str:
@@ -12,8 +12,9 @@ def get_assets_root_path_safe(fallback: str = '/', *, reload: bool = False) -> s
         return _assets_root_path
 
     try:
-        _assets_root_path = isaacsim.storage.native.get_assets_root_path()
+        root_path: str = isaacsim.storage.native.get_assets_root_path()
     except RuntimeError:
-        _assets_root_path = fallback
+        root_path = fallback
 
-    return _assets_root_path
+    _assets_root_path = root_path
+    return root_path

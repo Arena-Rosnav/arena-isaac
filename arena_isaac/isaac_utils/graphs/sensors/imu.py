@@ -19,8 +19,11 @@ class SensorIMU(SensorBase):
 
         @classmethod
         def parse(cls, config: ET.Element) -> "SensorIMU.Config":
+            topic = config.findtext('./topic') or config.findtext('.//topic') or (config.findtext('.//remapping', '').split(':=')[-1] or None)
+            if topic is None:
+                raise ValueError("imu sensor has no <topic>")
             return cls(
-                topic=config.findtext('./topic') or config.findtext('.//topic') or (config.findtext('.//remapping', '').split(':=')[-1] or None),
+                topic=topic,
                 update_rate=config.findtext('.//update_rate'),
             )
 

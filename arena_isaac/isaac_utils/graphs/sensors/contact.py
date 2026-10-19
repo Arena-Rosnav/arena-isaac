@@ -21,8 +21,11 @@ class SensorContact(SensorBase):
 
         @classmethod
         def parse(cls, config: ET.Element) -> "SensorContact.Config":
+            collision = config.findtext('.//collision')
+            if collision is None:
+                raise ValueError("contact sensor has no <collision>")
             return cls(
-                collision=config.findtext('.//collision'),
+                collision=collision,
                 update_rate=config.findtext('.//update_rate'),
             )
 

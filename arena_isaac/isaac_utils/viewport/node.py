@@ -11,6 +11,7 @@ tf listener a tracked TF frame is resolved through.
 from __future__ import annotations
 
 import threading
+import typing
 
 import geometry_msgs.msg
 import rclpy.executors
@@ -25,6 +26,9 @@ from viewport_control_msgs.srv import ViewportCapture, ViewportSetProjection, Vi
 from .backend import CameraBackend, entity_pose
 from .capture import TIMEOUT_S, CaptureQueue, CaptureRequest
 from .controller import Keyframe, Pose, ViewportController
+
+if typing.TYPE_CHECKING:
+    from arena_isaac.run_isaacsim import IsaacController
 
 NAMESPACE = "/arena/viewport"
 # arena pins the world origin to map, so the camera world pose is map-frame
@@ -47,7 +51,7 @@ def _pose(msg: geometry_msgs.msg.Pose) -> Pose:
 class ViewportNode:
     """Owns the viewport ROS endpoints and pumps the controller once per frame."""
 
-    def __init__(self, node: rclpy.node.Node) -> None:
+    def __init__(self, node: IsaacController) -> None:
         self._node = node
         self._controller = ViewportController()
         self._backend = CameraBackend()

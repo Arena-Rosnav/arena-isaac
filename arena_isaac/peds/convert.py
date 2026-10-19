@@ -177,6 +177,24 @@ class _Collada:
     def localname(self, el: ET.Element) -> str:
         return el.tag[len(self.ns) :]
 
+    def child(self, el: ET.Element, tag: str) -> ET.Element:
+        found = el.find(self.ns + tag)
+        if found is None:
+            raise ValueError(f"<{self.localname(el)}> has no <{tag}>")
+        return found
+
+    def text(self, el: ET.Element, tag: str) -> str:
+        text = self.child(el, tag).text
+        if text is None:
+            raise ValueError(f"<{tag}> under <{self.localname(el)}> is empty")
+        return text
+
+    def attr(self, el: ET.Element, name: str) -> str:
+        value = el.get(name)
+        if value is None:
+            raise ValueError(f"<{self.localname(el)}> has no {name} attribute")
+        return value
+
     def by_id(self, ref: str) -> ET.Element:
         el = self.id_map.get(ref.lstrip("#"))
         if el is None:
@@ -242,7 +260,7 @@ def _parse_skin(doc: _Collada, controller: ET.Element) -> SkinData:
     bind_el = skin.find(doc.ns + "bind_shape_matrix")
     bind_shape = np.array(bind_el.text.split(), dtype=float).reshape(4, 4) if bind_el is not None and bind_el.text else np.eye(4)
 
-    joints_el = skin.find(doc.ns + "joints")
+    joints_el = doc.child(skin, "joints")
     joint_src = inv_bind_src = None
     for inp in joints_el.findall(doc.ns + "input"):
         if inp.get("semantic") == "JOINT":
@@ -254,11 +272,11 @@ def _parse_skin(doc: _Collada, controller: ET.Element) -> SkinData:
     joint_names = doc.read_names(joint_src)
     inv_bind = doc.read_floats(inv_bind_src).reshape(-1, 4, 4)
 
-    vertex_weights = skin.find(doc.ns + "vertex_weights")
+    vertex_weights = doc.child(skin, "vertex_weights")
     joint_off = weight_off = None
     weight_src = None
     for inp in vertex_weights.findall(doc.ns + "input"):
-        semantic, offset = inp.get("semantic"), int(inp.get("offset"))
+        semantic, offset = inp.get("semantic"), int(doc.attr(inp, "offset"))
         if semantic == "JOINT":
             joint_off = offset
         elif semantic == "WEIGHT":
@@ -267,8 +285,8 @@ def _parse_skin(doc: _Collada, controller: ET.Element) -> SkinData:
         raise ValueError("vertex_weights missing JOINT or WEIGHT input")
     weights = doc.read_floats(weight_src).reshape(-1)
     stride = max(joint_off, weight_off) + 1
-    vcount = np.array(vertex_weights.find(doc.ns + "vcount").text.split(), dtype=int)
-    v = np.array(vertex_weights.find(doc.ns + "v").text.split(), dtype=int)
+    vcount = np.array(doc.text(vertex_weights, "vcount").split(), dtype=int)
+    v = np.array(doc.text(vertex_weights, "v").split(), dtype=int)
 
     influences: list[list[tuple[int, float]]] = []
     cursor = 0
@@ -301,7 +319,7 @@ def _parse_mesh(doc: _Collada, mesh: ET.Element) -> MeshData:
         vertex_src = normal_src = texcoord_src = None
         max_off = 0
         for inp in prim.findall(doc.ns + "input"):
-            semantic, offset = inp.get("semantic"), int(inp.get("offset"))
+            semantic, offset = inp.get("semantic"), int(doc.attr(inp, "offset"))
             max_off = max(max_off, offset)
             if semantic == "VERTEX":
                 vertex_off, vertex_src = offset, inp.get("source")
@@ -326,11 +344,11 @@ def _parse_mesh(doc: _Collada, mesh: ET.Element) -> MeshData:
         if texcoords is not None:
             have_uvs = True
 
-        indices = np.array(prim.find(doc.ns + "p").text.split(), dtype=int).reshape(-1, prim_stride)
+        indices = np.array(doc.text(prim, "p").split(), dtype=int).reshape(-1, prim_stride)
         if doc.localname(prim) == "polylist":
-            vcount = np.array(prim.find(doc.ns + "vcount").text.split(), dtype=int)
+            vcount = np.array(doc.text(prim, "vcount").split(), dtype=int)
         else:
-            vcount = np.full(int(prim.get("count")), 3, dtype=int)
+            vcount = np.full(int(doc.attr(prim, "count")), 3, dtype=int)
 
         row = 0
         for count in vcount:
@@ -501,7 +519,7 @@ def _parse_animations(doc: _Collada) -> dict[str, tuple[np.ndarray, np.ndarray]]
     for channel in library.iter(doc.ns + "channel"):
         target = channel.get("target", "")
         joint = target.split("/")[0]
-        sampler = doc.by_id(channel.get("source"))
+        sampler = doc.by_id(doc.attr(channel, "source"))
         input_src = output_src = None
         for inp in sampler.findall(doc.ns + "input"):
             if inp.get("semantic") == "INPUT":

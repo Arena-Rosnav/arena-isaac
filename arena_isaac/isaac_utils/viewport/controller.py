@@ -91,12 +91,14 @@ def q_slerp(alpha: float, a: Quat, b: Quat) -> Quat:
         b = (-b[0], -b[1], -b[2], -b[3])
         dot = -dot
     if dot > 0.9995:
-        return q_normalize(tuple(p + alpha * (q - p) for p, q in zip(a, b, strict=True)))
+        lw, lx, ly, lz = (p + alpha * (q - p) for p, q in zip(a, b, strict=True))
+        return q_normalize((lw, lx, ly, lz))
     theta = math.acos(max(-1.0, min(1.0, dot)))
     sin_theta = math.sin(theta)
     wa = math.sin((1.0 - alpha) * theta) / sin_theta
     wb = math.sin(alpha * theta) / sin_theta
-    return q_normalize(tuple(wa * p + wb * q for p, q in zip(a, b, strict=True)))
+    sw, sx, sy, sz = (wa * p + wb * q for p, q in zip(a, b, strict=True))
+    return q_normalize((sw, sx, sy, sz))
 
 
 def q_angle(a: Quat, b: Quat) -> float:
@@ -185,9 +187,9 @@ def sample_buffer(buffer: deque[Keyframe], now: float) -> Sample | None:
     a, b = buffer[i - 1], buffer[i]
     span = b.time - a.time
     alpha = (now - a.time) / span if span > 1e-9 else 1.0
-    position = tuple(pa + (pb - pa) * alpha for pa, pb in zip(a.local.position, b.local.position, strict=True))
+    px, py, pz = (pa + (pb - pa) * alpha for pa, pb in zip(a.local.position, b.local.position, strict=True))
     return Sample(
-        Pose(position, q_slerp(alpha, a.local.orientation, b.local.orientation)),
+        Pose((px, py, pz), q_slerp(alpha, a.local.orientation, b.local.orientation)),
         b.world_orientation,
         b.fov if b.fov > 0.0 else a.fov,
         b.clip_near if b.clip_near != 0.0 else a.clip_near,

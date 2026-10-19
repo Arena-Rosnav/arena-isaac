@@ -7,9 +7,9 @@ import carb
 import rclpy.node
 
 
-def on_exception(value: object) -> Callable[[Callable[..., object]], Callable[..., object]]:
-    def inner(fun: Callable[..., object]) -> Callable[..., object]:
-        def wrapper(*args: object, **kwargs: object) -> object:
+def on_exception[T, **P, R](value: T) -> Callable[[Callable[P, R]], Callable[P, R | T]]:
+    def inner(fun: Callable[P, R]) -> Callable[P, R | T]:
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> R | T:
             try:
                 return fun(*args, **kwargs)
             except Exception as e:

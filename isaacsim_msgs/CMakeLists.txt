@@ -35,7 +35,6 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   srv/SpawnLights.srv
   srv/SpawnPrims.srv
   srv/SpawnUrdf.srv
-  srv/SpawnUsd.srv
   srv/SpawnWalls.srv
   srv/StepSimulation.srv
   DEPENDENCIES std_msgs geometry_msgs

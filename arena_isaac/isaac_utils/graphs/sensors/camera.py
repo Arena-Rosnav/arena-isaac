@@ -125,14 +125,16 @@ class SensorCamera(SensorBase):
         frame = f'{self.robot_base_frame}{self.optical_frame}'
         node_namespace = ''
         queue_size = 1
+        assert self.camera is not None
         render_product = self.camera._render_product_path
         step_size = int(_RENDER_HZ / _snap_rate(self.config.update_rate))
         return render_product, frame, node_namespace, queue_size, step_size
 
-    def _resolve_topics(self, base_topic: str) -> tuple[str, str]:
+    def _resolve_topics(self, base_topic: str) -> tuple[str, ...]:
         """Returns (image_topic, camera_info_topic)."""
         if self.config.topic:
             outputs = output_topics('camera', self.config.topic, self.config.camera_info_topic)
+            assert outputs is not None
             return join_topic(base_topic, outputs['image']), join_topic(base_topic, outputs['camera_info'])
 
         camera_topic = join_topic(base_topic, self.name)
@@ -226,14 +228,14 @@ class SensorCamera(SensorBase):
         )
         if all(hasattr(camera_info, attr) for attr in required_attrs):
             return {
-                "width": camera_info.width,
-                "height": camera_info.height,
-                "projectionType": camera_info.projectionType,
-                "k": cls._reshape_param(camera_info.k, 9),
-                "r": cls._reshape_param(camera_info.r, 9),
-                "p": cls._reshape_param(camera_info.p, 12),
-                "physicalDistortionModel": camera_info.physicalDistortionModel,
-                "physicalDistortionCoefficients": camera_info.physicalDistortionCoefficients,
+                "width": cls._first_available(camera_info, "width"),
+                "height": cls._first_available(camera_info, "height"),
+                "projectionType": cls._first_available(camera_info, "projectionType"),
+                "k": cls._reshape_param(cls._first_available(camera_info, "k"), 9),
+                "r": cls._reshape_param(cls._first_available(camera_info, "r"), 9),
+                "p": cls._reshape_param(cls._first_available(camera_info, "p"), 12),
+                "physicalDistortionModel": cls._first_available(camera_info, "physicalDistortionModel"),
+                "physicalDistortionCoefficients": cls._first_available(camera_info, "physicalDistortionCoefficients"),
             }
 
         alt_required_attrs = (
@@ -248,14 +250,14 @@ class SensorCamera(SensorBase):
         )
         if all(hasattr(camera_info, attr) for attr in alt_required_attrs):
             return {
-                "width": camera_info.width,
-                "height": camera_info.height,
-                "projectionType": camera_info.projection_type,
-                "k": cls._reshape_param(camera_info.k, 9),
-                "r": cls._reshape_param(camera_info.r, 9),
-                "p": cls._reshape_param(camera_info.p, 12),
-                "physicalDistortionModel": camera_info.distortion_model,
-                "physicalDistortionCoefficients": camera_info.distortion_coefficients,
+                "width": cls._first_available(camera_info, "width"),
+                "height": cls._first_available(camera_info, "height"),
+                "projectionType": cls._first_available(camera_info, "projection_type"),
+                "k": cls._reshape_param(cls._first_available(camera_info, "k"), 9),
+                "r": cls._reshape_param(cls._first_available(camera_info, "r"), 9),
+                "p": cls._reshape_param(cls._first_available(camera_info, "p"), 12),
+                "physicalDistortionModel": cls._first_available(camera_info, "distortion_model"),
+                "physicalDistortionCoefficients": cls._first_available(camera_info, "distortion_coefficients"),
             }
 
         ros_camera_info_attrs = (
@@ -269,14 +271,14 @@ class SensorCamera(SensorBase):
         )
         if all(hasattr(camera_info, attr) for attr in ros_camera_info_attrs):
             return {
-                "width": camera_info.width,
-                "height": camera_info.height,
+                "width": cls._first_available(camera_info, "width"),
+                "height": cls._first_available(camera_info, "height"),
                 "projectionType": "pinhole",
-                "k": cls._reshape_param(camera_info.k, 9),
-                "r": cls._reshape_param(camera_info.r, 9),
-                "p": cls._reshape_param(camera_info.p, 12),
-                "physicalDistortionModel": camera_info.distortion_model,
-                "physicalDistortionCoefficients": camera_info.d,
+                "k": cls._reshape_param(cls._first_available(camera_info, "k"), 9),
+                "r": cls._reshape_param(cls._first_available(camera_info, "r"), 9),
+                "p": cls._reshape_param(cls._first_available(camera_info, "p"), 12),
+                "physicalDistortionModel": cls._first_available(camera_info, "distortion_model"),
+                "physicalDistortionCoefficients": cls._first_available(camera_info, "d"),
             }
 
         tuple_len = len(camera_info) if isinstance(camera_info, (tuple, list)) else None
@@ -322,6 +324,7 @@ class SensorCameraRGBD(SensorCamera):
     def _resolve_topics(self, base_topic: str) -> tuple[str, str, str, str]:
         """Returns (image_topic, camera_info_topic, depth_topic, points_topic)."""
         outputs = output_topics('rgbd_camera', self.config.topic or self.name, self.config.camera_info_topic)
+        assert outputs is not None
         return (
             join_topic(base_topic, outputs['image']),
             join_topic(base_topic, outputs['camera_info']),

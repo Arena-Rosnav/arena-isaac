@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import typing
 
 import attrs
 import carb
@@ -11,6 +12,9 @@ from pxr import Gf, Sdf, Tf, Usd, UsdGeom, UsdLux, UsdShade
 from isaac_utils.utils import ceilings
 from isaac_utils.utils.path import world_path
 from isaac_utils.utils.prim import ensure_path, stage
+
+if typing.TYPE_CHECKING:
+    from geometry_msgs.msg import Point
 
 DEFAULT_LIGHT = '/World/Light_1'
 VIEWPORT_RIG = '/OmniKit_Viewport_LightRig'
@@ -186,7 +190,7 @@ def spawn(light: Light) -> tuple[bool, bool]:
     return True, False
 
 
-def _place(name: str, position: object, yaw: float) -> None:
+def _place(name: str, position: Point, yaw: float) -> None:
     light = _registry.spawned[name]
     direction = Gf.Vec3d(light.direction.x, light.direction.y, light.direction.z)
     aim = Gf.Rotation(Gf.Vec3d(0.0, 0.0, -1.0), direction) * Gf.Rotation(Gf.Vec3d(0.0, 0.0, 1.0), math.degrees(yaw))

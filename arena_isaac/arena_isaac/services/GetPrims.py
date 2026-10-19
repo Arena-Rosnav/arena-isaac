@@ -6,7 +6,7 @@ from .utils import Service, on_exception
 
 
 @on_exception(None)
-def get_prim(name: str) -> Prim:
+def get_prim(name: str) -> Prim | None:
 
     msg = Prim()
 
