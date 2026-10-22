@@ -10,6 +10,7 @@ from typing import ClassVar
 
 import numpy as np
 
+from peds.ground import Soles
 from peds.providers.base import PoseProvider, ResettablePhase
 
 
@@ -33,6 +34,7 @@ class Ped:
     position: np.ndarray = field(default_factory=lambda: np.zeros(3))
     orientation: np.ndarray = field(default_factory=_identity_orientation)
     ground_z: float = -0.03
+    soles: Soles | None = None
 
     MAX_EXTRAPOLATION: ClassVar[float] = 0.5
 

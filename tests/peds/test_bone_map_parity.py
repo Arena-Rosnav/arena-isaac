@@ -301,6 +301,26 @@ def _require_contract() -> None:
         pytest.skip(f"contract rig unavailable: {error!r}")
 
 
+_LEG_SEGMENTS: tuple[tuple[str, str, str, str], ...] = (
+    ("LeftUpLeg", "LeftLeg", "l_r_hip", "l_knee"),
+    ("LeftLeg", "LeftFoot", "l_knee", "l_ankle"),
+    ("RightUpLeg", "RightLeg", "r_r_hip", "r_knee"),
+    ("RightLeg", "RightFoot", "r_knee", "r_ankle"),
+)
+
+
+@pytest.mark.parametrize(("bone_from", "bone_to", "joint_from", "joint_to"), _LEG_SEGMENTS)
+def test_wire_zero_leg_matches_the_contract(bone_from: str, bone_to: str, joint_from: str, joint_to: str) -> None:
+    _require_contract()
+    fk, _, _, joints = _contract()
+    cmu = _cmu_frames(_zero_wire())
+    cmu_dir = _cmu_body_frame(cmu).T @ (cmu[bone_to][1] - cmu[bone_from][1])
+    urdf = _urdf_frames(_zero_wire())
+    urdf_dir = urdf[joints[f"{joint_to}_{fk.PREVIEW_ID}"].child][1] - urdf[joints[f"{joint_from}_{fk.PREVIEW_ID}"].child][1]
+    cos = float(cmu_dir @ urdf_dir) / float(np.linalg.norm(cmu_dir) * np.linalg.norm(urdf_dir))
+    assert math.degrees(math.acos(min(1.0, cos))) < 15.0, f"{bone_from}->{bone_to} at wire zero: cmu {cmu_dir} vs urdf {urdf_dir}"
+
+
 @pytest.mark.parametrize(("dof", "probe", "bone"), _PROBES)
 def test_dof_parity(dof: str, probe: float, bone: str) -> None:
     _require_contract()

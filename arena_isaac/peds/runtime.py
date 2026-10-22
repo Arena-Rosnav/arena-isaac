@@ -21,6 +21,7 @@ from isaac_utils.utils.path import world_path
 from isaac_utils.utils.prim import ensure_path
 from peds.cache import convert_cached
 from peds.convert import parse_actor
+from peds.ground import Soles
 from peds.ped import Ped
 from peds.providers.external import ExternalPoseProvider
 from peds.registry import PedRegistry
@@ -70,6 +71,10 @@ class PedRuntime:
         ground_z = parse_actor(model_source).ground_z
         if ground_z is not None:
             ped.ground_z = ground_z
+        if meta["soles"]:
+            index = {path: i for i, path in enumerate(joint_order)}
+            parents = [index[path.rsplit("/", 1)[0]] if "/" in path else -1 for path in joint_order]
+            ped.soles = Soles(parents, [sole["joint"] for sole in meta["soles"]], np.array([sole["point"] for sole in meta["soles"]]))
         ped.teleport(np.asarray(position, dtype=float), np.asarray(orientation, dtype=float))
 
         self._registry.spawn(name, ped)

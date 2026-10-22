@@ -58,18 +58,18 @@ BONE_MAP: dict[str, tuple[BoneTarget, ...]] = {
     "r_p_shoulder": (BoneTarget("RightArm", (0.9608, 0.1189, -0.2505), 1.0),),  # R shoulder flexion, primary arm swing
     "r_r_shoulder": (BoneTarget("RightArm", (-0.0739, 0.9805, 0.1820), 1.0),),  # R arm twist about the limb axis
     "r_elbow": (BoneTarget("RightForeArm", (0.9253, -0.0049, 0.3791), 1.0),),  # R elbow flexion
-    "l_y_hip": (BoneTarget("LeftUpLeg", (0.0046, 0.9978, -0.0659), 1.0),),  # L hip yaw (internal/external rotation)
-    "l_p_hip": (BoneTarget("LeftUpLeg", (0.0414, -0.0661, -0.9970), 1.0),),  # L hip abduction (leg out to the side)
-    "l_r_hip": (BoneTarget("LeftUpLeg", (-0.9991, 0.0019, -0.0417), 1.0),),  # L hip flexion, primary leg swing
-    "l_knee": (BoneTarget("LeftLeg", (-1.0000, 0.0046, -0.0051), 1.0),),  # L knee flexion
-    "r_y_hip": (BoneTarget("RightUpLeg", (-0.0035, 0.9936, -0.1126), 1.0),),  # R hip yaw
-    "r_p_hip": (BoneTarget("RightUpLeg", (0.0497, 0.1126, 0.9924), 1.0),),  # R hip abduction
-    "r_r_hip": (BoneTarget("RightUpLeg", (-0.9988, 0.0021, 0.0497), 1.0),),  # R hip flexion, primary leg swing
-    "r_knee": (BoneTarget("RightLeg", (-0.9997, 0.0041, 0.0249), 1.0),),  # R knee flexion
-    "l_y_ankle": (BoneTarget("LeftFoot", (-0.3493, 0.4316, 0.8317), 1.0),),  # L foot yaw (toe direction)
-    "l_ankle": (BoneTarget("LeftFoot", (-0.9370, -0.1697, -0.3054), 1.0),),  # L ankle sagittal, positive dorsiflexion
-    "r_y_ankle": (BoneTarget("RightFoot", (0.3754, 0.4375, 0.8171), 1.0),),  # R foot yaw (toe direction)
-    "r_ankle": (BoneTarget("RightFoot", (-0.9268, 0.1697, 0.3350), 1.0),),  # R ankle sagittal, positive dorsiflexion
+    "l_y_hip": (BoneTarget("LeftUpLeg", (-0.0968, 0.9920, -0.0808), 1.0),),  # L hip yaw (internal/external rotation)
+    "l_p_hip": (BoneTarget("LeftUpLeg", (0.0572, -0.0755, -0.9955), 1.0),),  # L hip abduction (leg out to the side)
+    "l_r_hip": (BoneTarget("LeftUpLeg", (-0.9937, -0.1010, -0.0495), 1.0),),  # L hip flexion, primary leg swing
+    "l_knee": (BoneTarget("LeftLeg", (-0.9943, -0.1049, -0.0177), 1.0),),  # L knee flexion
+    "r_y_hip": (BoneTarget("RightUpLeg", (0.0997, 0.9917, -0.0810), 1.0),),  # R hip yaw
+    "r_p_hip": (BoneTarget("RightUpLeg", (0.0587, 0.0754, 0.9954), 1.0),),  # R hip abduction
+    "r_r_hip": (BoneTarget("RightUpLeg", (-0.9933, 0.1040, 0.0507), 1.0),),  # R hip flexion, primary leg swing
+    "r_knee": (BoneTarget("RightLeg", (-0.9940, 0.1080, 0.0186), 1.0),),  # R knee flexion
+    "l_y_ankle": (BoneTarget("LeftFoot", (-0.1389, 0.4486, 0.8829), 1.0),),  # L foot yaw (toe direction)
+    "l_ankle": (BoneTarget("LeftFoot", (-0.9895, -0.0986, -0.1056), 1.0),),  # L ankle sagittal, positive dorsiflexion
+    "r_y_ankle": (BoneTarget("RightFoot", (0.1418, 0.4483, 0.8826), 1.0),),  # R foot yaw (toe direction)
+    "r_ankle": (BoneTarget("RightFoot", (-0.9892, 0.0986, 0.1088), 1.0),),  # R ankle sagittal, positive dorsiflexion
     "l_r_wrist": (BoneTarget("LeftHand", (0.1182, 0.9531, 0.2785), 1.0),),  # L forearm pronation, rendered on the hand
     "l_wrist": (BoneTarget("LeftHand", (0.1229, -0.2923, 0.9484), 1.0),),  # L wrist, positive extension
     "r_r_wrist": (BoneTarget("RightHand", (0.1961, -0.9596, -0.2018), 1.0),),  # R forearm pronation, rendered on the hand

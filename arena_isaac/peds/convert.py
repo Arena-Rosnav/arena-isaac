@@ -5,9 +5,9 @@ standalone ``character.usda`` (SkelRoot + Skeleton + one skinned Mesh per skin
 controller). Clips are not converted: the runtime renders the arena_peds wire
 (peds.providers.external), and the only animation input consumed is the idle
 clip's first frame, extracted into meta.json as the neutral stance wire angles
-compose over (root pinned to rest, the prim Xform owns the pose). pxr is
-imported lazily inside the authoring helpers so this module stays importable
-without pxr (e.g. for SDF parsing and cache digests).
+compose over (root pinned to rest, the prim Xform owns the pose, legs at the
+skin's bind rest). pxr is imported lazily inside the authoring helpers so this
+module stays importable without pxr (e.g. for SDF parsing and cache digests).
 """
 
 from __future__ import annotations
@@ -44,7 +44,11 @@ _OPACITY_THRESHOLD = 0.5
 
 # Bump whenever convert_actor's output changes shape, cache.py salts its digest
 # with this so stale disk caches rebuild instead of serving old geometry.
-CONVERTER_VERSION = 9
+CONVERTER_VERSION = 10
+
+_BIND_STANCE = frozenset(f"{side}{bone}" for side in ("Left", "Right") for bone in ("UpLeg", "Leg", "Foot", "ToeBase"))
+_WHEELS = frozenset(("WheelL", "WheelR"))
+_SOLE_BAND = 0.01  # m above a foot's lowest bind vertex that still counts as sole
 
 
 @dataclass(eq=False)
@@ -580,19 +584,56 @@ def _matrix_to_quat(rotation: np.ndarray) -> np.ndarray:
     return quat / np.linalg.norm(quat)
 
 
-def _neutral_pose(joints: list[JointNode], channels: dict[str, tuple[np.ndarray, np.ndarray]]) -> tuple[list[list[float]], list[list[float]]]:
+def _neutral_pose(joints: list[JointNode], channels: dict[str, tuple[np.ndarray, np.ndarray]], held: frozenset[str] = frozenset()) -> tuple[list[list[float]], list[list[float]]]:
     """First-frame joint-local pose of a clip: (xyzw quaternions, translations).
 
-    Joints without a channel hold their rest transform, and so does the root.
-    This is the neutral standing stance the runtime composes wire angles over."""
+    Joints without a channel, the root and the `held` joints keep their rest transform."""
     rotations: list[list[float]] = []
     translations: list[list[float]] = []
     for joint in joints:
-        local = channels[joint.name][1][0] if joint.name in channels and joint.parent >= 0 else joint.rest
+        local = channels[joint.name][1][0] if joint.name in channels and joint.parent >= 0 and joint.name not in held else joint.rest
         w, x, y, z = _matrix_to_quat(_orthonormalize(local[:3, :3]))
         rotations.append([float(x), float(y), float(z), float(w)])
         translations.append([float(v) for v in local[:3, 3]])
     return rotations, translations
+
+
+def _soles(joints: list[JointNode], skinned: list[SkinnedMesh]) -> list[dict[str, object]]:
+    """Heel and toe sole point of each foot in the frame of the joint it rides on, none for a rig on wheels."""
+    index = {joint.name: i for i, joint in enumerate(joints)}
+    if _WHEELS & index.keys():
+        return []
+    soles: list[dict[str, object]] = []
+    for side in ("Left", "Right"):
+        foot, toe = f"{side}Foot", f"{side}ToeBase"
+        points: list[np.ndarray] = []
+        owners: list[tuple[str, np.ndarray]] = []
+        bind: dict[str, np.ndarray] = {}
+        for mesh in skinned:
+            skin = mesh.skin
+            for k, name in enumerate(skin.joint_names):
+                if name in (foot, toe):
+                    bind[name] = np.linalg.inv(skin.inv_bind[k])[:3, 3]
+            for vertex, influences in zip(mesh.mesh.points, skin.influences, strict=True):
+                if not influences:
+                    continue
+                k = max(influences, key=lambda influence: influence[1])[0]
+                if skin.joint_names[k] in (foot, toe):
+                    points.append((skin.bind_shape @ np.append(vertex, 1.0))[:3])
+                    owners.append((skin.joint_names[k], skin.inv_bind[k]))
+        if not points or len(bind) < 2:
+            continue
+        cloud = np.array(points)
+        forward = bind[toe] - bind[foot]
+        forward[2] = 0.0
+        sole = np.flatnonzero(cloud[:, 2] <= cloud[:, 2].min() + _SOLE_BAND)
+        along = cloud[sole] @ forward
+        middle = 0.5 * (along.min() + along.max())
+        for half in (sole[along <= middle], sole[along > middle]):
+            vertex = half[int(np.argmin(cloud[half, 2]))]
+            name, inv_bind = owners[vertex]
+            soles.append({"joint": index[name], "point": [float(v) for v in (inv_bind @ np.append(cloud[vertex], 1.0))[:3]]})
+    return soles
 
 
 # --------------------------------------------------------------------------- #
@@ -772,7 +813,8 @@ def convert_actor(sdf_path: str, dae_paths: dict[str, str], out_dir: str | pathl
     dae_paths maps each consumed SDF URI to a local file. The skeleton and the
     skinned meshes come from the skin DAE, the rest pose from the idle clip's
     first frame, the neutral stance from the neutral clip's first frame (the
-    idle one when the actor has no neutral clip). Other clips are not read.
+    idle one when the actor has no neutral clip) with the _BIND_STANCE legs at
+    the bind rest. Other clips are not read.
     """
     out = pathlib.Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -784,19 +826,16 @@ def convert_actor(sdf_path: str, dae_paths: dict[str, str], out_dir: str | pathl
     materials = _parse_materials(skin_doc)
     _author_character(out, joints, skinned, materials)
 
-    def first_frame(clip: str) -> tuple[list[list[float]], list[list[float]]] | None:
-        uri = spec.clips.get(clip)
-        if uri is None:
-            return None
-        path = dae_paths[uri]
+    def first_frame(clip: str, held: frozenset[str] = frozenset()) -> tuple[list[list[float]], list[list[float]]]:
+        path = dae_paths[spec.clips[clip]]
         if not path.lower().endswith(".dae"):
             raise ValueError(f"actor {spec.name} {clip} clip {path} is not COLLADA, regenerate the bundle")
-        return _neutral_pose(joints, _parse_animations(_Collada(path)))
+        return _neutral_pose(joints, _parse_animations(_Collada(path)), held)
 
-    rest = first_frame("idle")
-    if rest is None:
+    if "idle" not in spec.clips:
         raise ValueError(f"actor {spec.name} has no idle animation to take the rest pose from")
-    neutral = first_frame("neutral") or rest
+    rest = first_frame("idle")
+    neutral = first_frame("neutral" if "neutral" in spec.clips else "idle", _BIND_STANCE)
 
     meta: dict[str, object] = {
         "actor": spec.name,
@@ -805,6 +844,7 @@ def convert_actor(sdf_path: str, dae_paths: dict[str, str], out_dir: str | pathl
         "joints": [joint.path for joint in joints],
         "neutral": {"rotations_xyzw": neutral[0], "translations": neutral[1]},
         "rest": {"rotations_xyzw": rest[0], "translations": rest[1]},
+        "soles": _soles(joints, skinned),
     }
     (out / "meta.json").write_text(json.dumps(meta, indent=2))
     return spec

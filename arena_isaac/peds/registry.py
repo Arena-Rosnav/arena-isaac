@@ -34,5 +34,7 @@ class PedRegistry:
         for ped in self._peds.values():
             position, orientation = ped.desired_root(dt)
             pose = ped.provider.evaluate(sim_time, dt)
+            if ped.soles is not None:
+                ped.ground_z = -ped.soles.height(pose)
             self._writer.set_root(ped, position, orientation)
             self._writer.write(ped, pose)
