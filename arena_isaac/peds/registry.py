@@ -33,6 +33,8 @@ class PedRegistry:
         """Compute root motion and write each provider's evaluated pose."""
         for ped in self._peds.values():
             pose = ped.provider.evaluate(sim_time, dt)
+            if ped.soles is not None:
+                ped.ground_z = -ped.soles.height(pose)
             position, orientation = ped.root(dt, pose)
             self._writer.set_root(ped, position, orientation)
             self._writer.write(ped, pose)

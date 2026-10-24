@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, ClassVar
 
 import numpy as np
 
+from peds.ground import Soles
 from peds.support import TYPICAL_CLEARANCE, PelvisClearance, Support, supported_root
 from peds.providers.base import JointPose, PoseProvider, ResettablePhase
 
@@ -37,6 +38,7 @@ class Ped:
     position: np.ndarray = field(default_factory=lambda: np.zeros(3))
     orientation: np.ndarray = field(default_factory=_identity_orientation)
     ground_z: float = -0.03
+    soles: Soles | None = None
     kinematics: Kinematics | None = None  # forward kinematics of its skeleton, for supported postures
     clearance: PelvisClearance = TYPICAL_CLEARANCE  # from its asset
     support: Support | None = None  # seat or bed it rests on, None = on its feet
