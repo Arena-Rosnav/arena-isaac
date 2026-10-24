@@ -32,7 +32,7 @@ class PedRegistry:
     def tick(self, sim_time: float, dt: float) -> None:
         """Compute root motion and write each provider's evaluated pose."""
         for ped in self._peds.values():
-            position, orientation = ped.desired_root(dt)
             pose = ped.provider.evaluate(sim_time, dt)
+            position, orientation = ped.root(dt, pose)
             self._writer.set_root(ped, position, orientation)
             self._writer.write(ped, pose)

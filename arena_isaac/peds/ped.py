@@ -6,11 +6,15 @@ No USD calls here, a later phase wires this into a SkelWriter.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import ClassVar
+from typing import TYPE_CHECKING, ClassVar
 
 import numpy as np
 
-from peds.providers.base import PoseProvider, ResettablePhase
+from peds.support import TYPICAL_CLEARANCE, PelvisClearance, Support, supported_root
+from peds.providers.base import JointPose, PoseProvider, ResettablePhase
+
+if TYPE_CHECKING:
+    from peds.kinematics import Kinematics
 
 
 def _identity_orientation() -> np.ndarray:
@@ -33,6 +37,9 @@ class Ped:
     position: np.ndarray = field(default_factory=lambda: np.zeros(3))
     orientation: np.ndarray = field(default_factory=_identity_orientation)
     ground_z: float = -0.03
+    kinematics: Kinematics | None = None  # forward kinematics of its skeleton, for supported postures
+    clearance: PelvisClearance = TYPICAL_CLEARANCE  # from its asset
+    support: Support | None = None  # seat or bed it rests on, None = on its feet
 
     MAX_EXTRAPOLATION: ClassVar[float] = 0.5
 
@@ -82,3 +89,11 @@ class Ped:
         self.position = desired_position
         self.orientation = self.command_orientation
         return self.position, self.orientation
+
+    def root(self, dt: float, pose: JointPose) -> tuple[np.ndarray, np.ndarray]:
+        """Root pose for this frame: the dead-reckoned command, set down on its seat or bed while it rests on one."""
+        position, orientation = self.desired_root(dt)
+        if self.support is None or self.kinematics is None:
+            return position, orientation
+        pelvis, lowest = self.kinematics.heights(pose)
+        return supported_root(self.support, self.clearance, position, orientation, pelvis, self.kinematics.foot_lift(lowest))
