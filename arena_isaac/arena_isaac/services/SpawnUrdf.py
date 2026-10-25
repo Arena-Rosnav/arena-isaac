@@ -16,7 +16,7 @@ import isaac_utils.graphs.odom as odom
 import isaac_utils.graphs.sensors.sensors as sensors
 from isaac_utils.graphs import control, physics_engine
 from isaac_utils.managers import entity_lifecycle
-from isaac_utils.utils import geom
+from isaac_utils.utils import frames, geom
 from isaac_utils.utils.material import Material, PhysicsParams
 from isaac_utils.utils.path import world_path
 from isaac_utils.utils.prim import ensure_path
@@ -353,11 +353,14 @@ def spawn_urdf(request: SpawnUrdf.Request) -> str:
     manifest = entity_lifecycle.register_robot(prim_path, articulation_path)
 
     if request.localization:
+        base = frames.link(stage.GetPrimAtPath(prim_path), request.base_frame) or stage.GetPrimAtPath(articulation_path)
+        offset_translation, offset_orientation = frames.relative_pose(stage.GetPrimAtPath(body_path), base)
         odom_graph_path = os.path.join(prim_path, 'odom_publisher')
         if not odom.odom(
             odom_graph_path,
             prim_path=body_path,
-            base_prim=articulation_path,
+            offset_translation=offset_translation,
+            offset_orientation=offset_orientation,
             base_frame_id=f'{request.tf_prefix}{request.base_frame}',
             odom_frame_id=f'{request.tf_prefix}{request.odom_frame}',
             odom_topic=request.odom_topic,
