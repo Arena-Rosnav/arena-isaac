@@ -17,6 +17,7 @@ import isaac_utils.graphs.sensors.sensors as sensors
 from isaac_utils.graphs import control, physics_engine
 from isaac_utils.managers import entity_lifecycle
 from isaac_utils.utils import frames, geom
+from isaac_utils.utils.inertials import prune_inertials
 from isaac_utils.utils.material import Material, PhysicsParams
 from isaac_utils.utils.path import world_path
 from isaac_utils.utils.prim import ensure_path
@@ -157,38 +158,7 @@ def sanitize_urdf_for_isaac(urdf_path: str) -> tuple[str, list[str]]:
 
                 tag.attrib['filename'] = symlink_path
 
-    for link in root.iter('link'):
-        link_name = link.attrib.get('name', '')
-        inertial = link.find('inertial')
-        if inertial is None:
-            continue
-
-        mass_el = inertial.find('mass')
-        inertia_el = inertial.find('inertia')
-        if mass_el is None or inertia_el is None:
-            continue
-
-        try:
-            mass = float(mass_el.attrib.get('value', '0'))
-        except ValueError:
-            continue
-
-        try:
-            ixx = float(inertia_el.attrib.get('ixx', '0'))
-            ixy = float(inertia_el.attrib.get('ixy', '0'))
-            ixz = float(inertia_el.attrib.get('ixz', '0'))
-            iyy = float(inertia_el.attrib.get('iyy', '0'))
-            iyz = float(inertia_el.attrib.get('iyz', '0'))
-            izz = float(inertia_el.attrib.get('izz', '0'))
-        except ValueError:
-            continue
-
-        det = ixx * (iyy * izz - iyz * iyz) - ixy * (ixy * izz - iyz * ixz) + ixz * (ixy * iyz - iyy * ixz)
-
-        degenerate = mass < 1e-6 or ixx < 1e-6 or iyy < 1e-6 or izz < 1e-6 or det < 1e-12
-
-        if degenerate:
-            link.remove(inertial)
+    prune_inertials(root)
 
     child_links = {child.attrib.get('link') for joint in root.iter('joint') for child in joint.iter('child')}
     for link in root.iter('link'):
