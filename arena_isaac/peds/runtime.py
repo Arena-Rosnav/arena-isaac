@@ -22,12 +22,9 @@ from isaac_utils.utils.prim import ensure_path
 from peds.cache import convert_cached
 from peds.convert import parse_actor
 from peds.ground import Soles
-from peds.kinematics import Kinematics
 from peds.ped import Ped
-from peds.providers.base import JointPose
 from peds.providers.external import ExternalPoseProvider
 from peds.registry import PedRegistry
-from peds.support import Support, read_pelvis_clearance
 from peds.write import anim_prim_path, make_writer
 
 if TYPE_CHECKING:
@@ -70,8 +67,7 @@ class PedRuntime:
         create_prim(prim_path, "Xform", usd_path=str(cache_dir / "character.usda"))
         self._author_animation(prim_path, joint_order, rest_translations)
 
-        kinematics = Kinematics(joint_order, JointPose(rotations=neutral_rotations, translations=neutral_translations))
-        ped = Ped(sim_path=name, prim_path=prim_path, provider=provider, kinematics=kinematics)
+        ped = Ped(sim_path=name, prim_path=prim_path, provider=provider)
         ground_z = parse_actor(model_source).ground_z
         if ground_z is not None:
             ped.ground_z = ground_z
@@ -79,13 +75,6 @@ class PedRuntime:
             index = {path: i for i, path in enumerate(joint_order)}
             parents = [index[path.rsplit("/", 1)[0]] if "/" in path else -1 for path in joint_order]
             ped.soles = Soles(parents, [sole["joint"] for sole in meta["soles"]], np.array([sole["point"] for sole in meta["soles"]]))
-        clearance = read_pelvis_clearance(model_source)
-        if clearance is None:
-            import carb
-
-            carb.log_warn(f"peds: {model_source} has no pelvis_clearance in its annotation, rebuild its asset: seated and lying bodies use a typical one")
-        else:
-            ped.clearance = clearance
         ped.teleport(np.asarray(position, dtype=float), np.asarray(orientation, dtype=float))
 
         self._registry.spawn(name, ped)
@@ -102,13 +91,11 @@ class PedRuntime:
         joint_names: list[str],
         joint_positions: list[float],
         stamp_sec: float,
-        support: Support | None = None,
     ) -> bool:
         """Dead-reckoned per-tick command plus the wire's joint angles.
 
         animation_state is consumed upstream by the gait source that authors
-        the wire angles, it selects nothing here. support is the seat or bed
-        the ped rests on, None while on its feet (peds.support).
+        the wire angles, it selects nothing here.
         """
         ped = self._registry.get(name)
         if ped is None:
@@ -121,7 +108,6 @@ class PedRuntime:
             float(self._world.current_time),
             stamp_sec=stamp_sec,
         )
-        ped.support = support
         if joint_names and (external := self._externals.get(name)) is not None:
             external.push(stamp_sec, joint_names, joint_positions)
         return True
@@ -201,9 +187,8 @@ def update(
     joint_names: list[str],
     joint_positions: list[float],
     stamp_sec: float,
-    support: Support | None = None,
 ) -> bool:
-    return _get().update(name, position, orientation, velocity, animation_state, joint_names, joint_positions, stamp_sec, support)
+    return _get().update(name, position, orientation, velocity, animation_state, joint_names, joint_positions, stamp_sec)
 
 
 def move(name: str, position: tuple[float, float, float], orientation: tuple[float, float, float, float]) -> bool:

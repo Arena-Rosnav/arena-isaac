@@ -1,16 +1,8 @@
 from arena_people_msgs.msg import Pedestrian, Pedestrians
 from arena_people_msgs.srv import UpdatePedestrians
 from peds import runtime
-from peds.support import LIE_ON, SIT_ON, Support
 
 from .utils import Service, Subscription, on_exception
-
-
-def support_of(pedestrian: Pedestrian) -> Support | None:
-    """The seat or bed the ped rests on, None while it is on its feet or the surface is unknown."""
-    if pedestrian.support_height == Pedestrian.NO_SUPPORT or pedestrian.interaction_type not in (SIT_ON, LIE_ON):
-        return None
-    return Support(kind=pedestrian.interaction_type, height=pedestrian.support_height)
 
 
 @on_exception(UpdatePedestrians.Response.NOT_FOUND)
@@ -24,7 +16,6 @@ def update_pedestrian(pedestrian: Pedestrian, stamp_sec: float) -> int:
         list(pedestrian.joint_state.name),
         list(pedestrian.joint_state.position),
         stamp_sec,
-        support_of(pedestrian),
     )
     return UpdatePedestrians.Response.SUCCESS if found else UpdatePedestrians.Response.NOT_FOUND
 
