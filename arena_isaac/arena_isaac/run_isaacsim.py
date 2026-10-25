@@ -193,9 +193,10 @@ from arena_isaac.services import services, subscriptions
 # BACKGROUND_USD_PATH = "/Isaac/Environments/Simple_Warehouse/warehouse_with_forklifts.usd"
 
 
-class _NewtonStaleGuard:
-    """Tracks structural stage edits that newton cannot see.
+class _StageEditGuard:
+    """Tracks structural stage edits that stale the physics views.
 
+    PhysX tensor views cached in bridge graph nodes go stale on prim deletions.
     Newton registers no prim-change callbacks with the stage-update interface, so a
     robot spawned during a pause hold never enters the mjwarp model, its articulation
     view then matches nothing ("Physics backend not found"). The main loop bounces
@@ -305,7 +306,6 @@ def _newton_apply_solver_cfg() -> None:
 # matches Isaac's implicit default, pinned so lockstep step projections are exact
 PHYSICS_DT = 1.0 / 60.0
 
-newton_guard = None
 if PHYSICS_ENGINE == "newton":
     # python.sh does not autoload the newton extensions (only isaac-sim.newton.sh does),
     # and the engine switch must happen before any physics scene exists.
@@ -317,7 +317,7 @@ if PHYSICS_ENGINE == "newton":
     from isaacsim.core.simulation_manager import SimulationManager
 
     SimulationManager.switch_physics_engine("newton")
-    newton_guard = _NewtonStaleGuard(omni.usd.get_context().get_stage())
+stage_guard = _StageEditGuard(omni.usd.get_context().get_stage())
 
 world = World(physics_dt=PHYSICS_DT, rendering_dt=PHYSICS_DT)
 if PHYSICS_ENGINE == "newton":
@@ -532,21 +532,20 @@ def main(args: list[str] | None = None):
                 # before the render, so the drawn frame uses the new pose
                 viewport.apply()
             if controller.running:
-                if newton_guard is not None:
-                    newton_guard.tick()
+                stage_guard.tick()
                 if newton_bounce_hold > 0:
                     newton_bounce_hold -= 1
                     simulation_app.update()
                 elif not was_playing:
                     restore_time = 0.0
-                    if newton_guard is not None:
+                    if PHYSICS_ENGINE == "newton":
                         # newton's per-frame pump does not survive a plain pause->play
                         # resume (only warmup's two direct steps run afterwards), the
                         # timeline stop->play cycle is the transition the simulation
                         # manager rebuilds around (stop invalidates, play triggers full
                         # warmup), and authored poses are the spawn/teleport poses so
                         # the stage reset is a no-op at arena's episode boundaries
-                        newton_guard.flush()
+                        stage_guard.flush()
                         restore_time = _newton_sim_time()
                         timeline = omni.timeline.get_timeline_interface()
                         timeline_time = timeline.get_current_time()
@@ -557,13 +556,13 @@ def main(args: list[str] | None = None):
                             # writers stamp from it, keep it continuous or their
                             # messages fall behind /clock and tf lookups fail
                             timeline.set_current_time(timeline_time)
-                    else:
+                    elif stage_guard.flush():
                         # prim deletions during the pause invalidate the tensor
                         # views cached in bridge graph nodes
                         from isaac_utils.graphs import rebuild_graphs
 
-                        if not os.path.exists("/opt/arena_ws/log/earshot_no_rebuild"):
-                            rebuild_graphs()
+                        rebuild_graphs()
+                        stage_guard.flush()
                     world.play()
                     was_playing = True
                     if restore_time > 0.0:
@@ -576,7 +575,7 @@ def main(args: list[str] | None = None):
                         _newton_restore_sim_time(restore_time)
                         carb.log_info(f"arena: newton resume, sim time restored to {restore_time:.4f}")
                     stepped_this_iteration = True
-                elif newton_guard is not None and newton_guard.pending(settle_frames=30):
+                elif PHYSICS_ENGINE == "newton" and stage_guard.pending(settle_frames=30):
                     # spawns during an open clock window never cross a pause->play
                     # boundary, hold a real pause and rebuild on the resume path
                     carb.log_info("arena: newton rebuild pending, bouncing timeline")
