@@ -55,9 +55,7 @@ def read_pelvis_clearance(sdf_path: str) -> PelvisClearance | None:
     return PelvisClearance(sit=float(clearance["sit"]), lie=float(clearance["lie"])) if clearance else None
 
 
-def supported_root(
-    support: Support, clearance: PelvisClearance, position: np.ndarray, orientation: np.ndarray, pelvis: float, foot_lift: float
-) -> tuple[np.ndarray, np.ndarray]:
+def supported_root(support: Support, clearance: PelvisClearance, position: np.ndarray, orientation: np.ndarray, pelvis: float, foot_lift: float) -> tuple[np.ndarray, np.ndarray]:
     """Root pose that sets a ped commanded to (position, orientation) on its supporting surface.
 
     pelvis is the pelvis height above the root in the evaluated pose, foot_lift how far that pose lifts the feet

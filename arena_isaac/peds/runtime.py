@@ -24,10 +24,10 @@ from peds.convert import parse_actor
 from peds.ground import Soles
 from peds.kinematics import Kinematics
 from peds.ped import Ped
-from peds.support import Support, read_pelvis_clearance
 from peds.providers.base import JointPose
 from peds.providers.external import ExternalPoseProvider
 from peds.registry import PedRegistry
+from peds.support import Support, read_pelvis_clearance
 from peds.write import anim_prim_path, make_writer
 
 if TYPE_CHECKING:

@@ -11,8 +11,8 @@ from typing import TYPE_CHECKING, ClassVar
 import numpy as np
 
 from peds.ground import Soles
-from peds.support import TYPICAL_CLEARANCE, PelvisClearance, Support, supported_root
 from peds.providers.base import JointPose, PoseProvider, ResettablePhase
+from peds.support import TYPICAL_CLEARANCE, PelvisClearance, Support, supported_root
 
 if TYPE_CHECKING:
     from peds.kinematics import Kinematics
