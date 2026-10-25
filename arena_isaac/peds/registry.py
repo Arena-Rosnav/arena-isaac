@@ -33,7 +33,9 @@ class PedRegistry:
         """Compute root motion and write each provider's evaluated pose."""
         for ped in self._peds.values():
             pose = ped.provider.evaluate(sim_time, dt)
-            if ped.soles is not None:
+            if ped.soles is not None and ped.support is None:
+                # a ped on a seat or a bed has its root set by the surface (peds.support), which keeps its feet
+                # above the floor itself: planting the soles of a folded pose would sink it into the seat
                 ped.ground_z = -ped.soles.height(pose)
             position, orientation = ped.root(dt, pose)
             self._writer.set_root(ped, position, orientation)
