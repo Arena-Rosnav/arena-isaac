@@ -4,9 +4,10 @@ import xml.etree.ElementTree as ET
 
 import carb
 import omni.usd
-from pxr import Sdf, Usd, UsdPhysics
+from pxr import PhysxSchema, Sdf, Usd, UsdPhysics
 
 from isaac_utils.graphs import physics_engine, register_rebuilder
+from isaac_utils.utils.initial_joints import initial_positions
 
 from .topic_bridge import topic_bridge
 
@@ -42,6 +43,12 @@ def _set_drive(joint_prim: Usd.Prim, stiffness: float, damping: float, max_force
             drive.GetDampingAttr().Set(damping)
             if max_force is not None:
                 drive.CreateMaxForceAttr(max_force)
+
+
+def _set_initial(joint_prim: Usd.Prim, position: float) -> None:
+    axis, value = ('angular', math.degrees(position)) if joint_prim.IsA(UsdPhysics.RevoluteJoint) else ('linear', position)
+    UsdPhysics.DriveAPI(joint_prim, axis).CreateTargetPositionAttr(value)
+    PhysxSchema.JointStateAPI.Apply(joint_prim, axis).CreatePositionAttr(value)
 
 
 def _joints_from_urdf(urdf_path: str) -> tuple[list[str], list[str], dict[str, float]]:
@@ -102,7 +109,18 @@ class Control:
         exposes joint states/commands over per-kind JointState topics.
         """
         del robot_model  # control plane is URDF-driven; controller types are decided in the CM
+        joint_prims = self._joint_prims()
+        for joint_name, position in initial_positions(self.urdf_path).items():
+            if (joint_prim := joint_prims.get(joint_name)) is not None:
+                _set_initial(joint_prim, position)
         return self._dispatch_bridge()
+
+    def _joint_prims(self) -> dict[str, Usd.Prim]:
+        stage = omni.usd.get_context().get_stage()
+        root = stage.GetPrimAtPath(self.prim_path)
+        # The URDF importer nests joints under `<prim_path>/Physics/<name>`, so
+        # index them by name from the subtree rather than a fixed path.
+        return {prim.GetName(): prim for prim in Usd.PrimRange(root) if prim.IsA(UsdPhysics.Joint)} if root.IsValid() else {}
 
     def _dispatch_bridge(self) -> bool:
         joints_velocity, joints_position, effort_limits = _joints_from_urdf(self.urdf_path)
@@ -110,11 +128,7 @@ class Control:
             carb.log_error(f"topic_bridge: no ros2_control joints found in URDF '{self.urdf_path}'")
             return False
 
-        stage = omni.usd.get_context().get_stage()
-        root = stage.GetPrimAtPath(self.prim_path)
-        # The URDF importer nests joints under `<prim_path>/Physics/<name>`, so
-        # index them by name from the subtree rather than a fixed path.
-        joint_prims = {prim.GetName(): prim for prim in Usd.PrimRange(root) if prim.IsA(UsdPhysics.Joint)} if root.IsValid() else {}
+        joint_prims = self._joint_prims()
 
         newton = physics_engine() == 'newton'
         velocity_damping = _VELOCITY_DRIVE_DAMPING_NEWTON if newton else _VELOCITY_DRIVE_DAMPING

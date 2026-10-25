@@ -36,21 +36,7 @@ def _rotate(q, v):
     ]
 
 
-def setup(db):
-    db.per_instance_state.ready = False
-
-
 def compute(db):
-    if not db.per_instance_state.ready:
-        # the offset is captured from the usd matrices of both prims, which hold
-        # the authored spawn poses under either engine at this point
-        body0_t, body0_q = _decompose(db.inputs.body_matrix)
-        base_t, base_q = _decompose(db.inputs.base_matrix)
-        conj = [-body0_q[0], -body0_q[1], -body0_q[2], body0_q[3]]
-        gap = [base_t[0] - body0_t[0], base_t[1] - body0_t[1], base_t[2] - body0_t[2]]
-        db.per_instance_state.offset_q = _mul(conj, base_q)
-        db.per_instance_state.offset_t = _rotate(conj, gap)
-        db.per_instance_state.ready = True
     if db.inputs.body_is_matrix:
         body_t, body_q = _decompose(db.inputs.body_matrix)
     else:
@@ -61,16 +47,18 @@ def compute(db):
             # exact identity means the fabric pose is not written yet (ticks
             # before physics warmup), fall back to the authored usd pose
             body_t, body_q = _decompose(db.inputs.body_matrix)
-    world_gap = _rotate(body_q, db.per_instance_state.offset_t)
+    offset_t = [float(v) for v in db.inputs.offset_translation]
+    offset_q = [float(v) for v in db.inputs.offset_orientation]
+    world_gap = _rotate(body_q, offset_t)
     db.outputs.translation = [body_t[0] + world_gap[0], body_t[1] + world_gap[1], body_t[2] + world_gap[2]]
-    db.outputs.quaternion = _mul(body_q, db.per_instance_state.offset_q)
+    db.outputs.quaternion = _mul(body_q, offset_q)
     return True
 """
 
 
-def base_pose(graph: Graph, name: str, body_is_matrix: bool = True) -> _Node:
+def base_pose(graph: Graph, name: str, offset_translation: list[float], offset_orientation: list[float], body_is_matrix: bool = True) -> _Node:
     """ScriptNode: base-link world pose = the tracked body's live pose times the
-    constant body->base offset, captured on the first tick. xyzw quaternions.
+    constant body->base offset. xyzw quaternions.
     The live body pose is body_matrix, or body_translation plus
     body_orientation when body_is_matrix is false."""
     node = graph.node(name, 'omni.graph.scriptnode.ScriptNode')
@@ -78,9 +66,12 @@ def base_pose(graph: Graph, name: str, body_is_matrix: bool = True) -> _Node:
     node.create_attribute('inputs:body_translation', 'vectord[3]')
     node.create_attribute('inputs:body_orientation', 'quatd[4]')
     node.create_attribute('inputs:body_is_matrix', 'bool')
-    node.create_attribute('inputs:base_matrix', 'matrixd[4]')
+    node.create_attribute('inputs:offset_translation', 'vectord[3]')
+    node.create_attribute('inputs:offset_orientation', 'quatd[4]')
     node.create_attribute('outputs:translation', 'vectord[3]')
     node.create_attribute('outputs:quaternion', 'quatd[4]')
     node.attribute('body_is_matrix', body_is_matrix)
+    node.attribute('offset_translation', offset_translation)
+    node.attribute('offset_orientation', offset_orientation)
     node.attribute('script', _BASE_POSE_SCRIPT)
     return node

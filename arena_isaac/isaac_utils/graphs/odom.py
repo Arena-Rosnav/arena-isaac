@@ -7,15 +7,16 @@ from isaac_utils.graphs.transform import base_pose
 def odom(
     graph_path: str,
     prim_path: str,
-    base_prim: str,
+    offset_translation: list[float],
+    offset_orientation: list[float],
     base_frame_id: str = 'base_link',
     odom_frame_id: str = 'odom',
     map_frame_id: str = 'map',
     odom_topic: str = '',
 ) -> bool:
     """Action graph publishing nav2 odometry. `prim_path` is a tracked rigid body
-    fixed to the base; `base_prim` is the base-link holder. Publishes the base pose
-    (body composed with its constant body->base offset) on odom->base, identity
+    fixed to the base; the offset is the base frame's pose in that body (xyzw).
+    Publishes the base pose (body composed with the offset) on odom->base, identity
     map->odom (reset-safe). `odom_topic` empty skips the nav_msgs/Odometry topic."""
 
     controller = og.Controller()
@@ -27,8 +28,7 @@ def odom(
     on_playback_tick = graph.node('on_playback_tick', 'omni.graph.action.OnPlaybackTick')
     read_simulation_time = graph.node('read_simulation_time', 'isaacsim.core.nodes.IsaacReadSimulationTime')
     read_simulation_time.attribute('resetOnStop', False)
-    get_base_transform = graph.node('get_base_transform', 'omni.graph.nodes.GetPrimLocalToWorldTransform')
-    base = base_pose(graph, 'base_link_pose', body_is_matrix=not newton)
+    base = base_pose(graph, 'base_link_pose', offset_translation, offset_orientation, body_is_matrix=not newton)
     publish_map = graph.node('publish_odom_static', 'isaacsim.ros2.bridge.ROS2PublishRawTransformTree')
     publish_odom = graph.node('publish_odom', 'isaacsim.ros2.bridge.ROS2PublishRawTransformTree')
 
@@ -38,8 +38,7 @@ def odom(
     read_simulation_time.connect('simulationTime', publish_odom, 'timeStamp')
     read_simulation_time.connect('simulationTime', publish_map, 'timeStamp')
 
-    # the usd body matrix serves the one-time offset capture under both engines,
-    # and stays the live pose source under physx
+    # the usd body matrix is the live pose source under physx
     get_transform = graph.node('get_transform', 'omni.graph.nodes.GetPrimLocalToWorldTransform')
     get_transform.attribute('primPath', prim_path)
     get_transform.connect('localToWorldTransform', base, 'body_matrix')
@@ -51,9 +50,6 @@ def odom(
         read_world_pose.attribute('prim', prim_path)
         read_world_pose.connect('translation', base, 'body_translation')
         read_world_pose.connect('orientation', base, 'body_orientation')
-
-    get_base_transform.attribute('primPath', base_prim)
-    get_base_transform.connect('localToWorldTransform', base, 'base_matrix')
 
     publish_odom.attribute('parentFrameId', odom_frame_id)
     publish_odom.attribute('childFrameId', base_frame_id)

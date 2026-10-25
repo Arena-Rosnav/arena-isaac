@@ -110,6 +110,21 @@ def test_wheels_that_rollers_cannot_stand_in_for_stay_untouched(robot: ET.Elemen
     assert ET.tostring(robot) == before
 
 
+def test_a_wheel_that_slips_a_tenth_across_its_grip_gets_rollers():
+    assert len(expand_roller_wheels(_robot(mu=1.2, mu2=0.05))) > 0
+    assert expand_roller_wheels(_robot(mu=1.0, mu2=0.2)) == []
+
+
+def test_a_wheel_rolled_onto_its_axle_gets_rollers():
+    robot = ET.fromstring(
+        '<robot name="r"><link name="base"/><link name="wheel"><inertial><mass value="0.03"/><inertia ixx="1e-4" iyy="1e-4" izz="1e-4" ixy="0" ixz="0" iyz="0"/></inertial>'
+        '<collision><geometry><cylinder radius="0.03" length="0.01"/></geometry></collision></link>'
+        '<joint name="spin" type="continuous"><parent link="base"/><child link="wheel"/><origin rpy="1.5708 0 0"/><axis xyz="0 0 1"/></joint>'
+        '<gazebo reference="wheel"><mu1>0.05</mu1><mu2>1.2</mu2><fdir1>0 0 1</fdir1></gazebo></robot>'
+    )
+    assert len(expand_roller_wheels(robot)) > 0
+
+
 def test_roller_axis_is_corrected_for_its_tilt_while_engaged():
     layout = roller_layout(_RADIUS, np.array([0.0, 1.0, 0.0]), np.array([0.0, 0.0, -1.0]), np.array([1.0, -1.0, 0.0]) / math.sqrt(2.0))
     _, axis, _ = layout[0]

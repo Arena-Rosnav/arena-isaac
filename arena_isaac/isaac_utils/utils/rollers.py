@@ -13,6 +13,7 @@ _ROLLERS = 12
 _SPHERES = 2
 _CENTER_RADIUS_SHARE = 0.28
 _MASS_SHARE = 0.25
+_SLIP_RATIO = 0.1
 _INERTIA_ATTRS = ('ixx', 'ixy', 'ixz', 'iyy', 'iyz', 'izz')
 
 
@@ -157,7 +158,7 @@ def _lighten(link: ET.Element) -> float:
 
 
 def expand_roller_wheels(root: ET.Element) -> list[str]:
-    """Rebuild every link whose <gazebo> friction grips along one direction only as a wheel with free-spinning rollers, return the roller joints."""
+    """Rebuild every link whose <gazebo> friction grips along one direction and slips across it at a tenth or less as a wheel with free-spinning rollers, return the roller joints."""
     rotations = _link_rotations(root)
     links = {link.attrib['name']: link for link in root.findall('link')}
     joints = {child.attrib['link']: joint for joint in root.findall('joint') if (child := joint.find('child')) is not None}
@@ -171,7 +172,7 @@ def expand_roller_wheels(root: ET.Element) -> list[str]:
         mu = _coefficient(gazebo, 'mu', 'mu1')
         mu2 = _coefficient(gazebo, 'mu2')
         frame = direction.attrib.get(_GZ_EXPRESSED_IN, name)
-        if along is None or mu is None or mu2 is None or (mu > 0.0) == (mu2 > 0.0) or frame not in rotations:
+        if along is None or mu is None or mu2 is None or max(mu, mu2) <= 0.0 or min(mu, mu2) > _SLIP_RATIO * max(mu, mu2) or frame not in rotations:
             continue
         link = links[name]
         joint = joints[name]
@@ -180,9 +181,9 @@ def expand_roller_wheels(root: ET.Element) -> list[str]:
         axle = np.array([float(v) for v in (axis.attrib['xyz'] if axis is not None else '1 0 0').split()])
         axle /= np.linalg.norm(axle)
         to_link = rotations[name].T @ rotations[frame]
-        down = to_link @ np.array([0.0, 0.0, -1.0])
+        down = rotations[name].T @ np.array([0.0, 0.0, -1.0])
         grip = to_link @ along
-        if mu2 > 0.0:
+        if mu2 > mu:
             grip = np.cross(down, grip)
         if radius is None or joint.attrib.get('type') not in ('continuous', 'revolute') or abs(float(grip @ np.cross(axle, down))) < 1e-3:
             continue
