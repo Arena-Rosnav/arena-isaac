@@ -3,8 +3,9 @@ import math
 import numpy as np
 from isaacsim_msgs.msg import Wall
 from isaacsim_msgs.srv import SpawnWalls
-from pxr import Sdf, UsdGeom
+from pxr import Sdf, UsdGeom, UsdPhysics
 
+from arena_isaac.moving import moving_boxes
 from isaac_utils.utils.geom import Rotation, Scale, Translation
 from isaac_utils.utils.material import Material, PhysicsParams
 from isaac_utils.utils.mesh import create_cube
@@ -30,12 +31,16 @@ def wall_spawner(wall: Wall) -> bool:
     angle = math.atan2(vector_ab[1], vector_ab[0])
     # print("wall angle", angle)
 
+    position = Translation(*center)
+    rotation = Rotation.parse([0, 0, angle])
+    velocity = (wall.velocity.x, wall.velocity.y, wall.velocity.z)
+
     # create wall
     create_cube(
         prim_path=prim_path,
-        position=Translation(*center),
+        position=position,
         scale=Scale(length, thickness, end[2] - start[2]),
-        rotation=Rotation.parse([0, 0, angle]),
+        rotation=rotation,
         collide=wall.solid,
     )
 
@@ -59,6 +64,12 @@ def wall_spawner(wall: Wall) -> bool:
         primvars.CreatePrimvar('hideForCamera', Sdf.ValueTypeNames.Bool).Set(True)
     if not wall.shadows:
         primvars.CreatePrimvar('doNotCastShadows', Sdf.ValueTypeNames.Bool).Set(True)
+
+    if any(velocity):
+        prim = stage.GetPrimAtPath(prim_path)
+        UsdPhysics.RigidBodyAPI.Apply(prim).CreateKinematicEnabledAttr(True)
+        UsdPhysics.MeshCollisionAPI.Apply(prim).CreateApproximationAttr(UsdPhysics.Tokens.convexHull)
+        moving_boxes.add(prim_path, position.tuple(), rotation.quat(), velocity)
 
     return True
 

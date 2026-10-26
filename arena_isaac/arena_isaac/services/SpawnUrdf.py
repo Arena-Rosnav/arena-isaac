@@ -325,7 +325,7 @@ def spawn_urdf(request: SpawnUrdf.Request) -> str:
     if request.localization:
         base = frames.link(stage.GetPrimAtPath(prim_path), request.base_frame) or stage.GetPrimAtPath(articulation_path)
         offset_translation, offset_orientation = frames.relative_pose(stage.GetPrimAtPath(body_path), base)
-        odom_graph_path = os.path.join(prim_path, 'odom_publisher')
+        odom_graph_path = os.path.join(prim_path, odom.GRAPH)
         if not odom.odom(
             odom_graph_path,
             prim_path=body_path,

@@ -184,6 +184,7 @@ from peds import runtime as pedestrian_runtime
 from rclpy.qos import QoSProfile, ReliabilityPolicy
 
 from arena_isaac import run_after_tick_queue
+from arena_isaac.moving import moving_boxes
 from arena_isaac.services import services, subscriptions
 
 # fmt: on
@@ -322,7 +323,7 @@ stage_guard = _StageEditGuard(omni.usd.get_context().get_stage())
 world = World(physics_dt=PHYSICS_DT, rendering_dt=PHYSICS_DT)
 if PHYSICS_ENGINE == "newton":
     _newton_apply_solver_cfg()
-world.scene.add_ground_plane(size=100, z_position=-1.0)
+world.scene.add_ground_plane(size=100, z_position=-3.0)
 Material.physics(
     parent_prim_path=world_path(),
     key='ground_default',
@@ -499,6 +500,7 @@ def main(args: list[str] | None = None):
         _newton_apply_solver_cfg()
 
     pedestrian_runtime.initialize(world)
+    moving_boxes.attach(world)
 
     import isaac_utils.config.photoreal as photoreal
 

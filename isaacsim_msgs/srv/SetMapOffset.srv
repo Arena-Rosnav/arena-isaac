@@ -1,0 +1,7 @@
+# robot prim name, as given to SpawnUrdf
+string name
+# map -> odom translation the robot's odom graph publishes
+geometry_msgs/Vector3 translation
+---
+# false when the robot has no odom graph
+bool success

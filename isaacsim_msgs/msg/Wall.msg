@@ -9,3 +9,5 @@ bool visible true
 bool solid true
 # casts shadows
 bool shadows true
+# world-frame m/s, nonzero spawns a kinematic box carried at it
+geometry_msgs/Vector3 velocity

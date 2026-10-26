@@ -1,5 +1,6 @@
 Prim[] prims
 bool pose false # edit pose?
 bool scale false # edit scale?
+bool velocity false # edit velocity of moving boxes?
 ---
 bool[] ret

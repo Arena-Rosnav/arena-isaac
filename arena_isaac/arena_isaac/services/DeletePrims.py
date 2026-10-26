@@ -3,8 +3,9 @@ import omni.kit.commands as commands
 import omni.usd
 from isaacsim_msgs.srv import DeletePrims
 
+from arena_isaac.moving import moving_boxes
 from isaac_utils.managers import entity_lifecycle
-from isaac_utils.utils import geom
+from isaac_utils.utils import geom, map_offsets
 from isaac_utils.utils.path import world_path
 from isaac_utils.utils.prim import resolve_paths
 
@@ -16,6 +17,8 @@ def delete_prim(name: str) -> bool:
     target = world_path(name)
 
     entity_lifecycle.destroy_under(target)
+    moving_boxes.forget_under(target)
+    map_offsets.forget_under(target)
 
     paths = resolve_paths(target)
     stage = omni.usd.get_context().get_stage()

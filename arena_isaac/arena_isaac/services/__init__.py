@@ -8,6 +8,7 @@ from .GetPrims import get_prims_service
 from .MovePedestrians import move_pedestrians_service
 from .ResetWorld import reset_world_service
 from .SetLights import set_lights_service
+from .SetMapOffset import set_map_offset_service
 from .SpawnCeilings import spawn_ceilings_service
 from .SpawnFloors import spawn_floors_service
 from .SpawnLights import spawn_lights_service
@@ -35,6 +36,7 @@ services: collections.abc.Iterable[Service] = (
     spawn_lights_service,
     set_lights_service,
     delete_lights_service,
+    set_map_offset_service,
 )
 
 subscriptions: collections.abc.Iterable[Subscription] = (update_pedestrians_subscription,)

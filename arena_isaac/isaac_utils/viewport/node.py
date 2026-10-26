@@ -23,6 +23,8 @@ from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPo
 from viewport_control_msgs.msg import ViewportView
 from viewport_control_msgs.srv import ViewportCapture, ViewportSetProjection, ViewportSetReferenceFrame, ViewportSetView
 
+from isaac_utils.utils import map_offsets
+
 from .backend import CameraBackend, entity_pose
 from .capture import TIMEOUT_S, CaptureQueue, CaptureRequest
 from .controller import Keyframe, Pose, ViewportController
@@ -136,8 +138,9 @@ class ViewportNode:
             tf = self._tf.lookup_transform(POSE_FRAME, frame, rclpy.time.Time()).transform
         except tf2_ros.TransformException:
             return None
+        dx, dy, dz = map_offsets.frame_translation(frame)
         return Pose(
-            (tf.translation.x, tf.translation.y, tf.translation.z),
+            (tf.translation.x - dx, tf.translation.y - dy, tf.translation.z - dz),
             (tf.rotation.w, tf.rotation.x, tf.rotation.y, tf.rotation.z),
         )
 
@@ -202,6 +205,7 @@ class ViewportNode:
         msg = geometry_msgs.msg.PoseStamped()
         msg.header.stamp = self._node.get_clock().now().to_msg()
         msg.header.frame_id = POSE_FRAME
-        msg.pose.position.x, msg.pose.position.y, msg.pose.position.z = pose.position
+        dx, dy, dz = map_offsets.frame_translation(self._controller.tracked_entity or '')
+        msg.pose.position.x, msg.pose.position.y, msg.pose.position.z = pose.position[0] + dx, pose.position[1] + dy, pose.position[2] + dz
         msg.pose.orientation.w, msg.pose.orientation.x, msg.pose.orientation.y, msg.pose.orientation.z = pose.orientation
         self._pose_pub.publish(msg)

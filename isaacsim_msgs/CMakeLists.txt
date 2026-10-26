@@ -30,6 +30,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   srv/GetPrims.srv
   srv/ResetWorld.srv
   srv/SetLights.srv
+  srv/SetMapOffset.srv
   srv/SpawnCeilings.srv
   srv/SpawnFloors.srv
   srv/SpawnLights.srv

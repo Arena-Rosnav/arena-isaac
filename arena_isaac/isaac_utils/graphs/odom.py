@@ -1,7 +1,12 @@
 import omni.graph.core as og
+import omni.usd
 
 from isaac_utils.graphs import Graph, physics_engine
 from isaac_utils.graphs.transform import base_pose
+from isaac_utils.utils import map_offsets
+
+GRAPH = 'odom_publisher'
+_MAP_NODE = 'publish_odom_static'
 
 
 def odom(
@@ -16,10 +21,11 @@ def odom(
 ) -> bool:
     """Action graph publishing nav2 odometry. `prim_path` is a tracked rigid body
     fixed to the base; the offset is the base frame's pose in that body (xyzw).
-    Publishes the base pose (body composed with the offset) on odom->base, identity
-    map->odom (reset-safe). `odom_topic` empty skips the nav_msgs/Odometry topic."""
+    Publishes the base pose (body composed with the offset) on odom->base, map->odom
+    zero until set_map_translation. `odom_topic` empty skips the nav_msgs/Odometry topic."""
 
     controller = og.Controller()
+    map_offsets.register(graph_path.rsplit('/', 1)[0], base_frame_id, odom_frame_id)
 
     graph = Graph(graph_path)
 
@@ -29,7 +35,7 @@ def odom(
     read_simulation_time = graph.node('read_simulation_time', 'isaacsim.core.nodes.IsaacReadSimulationTime')
     read_simulation_time.attribute('resetOnStop', False)
     base = base_pose(graph, 'base_link_pose', offset_translation, offset_orientation, body_is_matrix=not newton)
-    publish_map = graph.node('publish_odom_static', 'isaacsim.ros2.bridge.ROS2PublishRawTransformTree')
+    publish_map = graph.node(_MAP_NODE, 'isaacsim.ros2.bridge.ROS2PublishRawTransformTree')
     publish_odom = graph.node('publish_odom', 'isaacsim.ros2.bridge.ROS2PublishRawTransformTree')
 
     on_playback_tick.connect('tick', base, 'execIn')
@@ -73,3 +79,13 @@ def odom(
 
     graph.load_extensions()
     return graph.execute(controller)
+
+
+def set_map_translation(robot_prim: str, translation: tuple[float, float, float]) -> bool:
+    """Set the map -> odom translation the odom graph of `robot_prim` publishes, False when it has none."""
+    node = f'{robot_prim}/{GRAPH}/{_MAP_NODE}'
+    if not omni.usd.get_context().get_stage().GetPrimAtPath(node).IsValid():
+        return False
+    og.Controller.attribute(f'{node}.inputs:translation').set(list(translation))
+    map_offsets.set_translation(robot_prim, translation)
+    return True

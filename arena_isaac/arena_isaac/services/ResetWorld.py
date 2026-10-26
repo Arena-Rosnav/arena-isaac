@@ -2,6 +2,8 @@ import omni.kit.commands as commands
 import omni.usd
 from isaacsim_msgs.srv import ResetWorld
 
+from arena_isaac.moving import moving_boxes
+from isaac_utils.utils import map_offsets
 from isaac_utils.utils.path import world_path
 from isaac_utils.utils.prim import resolve_paths
 
@@ -15,6 +17,8 @@ def reset_world() -> bool:
     stage = omni.usd.get_context().get_stage()
     for name in _ENVIRONMENT_ROOTS:
         root = world_path(name)
+        moving_boxes.forget_under(root)
+        map_offsets.forget_under(root)
         for target in resolve_paths(root):
             commands.execute("DeletePrims", paths=[target])
             stage.RemovePrim(target)
