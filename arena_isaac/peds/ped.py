@@ -52,7 +52,7 @@ class Ped:
         desired_root call after a command doesn't rewind by velocity times
         the transport delay.
         """
-        self.command_position = np.array([position[0], position[1], self.position[2]])
+        self.command_position = np.array(position[:3], dtype=float)
         self.command_orientation = np.array(orientation, dtype=float)
         self.command_velocity = np.array([velocity[0], velocity[1], 0.0])
         self.command_age = max(0.0, now - stamp_sec) if stamp_sec > 0.0 else 0.0
@@ -69,18 +69,20 @@ class Ped:
             self.provider.reset_phase()
 
     def desired_root(self, dt: float) -> tuple[np.ndarray, np.ndarray]:
-        """Advance command_age by dt and dead-reckon (position, orientation).
-
-        Position holds z from the current state, orientation is the commanded one verbatim.
-        """
+        """Advance command_age by dt and dead-reckon (position, orientation), the orientation the commanded one verbatim."""
         if self.command_position is None:
             return self.position, self.orientation
 
         self.command_age += dt
         extrapolate = min(self.command_age, self.MAX_EXTRAPOLATION)
         desired_position = self.command_position + self.command_velocity * extrapolate
-        desired_position[2] = self.position[2]
 
         self.position = desired_position
         self.orientation = self.command_orientation
         return self.position, self.orientation
+
+    def grounded(self, position: np.ndarray, orientation: np.ndarray) -> np.ndarray:
+        """Root position with the soles planted: ground_z along the body's up axis."""
+        x, y, z, w = orientation
+        up = np.array([2.0 * (x * z + w * y), 2.0 * (y * z - w * x), 1.0 - 2.0 * (x * x + y * y)])
+        return np.asarray(position, dtype=float) + self.ground_z * up
