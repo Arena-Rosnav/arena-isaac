@@ -5,9 +5,10 @@ standalone ``character.usda`` (SkelRoot + Skeleton + one skinned Mesh per skin
 controller). Clips are not converted: the runtime renders the arena_peds wire
 (peds.providers.external), and the only animation input consumed is the idle
 clip's first frame, extracted into meta.json as the neutral stance wire angles
-compose over (root pinned to rest, the prim Xform owns the pose, legs at the
-skin's bind rest). pxr is imported lazily inside the authoring helpers so this
-module stays importable without pxr (e.g. for SDF parsing and cache digests).
+compose over (root pinned to rest, the prim Xform owns the pose, legs hanging
+straight down from the skin's bind rest). pxr is imported lazily inside the
+authoring helpers so this module stays importable without pxr (e.g. for SDF
+parsing and cache digests).
 """
 
 from __future__ import annotations
@@ -44,7 +45,7 @@ _OPACITY_THRESHOLD = 0.5
 
 # Bump whenever convert_actor's output changes shape, cache.py salts its digest
 # with this so stale disk caches rebuild instead of serving old geometry.
-CONVERTER_VERSION = 10
+CONVERTER_VERSION = 11
 
 _BIND_STANCE = frozenset(f"{side}{bone}" for side in ("Left", "Right") for bone in ("UpLeg", "Leg", "Foot", "ToeBase"))
 _WHEELS = frozenset(("WheelL", "WheelR"))
@@ -584,15 +585,61 @@ def _matrix_to_quat(rotation: np.ndarray) -> np.ndarray:
     return quat / np.linalg.norm(quat)
 
 
+def _swing(direction: np.ndarray, target: np.ndarray) -> np.ndarray:
+    """Shortest rotation turning direction onto target."""
+    a = direction / np.linalg.norm(direction)
+    b = target / np.linalg.norm(target)
+    axis = np.cross(a, b)
+    sin = float(np.linalg.norm(axis))
+    if sin < 1e-12:
+        return np.eye(3)
+    x, y, z = axis / sin
+    cross = np.array([[0.0, -z, y], [z, 0.0, -x], [-y, x, 0.0]])
+    return np.eye(3) + sin * cross + (1.0 - float(a @ b)) * (cross @ cross)
+
+
+def _hang_legs(joints: list[JointNode], locals_: list[np.ndarray]) -> list[np.ndarray]:
+    """Locals with each UpLeg and Leg swung to point straight down and each Foot keeping its world orientation."""
+    index = {joint.name: i for i, joint in enumerate(joints)}
+    hung = [local.copy() for local in locals_]
+
+    def worlds() -> list[np.ndarray]:
+        out: list[np.ndarray] = []
+        for joint, local in zip(joints, hung, strict=True):
+            out.append(local if joint.parent < 0 else out[joint.parent] @ local)
+        return out
+
+    for side in ("Left", "Right"):
+        names = [f"{side}{bone}" for bone in ("UpLeg", "Leg", "Foot")]
+        if not all(name in index for name in names):
+            continue
+        upleg, leg, foot = (index[name] for name in names)
+        foot_world = worlds()[foot][:3, :3].copy()
+        for bone, child in ((upleg, leg), (leg, foot)):
+            world = worlds()
+            turned = _swing(world[child][:3, 3] - world[bone][:3, 3], np.array([0.0, 0.0, -1.0])) @ world[bone][:3, :3]
+            hung[bone][:3, :3] = world[joints[bone].parent][:3, :3].T @ turned
+        hung[foot][:3, :3] = worlds()[joints[foot].parent][:3, :3].T @ foot_world
+    return hung
+
+
 def _neutral_pose(joints: list[JointNode], channels: dict[str, tuple[np.ndarray, np.ndarray]], held: frozenset[str] = frozenset()) -> tuple[list[list[float]], list[list[float]]]:
     """First-frame joint-local pose of a clip: (xyzw quaternions, translations).
 
-    Joints without a channel, the root and the `held` joints keep their rest transform."""
+    Joints without a channel, the root and the `held` joints keep their rest
+    transform. With `held` legs, thighs and shanks then hang straight down and
+    the feet keep their rest world orientation."""
+    locals_ = []
+    for joint in joints:
+        local = np.array(channels[joint.name][1][0] if joint.name in channels and joint.parent >= 0 and joint.name not in held else joint.rest, dtype=float)
+        local[:3, :3] = _orthonormalize(local[:3, :3])
+        locals_.append(local)
+    if held:
+        locals_ = _hang_legs(joints, locals_)
     rotations: list[list[float]] = []
     translations: list[list[float]] = []
-    for joint in joints:
-        local = channels[joint.name][1][0] if joint.name in channels and joint.parent >= 0 and joint.name not in held else joint.rest
-        w, x, y, z = _matrix_to_quat(_orthonormalize(local[:3, :3]))
+    for local in locals_:
+        w, x, y, z = _matrix_to_quat(local[:3, :3])
         rotations.append([float(x), float(y), float(z), float(w)])
         translations.append([float(v) for v in local[:3, 3]])
     return rotations, translations
@@ -813,8 +860,8 @@ def convert_actor(sdf_path: str, dae_paths: dict[str, str], out_dir: str | pathl
     dae_paths maps each consumed SDF URI to a local file. The skeleton and the
     skinned meshes come from the skin DAE, the rest pose from the idle clip's
     first frame, the neutral stance from the neutral clip's first frame (the
-    idle one when the actor has no neutral clip) with the _BIND_STANCE legs at
-    the bind rest. Other clips are not read.
+    idle one when the actor has no neutral clip) with the _BIND_STANCE legs
+    hanging straight down from the bind rest. Other clips are not read.
     """
     out = pathlib.Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)

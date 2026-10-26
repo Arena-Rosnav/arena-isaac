@@ -2,9 +2,9 @@
 
 The arena_peds wire is the single source of motion: bones mapped by BONE_MAP
 follow the pushed angles absolutely, composed onto a neutral standing stance
-(the bundle idle clip's first frame with the legs at the skin's bind rest,
-extracted into meta.json at conversion, NOT the whole skeleton rest, which is a
-T-pose on CMU rigs). Unmapped bones hold the neutral stance. When the wire goes
+(the bundle idle clip's first frame with the legs hanging straight down from
+the skin's bind rest, extracted into meta.json at conversion, NOT the whole
+skeleton rest, which is a T-pose on CMU rigs). Unmapped bones hold the neutral stance. When the wire goes
 stale the blend weight ramps back to the neutral stance so there is no visual
 pop, and ramps up again on a fresh push.
 Pure numpy, importable without carb/omni/pxr (carb is only touched lazily,
