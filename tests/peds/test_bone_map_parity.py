@@ -314,11 +314,11 @@ def test_wire_zero_leg_matches_the_contract(bone_from: str, bone_to: str, joint_
     _require_contract()
     fk, _, _, joints = _contract()
     cmu = _cmu_frames(_zero_wire())
-    cmu_dir = _cmu_body_frame(cmu).T @ (cmu[bone_to][1] - cmu[bone_from][1])
+    cmu_dir = cmu[bone_to][1] - cmu[bone_from][1]
     urdf = _urdf_frames(_zero_wire())
     urdf_dir = urdf[joints[f"{joint_to}_{fk.PREVIEW_ID}"].child][1] - urdf[joints[f"{joint_from}_{fk.PREVIEW_ID}"].child][1]
     cos = float(cmu_dir @ urdf_dir) / float(np.linalg.norm(cmu_dir) * np.linalg.norm(urdf_dir))
-    assert math.degrees(math.acos(min(1.0, cos))) < 15.0, f"{bone_from}->{bone_to} at wire zero: cmu {cmu_dir} vs urdf {urdf_dir}"
+    assert math.degrees(math.acos(min(1.0, cos))) < 1.0, f"{bone_from}->{bone_to} at wire zero: cmu {cmu_dir} vs urdf {urdf_dir}"
 
 
 @pytest.mark.parametrize(("dof", "probe", "bone"), _PROBES)
