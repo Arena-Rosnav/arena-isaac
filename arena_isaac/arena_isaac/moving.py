@@ -33,6 +33,8 @@ class MovingBoxes:
         self._warned = -1
         self._cooldown = 0
         self._rebuild_queued = False
+        self._shown: XformPrim | None = None
+        self._shown_revision = -1
 
     def attach(self, world: World) -> None:
         world.add_physics_callback(_PHYSICS_CALLBACK, self._on_physics)
@@ -77,6 +79,7 @@ class MovingBoxes:
             except Exception as error:
                 carb.log_warn(f"arena: moving box kinematic targets failed: {error}")
                 self._view = None
+        self._show()
         if self._rebuild_queued or (self._live_view() is not None and self._built == self._boxes.revision and len(self._paths) == len(self._boxes)):
             return
         if self._cooldown > 0:
@@ -84,6 +87,20 @@ class MovingBoxes:
             return
         self._rebuild_queued = True
         run_after_tick_queue.put(self._rebuild)
+
+    def _show(self) -> None:
+        """Author every box's pose on its prim, the pose the renderer draws."""
+        try:
+            if self._shown is None or self._shown_revision != self._boxes.revision:
+                self._shown = XformPrim(list(self._boxes.paths))
+                self._shown_revision = self._boxes.revision
+            rows = self._boxes.transforms(self._boxes.paths)
+            self._shown.set_world_poses(rows[:, :3], rows[:, [6, 3, 4, 5]])
+        except Exception as error:
+            self._shown = None
+            if self._warned != self._boxes.revision:
+                self._warned = self._boxes.revision
+                carb.log_warn(f"arena: moving box poses not shown: {error}")
 
     def _rebuild(self) -> None:
         self._rebuild_queued = False
