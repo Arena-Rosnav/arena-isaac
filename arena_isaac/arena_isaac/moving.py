@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING
 
 import carb
 import numpy as np
@@ -14,10 +13,6 @@ from isaacsim.core.experimental.prims import XformPrim
 from arena_isaac import run_after_tick_queue
 from isaac_utils.utils.kinematic import KinematicBoxes
 
-if TYPE_CHECKING:
-    from isaacsim.core.api import World
-
-_PHYSICS_CALLBACK = 'moving_boxes/tick'
 _RETRY_STEPS = 60
 
 
@@ -35,9 +30,6 @@ class MovingBoxes:
         self._rebuild_queued = False
         self._shown: XformPrim | None = None
         self._shown_revision = -1
-
-    def attach(self, world: World) -> None:
-        world.add_physics_callback(_PHYSICS_CALLBACK, self._on_physics)
 
     def add(self, path: str, position: Sequence[float], orientation: Sequence[float], velocity: Sequence[float]) -> None:
         self._boxes.add(path, position, orientation, velocity)
@@ -68,7 +60,7 @@ class MovingBoxes:
             return None
         return self._view
 
-    def _on_physics(self, dt: float) -> None:
+    def tick(self, dt: float) -> None:
         if not len(self._boxes):
             return
         self._boxes.step(float(dt))

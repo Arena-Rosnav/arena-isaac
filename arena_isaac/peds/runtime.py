@@ -1,7 +1,7 @@
 """Runtime glue between the pedestrian services and the UsdSkel ped registry.
 
-Instantiated once from run_isaacsim after the World exists. A single physics
-callback drives registry.tick every step. The four pedestrian services call the
+Instantiated once from run_isaacsim after the World exists, whose physics
+callback calls tick every step. The four pedestrian services call the
 module-level spawn/update/move/delete helpers, which forward to the singleton.
 """
 
@@ -30,8 +30,6 @@ from peds.write import anim_prim_path, make_writer
 if TYPE_CHECKING:
     from isaacsim.core.api import World
 
-_PHYSICS_CALLBACK = "peds/tick"
-
 
 class PedRuntime:
     """Owns the registry, the shared writer, and the per-ped wire providers."""
@@ -41,9 +39,8 @@ class PedRuntime:
         self._writer = make_writer()
         self._registry = PedRegistry(self._writer)
         self._externals: dict[str, ExternalPoseProvider] = {}
-        world.add_physics_callback(_PHYSICS_CALLBACK, self._on_physics)
 
-    def _on_physics(self, dt: float) -> None:
+    def tick(self, dt: float) -> None:
         self._registry.tick(float(self._world.current_time), float(dt))
 
     def spawn(self, name: str, position: np.ndarray, orientation: np.ndarray, model_source: str) -> None:
@@ -172,6 +169,10 @@ def _get() -> PedRuntime:
     if _runtime is None:
         raise RuntimeError("peds runtime not initialized")
     return _runtime
+
+
+def tick(dt: float) -> None:
+    _get().tick(dt)
 
 
 def spawn(name: str, position: np.ndarray, orientation: np.ndarray, model_source: str) -> None:

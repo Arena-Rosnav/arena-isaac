@@ -474,6 +474,12 @@ class IsaacController(rclpy.node.Node):
 # ======================================main=======================================
 
 
+def _physics_tick(dt: float) -> None:
+    """The one physics callback: a second World physics callback silences the first."""
+    pedestrian_runtime.tick(dt)
+    moving_boxes.tick(dt)
+
+
 def main(args: list[str] | None = None):
     """
     Main function to initialize the simulation, create the ROS 2 node,
@@ -500,7 +506,7 @@ def main(args: list[str] | None = None):
         _newton_apply_solver_cfg()
 
     pedestrian_runtime.initialize(world)
-    moving_boxes.attach(world)
+    world.add_physics_callback('arena/tick', _physics_tick)
 
     import isaac_utils.config.photoreal as photoreal
 
