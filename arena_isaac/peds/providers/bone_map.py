@@ -15,7 +15,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from ament_index_python.packages import get_package_prefix
+from ament_index_python.packages import get_package_share_directory
 
 
 @dataclass(frozen=True)
@@ -34,8 +34,8 @@ def _load(path: Path) -> dict[str, tuple[BoneTarget, ...]]:
 
 
 def _workspace_bone_map() -> Path:
-    """The bone_map.json installed beside this arena_isaac, never the Isaac image's message bridge copy."""
-    return Path(get_package_prefix("arena_isaac")).parent / "arena_people_msgs" / "share" / "arena_people_msgs" / "bone_map.json"
+    """The bone_map.json installed with the shared people message package."""
+    return Path(get_package_share_directory("arena_people_msgs")) / "bone_map.json"
 
 
 BONE_MAP: dict[str, tuple[BoneTarget, ...]] = _load(_workspace_bone_map())
