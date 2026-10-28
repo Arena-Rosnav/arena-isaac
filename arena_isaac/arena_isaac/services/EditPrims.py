@@ -5,6 +5,7 @@ from isaacsim_msgs.srv import EditPrims
 from isaac_utils.utils import geom
 from isaac_utils.utils.path import world_path
 
+from .Articulated import follow_root
 from .utils import Service, on_exception
 
 
@@ -15,6 +16,7 @@ def move_prim(name: str, pose: Pose) -> bool:
         translation=geom.Translation.parse(pose.position),
         rotation=geom.Rotation.parse(pose.orientation),
     )
+    follow_root(name, pose)
 
     return True
 

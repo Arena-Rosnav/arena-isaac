@@ -12,11 +12,15 @@ find_package(std_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
+  msg/ArticulatedLink.msg
   msg/Ceiling.msg
   msg/ContactSensor.msg
   msg/Door.msg
   msg/Elevator.msg
   msg/Floor.msg
+  msg/JointCommand.msg
+  msg/JointDynamics.msg
+  msg/JointReading.msg
   msg/Light.msg
   msg/LightState.msg
   msg/Material.msg
@@ -26,10 +30,12 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   msg/Wall.msg
   srv/DeleteLights.srv
   srv/DeletePrims.srv
+  srv/DriveArticulated.srv
   srv/EditPrims.srv
   srv/GetPrims.srv
   srv/ResetWorld.srv
   srv/SetLights.srv
+  srv/SpawnArticulated.srv
   srv/SpawnCeilings.srv
   srv/SpawnFloors.srv
   srv/SpawnLights.srv
