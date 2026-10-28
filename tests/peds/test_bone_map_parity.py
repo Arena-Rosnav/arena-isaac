@@ -12,9 +12,9 @@ up from the spine, forward from the toes). Parity means matching axis, matching
 magnitude, and no rotation leaking to the mirrored side.
 
 Script mode: `python3 test_bone_map_parity.py report` prints the per-DOF table,
-`python3 test_bone_map_parity.py regen` prints a BONE_MAP regenerated from the
-measured contract axes and rewrites arena_people_msgs' bone_map.json from it (needs
-xacro + human_description + rviz_utils, so run in-container).
+`python3 test_bone_map_parity.py regen` rewrites arena_people_msgs' bone_map.json,
+the source of BONE_MAP, from the measured contract axes and keeps the unprobed prop
+joints as they are (needs xacro + human_description + rviz_utils, so run in-container).
 """
 
 from __future__ import annotations
@@ -79,7 +79,6 @@ _PROBES: tuple[tuple[str, float, str], ...] = (
     ("r_wrist", 0.5, "RightHand"),
 )
 _ALL_DOFS: tuple[str, ...] = tuple(name for name, _, _ in _PROBES)
-_DRIVEN: tuple[str, ...] = ("l_wheel", "r_wheel")
 
 
 def _quat_to_mat(q: np.ndarray) -> np.ndarray:
@@ -274,16 +273,23 @@ def _measure(dof: str, probe: float, bone: str) -> dict[str, object]:
 # ------------------------------------------------------------------ tests
 
 
+def _props() -> set[str]:
+    """BONE_MAP entries that only turn bones outside the human skeleton, rig.yaml drivers like wheels."""
+    human = {joint.rsplit("/", 1)[-1] for joint in _skeleton()[0]}
+    return {dof for dof, targets in BONE_MAP.items() if all(t.bone not in human for t in targets)}
+
+
 def test_probe_table_covers_bone_map() -> None:
-    assert set(_ALL_DOFS) | set(_DRIVEN) == set(BONE_MAP)
-    assert not set(_ALL_DOFS) & set(_DRIVEN)
+    assert set(_ALL_DOFS) | _props() == set(BONE_MAP)
+    assert not set(_ALL_DOFS) & _props()
+    assert {"l_wheel", "r_wheel"} <= _props()
 
 
 def _as_json(bone_map: dict[str, tuple[BoneTarget, ...]]) -> dict[str, list[dict[str, object]]]:
     return {dof: [{"bone": t.bone, "axis": list(t.axis), "sign": t.sign, "scale": t.scale} for t in targets] for dof, targets in bone_map.items()}
 
 
-def test_bone_map_json_matches_source() -> None:
+def test_bone_map_loads_the_source_json() -> None:
     assert json.loads(_JSON.read_text()) == _as_json(BONE_MAP)
 
 
@@ -348,7 +354,7 @@ def _report() -> None:
 
 
 def _regen() -> None:
-    """Print BONE_MAP rebuilt from the measured contract axes and write bone_map.json from it."""
+    """Rewrite bone_map.json with the measured contract axes, prop joints kept as they are."""
     cmu_zero = _cmu_frames(_zero_wire())
     body = _cmu_body_frame(cmu_zero)
     rebuilt: dict[str, tuple[BoneTarget, ...]] = {}
@@ -363,16 +369,8 @@ def _regen() -> None:
             axis = (float(f"{local[0]:.4f}"), float(f"{local[1]:.4f}"), float(f"{local[2]:.4f}"))
             targets.append(BoneTarget(target.bone, axis, 1.0, target.scale))
         rebuilt[dof] = tuple(targets)
-    rebuilt.update({dof: BONE_MAP[dof] for dof in _DRIVEN})
-    print("BONE_MAP = {")
-    for dof, targets in rebuilt.items():
-        entries = []
-        for target in targets:
-            scale = "" if target.scale == 1.0 else f", {target.scale}"
-            entries.append(f"BoneTarget({target.bone!r}, ({target.axis[0]:.4f}, {target.axis[1]:.4f}, {target.axis[2]:.4f}), 1.0{scale})")
-        joined = " ".join(f"{e}," for e in entries)
-        print(f"    {dof!r}: ({joined}),")
-    print("}")
+    props = _props()
+    rebuilt.update({dof: targets for dof, targets in BONE_MAP.items() if dof in props})
     _JSON.write_text(json.dumps(_as_json(rebuilt), indent=2) + "\n")
 
 
