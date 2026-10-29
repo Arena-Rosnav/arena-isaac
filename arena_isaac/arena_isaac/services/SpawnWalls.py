@@ -65,7 +65,7 @@ def wall_spawner(wall: Wall) -> bool:
     if not wall.shadows:
         primvars.CreatePrimvar('doNotCastShadows', Sdf.ValueTypeNames.Bool).Set(True)
 
-    if any(velocity):
+    if not wall.is_static:
         prim = stage.GetPrimAtPath(prim_path)
         UsdPhysics.RigidBodyAPI.Apply(prim).CreateKinematicEnabledAttr(True)
         UsdPhysics.MeshCollisionAPI.Apply(prim).CreateApproximationAttr(UsdPhysics.Tokens.convexHull)

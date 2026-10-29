@@ -1,3 +1,4 @@
+import carb
 import numpy as np
 from isaacsim_msgs.msg import Prim
 from isaacsim_msgs.srv import SpawnPrims
@@ -11,6 +12,9 @@ from .utils import Service, on_exception
 @on_exception(False)
 def prim_importer(prim_msg: Prim) -> bool:
     name = prim_msg.name
+    if not prim_msg.is_static:
+        carb.log_warn(f"arena: prim {name} not spawned, USD models cannot be kinematic movers")
+        return False
     usd_path = prim_msg.usd_path
     spawned = prim.create_prim_safe(
         prim_path=world_path(name),
