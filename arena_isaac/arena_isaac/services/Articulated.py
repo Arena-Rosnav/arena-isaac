@@ -1,4 +1,4 @@
-"""SpawnArticulated and DriveArticulated: articulated objects as fixed-base articulations whose joints damp, rub and switch their position drives."""
+"""SpawnArticulated and DriveArticulated: articulated objects as fixed-base articulations whose joints damp, rub, spring back and switch their position drives."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from geometry_msgs.msg import Pose
 from isaacsim.core.experimental.prims import Articulation
 from isaacsim_msgs.msg import ArticulatedLink, JointCommand, JointReading
 from isaacsim_msgs.srv import DriveArticulated, SpawnArticulated
-from pxr import Gf, PhysxSchema, Tf, Usd, UsdGeom, UsdPhysics
+from pxr import Gf, PhysxSchema, Tf, Usd, UsdGeom, UsdPhysics, UsdShade
 
 from isaac_utils.utils import light, prim
 from isaac_utils.utils.path import world_path
@@ -23,12 +23,13 @@ from .utils import Service, on_exception
 JOINTS = 'joints'
 WORLD_JOINT = 'world'
 GEOMETRY = 'geometry'
+MATERIAL = 'physics_material'
 FLOORS = 'Floors'
 
 
 @dataclass
 class _Joint:
-    """One joint of an object: its DOF name, passive damping and friction, and its drive's gains and effort."""
+    """One joint of an object: its DOF name, passive damping, friction and spring, and its drive's gains and effort."""
 
     dof: str
     damping: float
@@ -38,7 +39,13 @@ class _Joint:
     stiffness: float
     drive_damping: float
     wraps: bool
+    spring_stiffness: float = 0.0
+    spring_rest: float = 0.0
     on: bool = False
+
+    def passive(self, reference: float) -> tuple[float, float, float]:
+        """Drive stiffness, damping and target while the drive is off: the spring toward its rest, else no pull."""
+        return self.spring_stiffness, self.damping, self.spring_rest if self.spring_stiffness > 0.0 else reference
 
 
 @dataclass
@@ -99,6 +106,13 @@ def _add_link(stage: Usd.Stage, path: str, link: ArticulatedLink, scale: Gf.Vec3
     mass.CreatePrincipalAxesAttr(Gf.Quatf(1.0, 0.0, 0.0, 0.0))
     if floors:
         UsdPhysics.FilteredPairsAPI.Apply(body).CreateFilteredPairsRel().SetTargets(floors)
+    if link.has_material:
+        material = UsdShade.Material.Define(stage, body.GetPath().AppendChild(MATERIAL))
+        surface = UsdPhysics.MaterialAPI.Apply(material.GetPrim())
+        surface.CreateStaticFrictionAttr(link.static_friction)
+        surface.CreateDynamicFrictionAttr(link.dynamic_friction)
+        surface.CreateRestitutionAttr(link.restitution)
+        UsdShade.MaterialBindingAPI.Apply(body).Bind(material, UsdShade.Tokens.strongerThanDescendants, 'physics')
     return str(body.GetPath())
 
 
@@ -133,9 +147,10 @@ def _add_joint(stage: Usd.Stage, scope: str, link: ArticulatedLink, bodies: dict
     unit = math.pi / 180.0 if angular else 1.0
     drive = UsdPhysics.DriveAPI.Apply(joint.GetPrim(), 'angular' if angular else 'linear')
     drive.CreateTypeAttr('force')
-    drive.CreateStiffnessAttr(0.0)
+    drive.CreateStiffnessAttr(dynamics.spring_stiffness * unit)
     drive.CreateDampingAttr(dynamics.damping * unit)
     drive.CreateMaxForceAttr(dynamics.effort)
+    drive.CreateTargetPositionAttr(math.degrees(dynamics.spring_rest) if angular else dynamics.spring_rest)
     return _Joint(
         dof=name,
         damping=dynamics.damping,
@@ -145,6 +160,8 @@ def _add_joint(stage: Usd.Stage, scope: str, link: ArticulatedLink, bodies: dict
         stiffness=dynamics.stiffness,
         drive_damping=dynamics.drive_damping,
         wraps=link.type == ArticulatedLink.CONTINUOUS,
+        spring_stiffness=dynamics.spring_stiffness,
+        spring_rest=dynamics.spring_rest,
     )
 
 
@@ -207,8 +224,11 @@ def _view(obj: _Object) -> Articulation | None:
         view.set_dof_friction_properties(static_frictions=frictions, dynamic_frictions=frictions, dof_indices=indices)
         view.set_dof_armatures(_row([entry.armature for entry in entries]), dof_indices=indices)
         view.set_dof_max_efforts(_row([entry.effort for entry in entries]), dof_indices=indices)
-        view.set_dof_gains(_row([0.0] * len(entries)), _row([entry.damping for entry in entries]), dof_indices=indices)
-        view.set_dof_positions(_row([obj.initial.get(joint, 0.0) for joint in joints]), dof_indices=indices)
+        starts = [obj.initial.get(joint, 0.0) for joint in joints]
+        passive = [entry.passive(start) for entry, start in zip(entries, starts, strict=True)]
+        view.set_dof_gains(_row([gains[0] for gains in passive]), _row([gains[1] for gains in passive]), dof_indices=indices)
+        view.set_dof_position_targets(_row([gains[2] for gains in passive]), dof_indices=indices)
+        view.set_dof_positions(_row(starts), dof_indices=indices)
         view.set_dof_velocities(_row([0.0] * len(entries)), dof_indices=indices)
         for entry in entries:
             entry.on = False
@@ -237,12 +257,12 @@ def _drive(command: JointCommand) -> JointReading:
             continue
         if place:
             placed.append((index, reference))
+        stiffness, damping, rest = (joint.stiffness, joint.drive_damping + joint.damping, reference) if drive else joint.passive(reference)
         if drive != joint.on:
-            stiffness, damping = (joint.stiffness, joint.drive_damping + joint.damping) if drive else (0.0, joint.damping)
             view.set_dof_gains(_row([stiffness]), _row([damping]), dof_indices=[index])
             joint.on = drive
         value = float(current[index])
-        targets.append((index, value + math.remainder(reference - value, 2 * math.pi) if joint.wraps and not place else reference))
+        targets.append((index, value + math.remainder(rest - value, 2 * math.pi) if joint.wraps and not place else rest))
     if placed:
         indices = [index for index, _ in placed]
         view.set_dof_positions(_row([value for _, value in placed]), dof_indices=indices)
