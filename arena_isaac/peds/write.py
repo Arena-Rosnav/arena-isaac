@@ -77,7 +77,8 @@ class _RootWriter:
         if orient_op is None:
             orient_op = xformable.AddOrientOp()
 
-        translate_op.Set(Gf.Vec3d(float(position[0]), float(position[1]), float(position[2]) + ped.ground_z))
+        x, y, z = ped.grounded(position, orientation)
+        translate_op.Set(Gf.Vec3d(float(x), float(y), float(z)))
         real, imag_i, imag_j, imag_k = (
             float(orientation[3]),
             float(orientation[0]),

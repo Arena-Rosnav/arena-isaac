@@ -71,12 +71,20 @@ def test_desired_root_extrapolation_capped_at_max() -> None:
     assert ped.command_age > Ped.MAX_EXTRAPOLATION
 
 
-def test_desired_root_holds_z_from_current_state() -> None:
+def test_desired_root_takes_z_from_the_command() -> None:
     ped = _ped()
     ped.position = np.array([0.0, 0.0, 1.7])
-    ped.update_command(orientation=_IDENTITY, position=[1.0, 0.0, 0.0], velocity=[0.0, 0.0], now=0.0)
+    ped.update_command(orientation=_IDENTITY, position=[1.0, 0.0, 0.25], velocity=[0.0, 0.0], now=0.0)
     position, _ = ped.desired_root(dt=0.1)
-    assert position[2] == pytest.approx(1.7)
+    assert position[2] == pytest.approx(0.25)
+
+
+def test_soles_are_planted_along_the_body_up_axis() -> None:
+    ped = _ped()
+    ped.ground_z = -0.05
+    np.testing.assert_allclose(ped.grounded(np.array([1.0, 2.0, 0.3]), np.array(_IDENTITY)), [1.0, 2.0, 0.25], atol=1e-9)
+    on_back = np.array([0.0, -np.sin(np.pi / 4), 0.0, np.cos(np.pi / 4)])
+    np.testing.assert_allclose(ped.grounded(np.array([1.0, 2.0, 0.7]), on_back), [1.05, 2.0, 0.7], atol=1e-9)
 
 
 def test_desired_root_takes_orientation_verbatim() -> None:

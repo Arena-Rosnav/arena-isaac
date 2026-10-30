@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-import math
-
 import carb
 from omni.kit.viewport.utility import get_active_viewport
 from pxr import Gf, Usd, UsdGeom
 
+from isaac_utils.utils import camera as camera_attrs
 from isaac_utils.utils.prim import resolve_prim
 
 from .controller import Pose, Quat, q_conj, q_mul
@@ -109,8 +108,7 @@ class CameraBackend:
         camera = self._usd_camera()
         if camera is None:
             return
-        aperture = float(camera.GetHorizontalApertureAttr().Get())
-        camera.GetFocalLengthAttr().Set(aperture / (2.0 * math.tan(fov / 2.0)))
+        camera_attrs.set_hfov(camera, fov)
 
     def set_clip_near(self, clip_near: float) -> None:
         """Set the near clip distance in m, a negative value restores the camera's own."""
