@@ -1,0 +1,8 @@
+string name
+geometry_msgs/Pose pose
+# geometry scale, the link frames and inertias come scaled
+Scale scale
+# parents before children
+ArticulatedLink[] links
+---
+bool ret

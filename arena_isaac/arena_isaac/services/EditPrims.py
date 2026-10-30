@@ -6,6 +6,7 @@ from arena_isaac.moving import moving_boxes
 from isaac_utils.utils import geom
 from isaac_utils.utils.path import world_path
 
+from .Articulated import follow_root
 from .utils import Service, on_exception
 
 
@@ -21,6 +22,7 @@ def move_prim(name: str, pose: Pose) -> bool:
         translation=translation,
         rotation=rotation,
     )
+    follow_root(name, pose)
 
     return True
 

@@ -13,6 +13,7 @@
   <depend>arena_people_msgs</depend>
   <depend>viewport_control_msgs</depend>
   <depend>arena_runtime_msgs</depend>
+  <exec_depend>ament_index_python</exec_depend>
 
   <test_depend>python3-pytest</test_depend>
 

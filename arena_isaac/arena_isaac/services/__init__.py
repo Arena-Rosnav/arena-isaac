@@ -1,5 +1,6 @@
 import collections.abc
 
+from .Articulated import drive_articulated_service, spawn_articulated_service
 from .DeleteLights import delete_lights_service
 from .DeletePedestrians import delete_pedestrians_service
 from .DeletePrims import delete_prims_service
@@ -37,6 +38,8 @@ services: collections.abc.Iterable[Service] = (
     set_lights_service,
     delete_lights_service,
     set_map_offset_service,
+    spawn_articulated_service,
+    drive_articulated_service,
 )
 
 subscriptions: collections.abc.Iterable[Subscription] = (update_pedestrians_subscription,)
