@@ -3,7 +3,7 @@
 convert_cached resolves an actor SDF to a per-actor cache dir holding the
 authored USD (character.usda, meta.json), its downloaded source DAEs, the
 skin's diffuse textures and an ATTRIBUTION.md. The digest hashes the SDF bytes
-plus, per consumed URI (the skin and the idle clip), the local file's bytes (so
+plus, per consumed URI (the skin, the idle and neutral clips and the .rig), the local file's bytes (so
 an in-place re-export rebuilds even when the SDF is unchanged) or, for remote
 URIs, the URI string (kept offline, never the remote bytes). Importable outside
 Isaac; pxr is only reached through peds.convert.convert_actor.
@@ -189,5 +189,5 @@ def _publish(tmp: pathlib.Path, final: pathlib.Path) -> None:
 
 
 def _attribution(spec: ActorSpec) -> str:
-    sources = "\n".join(f"- {uri}" for uri in spec.consumed_uris)
+    sources = "\n".join(f"- {uri}" for uri in spec.consumed_uris if uri != spec.rig_uri)
     return f"# Attribution\n\nThe skin and animation clips for actor `{spec.name}` are converted from\nGazebo Fuel assets:\n\n{sources}\n\n(c) Mingfei, distributed via Gazebo Fuel under CC-BY-4.0.\nThis USD conversion redistributes them under the same license.\n"

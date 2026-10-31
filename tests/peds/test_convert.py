@@ -14,11 +14,13 @@ from collections.abc import Iterator
 
 import numpy as np
 import pytest
+from arena_assets.rig import Rig, load_rig, write_rig
+from arena_simulation_setup.testing import make_rig
 
 pytest.importorskip("pxr")
 
 from peds.cache import actor_cache_dir, convert_cached
-from peds.convert import _Collada, _material_roughness, _parse_materials, convert_actor, parse_actor_sdf
+from peds.convert import _Collada, _material_roughness, _parse_materials, convert_actor, parse_actor, parse_actor_sdf
 from pxr import Gf, Usd, UsdGeom, UsdShade, UsdSkel
 
 # Canonical joint tree J0 -> J1 -> J2. The skin lists joints scrambled to force
@@ -459,6 +461,73 @@ def test_idref_joint_arrays_rejected(tmp_path: pathlib.Path) -> None:
     sdf.write_text(_sdf_text(str(dae)))
     with pytest.raises(ValueError, match="no Name_array"):
         convert_actor(str(sdf), {str(dae): str(dae)}, tmp_path / "out")
+
+
+_IDENTITY = (0.0, 0.0, 0.0, 1.0)
+
+
+def _body_rig(hip_stance: tuple[float, float, float, float] = (0.0, 0.0, 0.7071, 0.7071)) -> Rig:
+    return make_rig(
+        {"pelvis": (None, [("J0", 1.0, _IDENTITY)]), "left_hip": ("pelvis", [("J1", 0.5, _IDENTITY), ("J2", 0.5, _IDENTITY)])},
+        stance={"left_hip": hip_stance},
+        soles=["left_hip", "left_hip", "left_hip", "left_hip"],
+        drivers={"l_wheel": {"bone": "J2", "from": "distance", "axis": [0.0, 1.0, 0.0]}},
+    )
+
+
+def _convert_with_rig(tmp_path: pathlib.Path, rig: Rig | None) -> pathlib.Path:
+    dae = tmp_path / "synth.dae"
+    dae.write_text(_dae_text())
+    sdf = tmp_path / "actor.sdf"
+    sdf.write_text(_sdf_text(str(dae)))
+    if rig is not None:
+        write_rig(tmp_path / "actor.rig", rig)
+    out = tmp_path / "out"
+    spec = convert_actor(str(sdf), {uri: uri for uri in parse_actor(str(sdf)).consumed_uris}, out)
+    assert (spec.rig_uri is not None) == (rig is not None)
+    return out
+
+
+def test_the_rig_is_copied_next_to_the_meta(tmp_path: pathlib.Path) -> None:
+    out = _convert_with_rig(tmp_path, _body_rig())
+    assert json.loads((out / "meta.json").read_text())["rig"] is True
+    copied = load_rig(out / "body.rig")
+    assert copied is not None
+    assert copied.joints == ("pelvis", "left_hip")
+    assert copied.stance[1].tolist() == pytest.approx([0.0, 0.0, 0.7071, 0.7071])
+    assert [driver.name for driver in copied.drivers] == ["l_wheel"]
+    assert json.loads((out / "meta.json").read_text())["soles"] == []
+
+
+def test_neutral_is_the_clip_frame_without_leg_hanging(tmp_path: pathlib.Path) -> None:
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+    with_rig = json.loads((_convert_with_rig(tmp_path / "a", _body_rig()) / "meta.json").read_text())
+    without = json.loads((_convert_with_rig(tmp_path / "b", None) / "meta.json").read_text())
+    assert with_rig["neutral"] == without["neutral"]
+
+
+def test_bundle_without_a_rig_is_not_rigged(tmp_path: pathlib.Path) -> None:
+    out = _convert_with_rig(tmp_path, None)
+    meta = json.loads((out / "meta.json").read_text())
+    assert meta["rig"] is False
+    assert meta["soles"] == []
+    assert not (out / "body.rig").exists()
+
+
+def test_cache_digest_follows_the_rig(tmp_path: pathlib.Path, arena_data_dir: pathlib.Path) -> None:
+    dae = tmp_path / "synth.dae"
+    dae.write_text(_dae_text())
+    sdf = tmp_path / "actor.sdf"
+    sdf.write_text(_sdf_text(str(dae)))
+    bare = actor_cache_dir(str(sdf))
+
+    write_rig(tmp_path / "actor.rig", _body_rig())
+    rigged = actor_cache_dir(str(sdf))
+    assert rigged != bare
+
+    write_rig(tmp_path / "actor.rig", _body_rig((0.0, 0.0, 0.0, 1.0)))
+    assert actor_cache_dir(str(sdf)) != rigged
 
 
 def test_cache_digest_stable_and_sensitive(tmp_path: pathlib.Path, arena_data_dir: pathlib.Path) -> None:
