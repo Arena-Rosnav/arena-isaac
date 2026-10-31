@@ -12,11 +12,13 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import carb
 import numpy as np
 import omni.usd
 from isaacsim.core.utils.prims import create_prim, delete_prim
 from pxr import Gf, Sdf, Usd, UsdSkel, Vt
 
+from arena_assets.rig import Rig, load_rig
 from isaac_utils.utils.path import world_path
 from isaac_utils.utils.prim import ensure_path
 from peds.cache import convert_cached
@@ -57,7 +59,18 @@ class PedRuntime:
         rest = meta.get("rest", meta["neutral"])
         rest_rotations = np.asarray(rest["rotations_xyzw"], dtype=float)
         rest_translations = np.asarray(rest["translations"], dtype=float)
-        provider = ExternalPoseProvider(joint_order, neutral_rotations, neutral_translations, rest_rotations=rest_rotations, rest_translations=rest_translations)
+        rig = load_rig(cache_dir / "body.rig") if meta["rig"] else None
+        if rig is None:
+            carb.log_warn(f"peds: {name} has no .rig, the wire does not drive it: run rig_human on its bundle")
+            rig = Rig((), np.zeros(0, dtype=np.int32), np.zeros((0, 4)), (), np.zeros(0, dtype=np.int32), np.zeros(0), np.zeros((0, 4)))
+        provider = ExternalPoseProvider(
+            joint_order,
+            neutral_rotations,
+            neutral_translations,
+            rig,
+            rest_rotations=rest_rotations,
+            rest_translations=rest_translations,
+        )
 
         prim_path = world_path(name)
         ensure_path(os.path.dirname(prim_path))
@@ -75,7 +88,8 @@ class PedRuntime:
         ped.teleport(np.asarray(position, dtype=float), np.asarray(orientation, dtype=float))
 
         self._registry.spawn(name, ped)
-        self._externals[name] = provider
+        if meta["rig"]:
+            self._externals[name] = provider
         self._writer.set_root(ped, ped.position, ped.orientation)
 
     def update(
@@ -85,14 +99,17 @@ class PedRuntime:
         orientation: tuple[float, float, float, float],
         velocity: tuple[float, float],
         animation_state: int,
-        joint_names: list[str],
-        joint_positions: list[float],
+        body_joints: list[str],
+        body_rotations: list[tuple[float, float, float, float]],
+        root_offset: tuple[float, float, float],
+        driver_names: list[str],
+        driver_positions: list[float],
         stamp_sec: float,
     ) -> bool:
-        """Dead-reckoned per-tick command plus the wire's joint angles.
+        """Dead-reckoned per-tick command plus the wire's body pose and driver angles.
 
-        animation_state is consumed upstream by the gait source that authors
-        the wire angles, it selects nothing here.
+        animation_state is consumed upstream by the source that authors the
+        wire pose, it selects nothing here.
         """
         ped = self._registry.get(name)
         if ped is None:
@@ -105,8 +122,8 @@ class PedRuntime:
             float(self._world.current_time),
             stamp_sec=stamp_sec,
         )
-        if joint_names and (external := self._externals.get(name)) is not None:
-            external.push(stamp_sec, joint_names, joint_positions)
+        if body_joints and (external := self._externals.get(name)) is not None:
+            external.push(stamp_sec, body_joints, body_rotations, root_offset, driver_names, driver_positions)
         return True
 
     def move(self, name: str, position: tuple[float, float, float], orientation: tuple[float, float, float, float]) -> bool:
@@ -185,11 +202,14 @@ def update(
     orientation: tuple[float, float, float, float],
     velocity: tuple[float, float],
     animation_state: int,
-    joint_names: list[str],
-    joint_positions: list[float],
+    body_joints: list[str],
+    body_rotations: list[tuple[float, float, float, float]],
+    root_offset: tuple[float, float, float],
+    driver_names: list[str],
+    driver_positions: list[float],
     stamp_sec: float,
 ) -> bool:
-    return _get().update(name, position, orientation, velocity, animation_state, joint_names, joint_positions, stamp_sec)
+    return _get().update(name, position, orientation, velocity, animation_state, body_joints, body_rotations, root_offset, driver_names, driver_positions, stamp_sec)
 
 
 def move(name: str, position: tuple[float, float, float], orientation: tuple[float, float, float, float]) -> bool:

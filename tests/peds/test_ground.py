@@ -7,7 +7,7 @@ import math
 import numpy as np
 import pytest
 
-from peds.convert import JointNode, MeshData, SkinData, SkinnedMesh, _soles
+from peds.convert import JointNode, MeshData, SkinData, SkinnedMesh, _rig_soles, _soles
 from peds.ground import Soles
 from peds.providers.base import JointPose
 
@@ -36,6 +36,7 @@ def _rig(names: list[str], parents: list[int], binds: dict[str, list[float]], ve
     return joints, [SkinnedMesh(name="body", skin=skin, mesh=mesh, bound_material=None)]
 
 
+_PAIRS = [("LeftFoot", "LeftToeBase"), ("RightFoot", "RightToeBase")]
 _FEET = ["Hips", "LeftFoot", "LeftToeBase", "RightFoot", "RightToeBase"]
 _BINDS = {"LeftFoot": [0.0, 0.1, 0.1], "LeftToeBase": [0.15, 0.1, 0.03], "RightFoot": [0.0, -0.1, 0.1], "RightToeBase": [0.15, -0.1, 0.03]}
 _SHOE = [
@@ -52,7 +53,7 @@ _SHOE = [
 
 def test_soles_take_the_lowest_rear_and_front_sole_vertex_of_each_foot_in_its_bone_frame() -> None:
     joints, skinned = _rig(_FEET, [-1, 0, 1, 0, 3], _BINDS, _SHOE)
-    soles = _soles(joints, skinned)
+    soles = _soles(joints, skinned, _PAIRS)
     picked = [(joints[sole["joint"]].name, sole["point"]) for sole in soles]
     assert [name for name, _ in picked] == ["LeftFoot", "LeftToeBase", "RightFoot", "RightToeBase"]
     assert picked[0][1] == pytest.approx([-0.04, 0.0, -0.1])
@@ -60,6 +61,27 @@ def test_soles_take_the_lowest_rear_and_front_sole_vertex_of_each_foot_in_its_bo
     assert picked[3][1] == pytest.approx([0.04, 0.0, -0.029])
 
 
-def test_a_rig_on_wheels_has_no_soles() -> None:
+_RIG_JOINTS = {
+    "left_ankle": {"parent": "pelvis", "bone": "LeftFoot", "offset": [0, 0, 0, 1]},
+    "left_foot": {"parent": "left_ankle", "bone": "LeftToeBase", "offset": [0, 0, 0, 1]},
+    "right_ankle": {"parent": "pelvis", "bones": [{"bone": "Hips", "weight": 0.0, "offset": [0, 0, 0, 1]}, {"bone": "RightFoot", "weight": 1.0, "offset": [0, 0, 0, 1]}]},
+    "right_foot": {"parent": "right_ankle", "bone": "RightToeBase", "offset": [0, 0, 0, 1]},
+}
+_SOLE_JOINTS = ["left_ankle", "left_foot", "right_ankle", "right_foot"]
+
+
+def test_rig_soles_resolve_the_sole_joints_to_their_bones() -> None:
+    joints, skinned = _rig(_FEET, [-1, 0, 1, 0, 3], _BINDS, _SHOE)
+    rig = {"joints": _RIG_JOINTS, "soles": _SOLE_JOINTS, "drivers": {}}
+    assert _rig_soles(rig, joints, skinned) == _soles(joints, skinned, _PAIRS)
+
+
+def test_a_rig_with_a_distance_driver_has_no_soles() -> None:
     joints, skinned = _rig([*_FEET, "WheelL"], [-1, 0, 1, 0, 3, 0], _BINDS, _SHOE)
-    assert _soles(joints, skinned) == []
+    rig = {"joints": _RIG_JOINTS, "soles": _SOLE_JOINTS, "drivers": {"l_wheel": {"bone": "WheelL", "from": "distance", "axis": [0.0, 1.0, 0.0]}}}
+    assert _rig_soles(rig, joints, skinned) == []
+
+
+def test_a_rig_without_soles_has_none() -> None:
+    joints, skinned = _rig(_FEET, [-1, 0, 1, 0, 3], _BINDS, _SHOE)
+    assert _rig_soles({"joints": _RIG_JOINTS, "drivers": {}}, joints, skinned) == []
