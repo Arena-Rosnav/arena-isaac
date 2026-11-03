@@ -35,6 +35,9 @@ class Ped:
     orientation: np.ndarray = field(default_factory=_identity_orientation)
     ground_z: float = -0.03
     soles: Soles | None = None
+    floor_z: float = 0.0
+    floor_known: bool = False
+    floor_xy: tuple[float, float] = (0.0, 0.0)
 
     MAX_EXTRAPOLATION: ClassVar[float] = 0.5
 
@@ -65,6 +68,7 @@ class Ped:
         self.command_age = 0.0
         self.position = np.array(position, dtype=float)
         self.orientation = np.array(orientation, dtype=float)
+        self.floor_known = False
         if isinstance(self.provider, ResettablePhase):
             self.provider.reset_phase()
 
@@ -82,7 +86,7 @@ class Ped:
         return self.position, self.orientation
 
     def grounded(self, position: np.ndarray, orientation: np.ndarray) -> np.ndarray:
-        """Root position with the soles planted: ground_z along the body's up axis."""
+        """Root position with the soles planted on the floor at floor_z: ground_z along the body's up axis."""
         x, y, z, w = orientation
         up = np.array([2.0 * (x * z + w * y), 2.0 * (y * z - w * x), 1.0 - 2.0 * (x * x + y * y)])
-        return np.asarray(position, dtype=float) + self.ground_z * up
+        return np.asarray(position, dtype=float) + self.ground_z * up + np.array([0.0, 0.0, self.floor_z])

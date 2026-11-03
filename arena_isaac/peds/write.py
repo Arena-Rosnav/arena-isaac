@@ -11,6 +11,7 @@ from typing import Any, Protocol
 
 import numpy as np
 
+from isaac_utils.utils.floor import climb, floor_under
 from peds.ped import Ped
 from peds.providers.base import JointPose
 
@@ -77,6 +78,12 @@ class _RootWriter:
         if orient_op is None:
             orient_op = xformable.AddOrientOp()
 
+        here = (float(position[0]), float(position[1]))
+        floor = floor_under(*here, ped.floor_z, first=not ped.floor_known)
+        if floor is not None:
+            if ped.floor_known:
+                floor = climb(ped.floor_z, floor, float(np.hypot(here[0] - ped.floor_xy[0], here[1] - ped.floor_xy[1])))
+            ped.floor_z, ped.floor_known, ped.floor_xy = floor, True, here
         x, y, z = ped.grounded(position, orientation)
         translate_op.Set(Gf.Vec3d(float(x), float(y), float(z)))
         real, imag_i, imag_j, imag_k = (

@@ -87,6 +87,20 @@ def test_soles_are_planted_along_the_body_up_axis() -> None:
     np.testing.assert_allclose(ped.grounded(np.array([1.0, 2.0, 0.7]), on_back), [1.05, 2.0, 0.7], atol=1e-9)
 
 
+def test_the_floor_raises_the_planted_root() -> None:
+    ped = _ped()
+    ped.ground_z, ped.floor_z = -0.05, -2.3
+    np.testing.assert_allclose(ped.grounded(np.array([1.0, 2.0, 0.45]), np.array(_IDENTITY)), [1.0, 2.0, 0.45 - 0.05 - 2.3])
+
+
+def test_a_teleport_forgets_the_floor() -> None:
+    ped = _ped()
+    ped.floor_z, ped.floor_known = 1.8, True
+    ped.teleport(np.array([5.0, 0.0, 0.0]), np.array(_IDENTITY))
+    assert not ped.floor_known
+    assert ped.floor_z == 1.8
+
+
 def test_desired_root_takes_orientation_verbatim() -> None:
     ped = _ped()
     commanded = _yaw_quat(np.pi / 2.0)

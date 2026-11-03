@@ -14,6 +14,7 @@ from isaacsim.core.utils.rotations import euler_angles_to_quat, quat_to_euler_an
 from pxr import Gf, Usd, UsdGeom, UsdPhysics
 
 from isaac_utils.graphs import physics_engine
+from isaac_utils.utils import floor
 from isaac_utils.utils.prim import resolve_paths, resolve_prim
 
 _robot_articulation_registry: dict[str, str] = {}
@@ -263,6 +264,8 @@ def move(
 
     positions = np.array(np.atleast_2d(translation.tuple())) if translation is not None else None
     orientations = np.array(np.atleast_2d(rotation.quat())) if rotation is not None else None
+    if offset is not None and positions is not None and not local and (found := floor.floor_under(*positions[0], first=True)) is not None:
+        positions[0, 2] = found
     if offset is not None and positions is not None and orientations is not None and not local:
         root = offset * Gf.Matrix4d().SetTransform(Gf.Rotation(Gf.Quatd(*orientations[0])), Gf.Vec3d(*positions[0]))
         quat = root.ExtractRotationQuat().GetNormalized()
