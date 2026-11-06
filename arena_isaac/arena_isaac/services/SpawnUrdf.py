@@ -17,6 +17,7 @@ import isaac_utils.graphs.sensors.sensors as sensors
 from isaac_utils.graphs import control, physics_engine
 from isaac_utils.managers import entity_lifecycle
 from isaac_utils.utils import frames, geom
+from isaac_utils.utils.drives import command_interfaces, strip_dynamics_damping
 from isaac_utils.utils.inertials import prune_inertials
 from isaac_utils.utils.material import Material, PhysicsParams
 from isaac_utils.utils.path import world_path
@@ -159,6 +160,7 @@ def sanitize_urdf_for_isaac(urdf_path: str) -> tuple[str, list[str]]:
                 tag.attrib['filename'] = symlink_path
 
     prune_inertials(root)
+    strip_dynamics_damping(root, command_interfaces(root)[1])
 
     child_links = {child.attrib.get('link') for joint in root.iter('joint') for child in joint.iter('child')}
     for link in root.iter('link'):
