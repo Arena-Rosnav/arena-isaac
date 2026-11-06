@@ -7,6 +7,7 @@ import omni.usd
 from pxr import PhysxSchema, Sdf, Usd, UsdPhysics
 
 from isaac_utils.graphs import physics_engine, register_rebuilder
+from isaac_utils.utils.drives import PositionDrive, command_interfaces, position_drives
 from isaac_utils.utils.initial_joints import initial_positions
 
 from .topic_bridge import topic_bridge
@@ -51,35 +52,11 @@ def _set_initial(joint_prim: Usd.Prim, position: float) -> None:
     PhysxSchema.JointStateAPI.Apply(joint_prim, axis).CreatePositionAttr(value)
 
 
-def _joints_from_urdf(urdf_path: str) -> tuple[list[str], list[str], dict[str, float]]:
-    """Return (velocity_joints, position_joints, effort_limits) declared in the
-    URDF. Command interfaces come from any <ros2_control> block; the bridge
-    graph reflects whatever the URDF says is a ros2_control command interface,
-    regardless of which controller class claims it; this lets any controller
-    type Just Work without per-type handling on the Isaac side. Effort limits
-    come from the <limit> element of the plain <joint> definitions.
-    """
-    velocity: list[str] = []
-    position: list[str] = []
-    efforts: dict[str, float] = {}
+def _joints_from_urdf(urdf_path: str) -> tuple[list[str], list[str], dict[str, PositionDrive]]:
+    """Return (velocity_joints, position_joints, position_drives) declared by the URDF's ros2_control block."""
     root = ET.parse(urdf_path).getroot()
-    for joint in root.iter('joint'):
-        joint_name = joint.get('name')
-        limit = joint.find('limit')
-        if joint_name and limit is not None and (effort := limit.get('effort')) is not None:
-            efforts[joint_name] = float(effort)
-    for rc in root.iter('ros2_control'):
-        for joint in rc.iter('joint'):
-            joint_name = joint.get('name')
-            if not joint_name:
-                continue
-            for cmd in joint.iter('command_interface'):
-                kind = cmd.get('name')
-                if kind == 'velocity':
-                    velocity.append(joint_name)
-                elif kind == 'position':
-                    position.append(joint_name)
-    return velocity, position, efforts
+    velocity, position = command_interfaces(root)
+    return velocity, position, position_drives(root)
 
 
 class Control:
@@ -123,7 +100,7 @@ class Control:
         return {prim.GetName(): prim for prim in Usd.PrimRange(root) if prim.IsA(UsdPhysics.Joint)} if root.IsValid() else {}
 
     def _dispatch_bridge(self) -> bool:
-        joints_velocity, joints_position, effort_limits = _joints_from_urdf(self.urdf_path)
+        joints_velocity, joints_position, drives = _joints_from_urdf(self.urdf_path)
         if not joints_velocity and not joints_position:
             carb.log_error(f"topic_bridge: no ros2_control joints found in URDF '{self.urdf_path}'")
             return False
@@ -137,11 +114,16 @@ class Control:
         for joint_name in joints_position:
             joint_prim = joint_prims.get(joint_name)
             if joint_prim is not None:
-                if newton:
-                    effort = effort_limits.get(joint_name, _POSITION_DRIVE_EFFORT_FALLBACK_NEWTON)
+                drive = drives.get(joint_name)
+                if newton and (drive is None or drive.angular):
+                    effort = drive.max_force if drive is not None else _POSITION_DRIVE_EFFORT_FALLBACK_NEWTON
                     kp = _POSITION_DRIVE_KP_PER_EFFORT_NEWTON * effort / _RAD2DEG
                     _set_drive(joint_prim, kp, kp / _POSITION_DRIVE_KP_KD_RATIO_NEWTON, max_force=effort)
                     joint_prim.CreateAttribute('newton:armature', Sdf.ValueTypeNames.Float).Set(_POSITION_DRIVE_ARMATURE_NEWTON)
+                elif drive is not None:
+                    scale = 1.0 / _RAD2DEG if drive.angular else 1.0
+                    _set_drive(joint_prim, drive.stiffness * scale, drive.damping * scale, max_force=drive.max_force)
+                    carb.log_info(f"topic_bridge: position drive {joint_name} kp={drive.stiffness:.4g} kd={drive.damping:.4g} max_force={drive.max_force:.4g} ({'angular' if drive.angular else 'linear'})")
                 else:
                     _set_drive(joint_prim, _POSITION_DRIVE_STIFFNESS, _POSITION_DRIVE_DAMPING)
             else:
