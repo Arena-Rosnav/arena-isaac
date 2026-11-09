@@ -1,5 +1,5 @@
 import launch
-from arena_bringup.substitutions import LaunchArgument
+from arena_rclpy_mixins.launch_argument import LaunchArgument
 from launch import LaunchDescription
 from launch.actions import ExecuteProcess
 from launch.substitutions import EnvironmentVariable, PathJoinSubstitution
@@ -13,7 +13,7 @@ def generate_launch_description():
     logger = LaunchArgument(
         name='log_level',
         default_value='debug',
-        description='Logging level',
+        description='Log level.',
     )
 
     headless = LaunchArgument(
@@ -49,11 +49,6 @@ def generate_launch_description():
 
     return LaunchDescription([
         *ld,
-        launch.actions.DeclareLaunchArgument(
-            "log_level",
-            default_value=["debug"],
-            description="Logging level",
-        ),
         ExecuteProcess(
             cmd=[
                 PathJoinSubstitution([EnvironmentVariable('ISAAC_PATH'), 'python.sh']),
