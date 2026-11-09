@@ -17,6 +17,7 @@ import isaac_utils.graphs.sensors.sensors as sensors
 from isaac_utils.graphs import control, physics_engine
 from isaac_utils.managers import entity_lifecycle
 from isaac_utils.utils import frames, geom
+from isaac_utils.utils.colliders import uninstance_colliders
 from isaac_utils.utils.drives import command_interfaces, strip_dynamics_damping
 from isaac_utils.utils.inertials import prune_inertials
 from isaac_utils.utils.material import Material, PhysicsParams
@@ -297,6 +298,7 @@ def spawn_urdf(request: SpawnUrdf.Request) -> str:
 
     stage = omni.usd.get_context().get_stage()
     stage.GetPrimAtPath(prim_path).GetVariantSet("Physics").SetVariantSelection("physics" if physics_engine() == "newton" else "physx")
+    uninstance_colliders(stage.GetPrimAtPath(prim_path))
 
     if roller_joints and physics_engine() == "newton":
         roller_links = {name.removesuffix('_joint') for name in roller_joints}

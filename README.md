@@ -4,7 +4,7 @@ Isaac Sim backend behind `sim:=isaac`.
 
 ## Robot import and joint drives
 
-`SpawnUrdf` sanitizes the URDF, imports it with `URDFImporterConfig(joint_target_type="velocity")` and builds the joint-state and command bridge from the `<ros2_control>` block of the URDF it was given. The importer creates every drive without gains (its log says "Stiffness and damping not available ... actuator will be created without gain parameters"), so `isaac_utils/graphs/control` writes the gains afterwards, per command interface:
+`SpawnUrdf` sanitizes the URDF, imports it with `URDFImporterConfig(joint_target_type="velocity")` and builds the joint-state and command bridge from the `<ros2_control>` block of the URDF it was given. The importer writes every collider as an instanceable reference, and instanced mesh colliders on the robot links make no contacts, so `isaac_utils/utils/colliders.py` turns every instanceable prim holding a collider into a plain prim right after the import. The importer creates every drive without gains (its log says "Stiffness and damping not available ... actuator will be created without gain parameters"), so `isaac_utils/graphs/control` writes the gains afterwards, per command interface:
 
 | Command interface | Drive |
 | --- | --- |
