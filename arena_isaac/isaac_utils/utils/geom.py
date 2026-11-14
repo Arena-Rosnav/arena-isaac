@@ -294,12 +294,13 @@ def move(
                 carb.log_warn(f"arena: newton physics-view teleport at {prim_path} failed")
     else:
         view = physics_view()
-        write(view or XformPrim(prim_path))
+        write(XformPrim(prim_path))
         if view is not None:
             try:
+                write(view)
                 zero_velocities(view)
             except Exception:
-                carb.log_warn(f"arena: physics-view velocity reset at {prim_path} failed")
+                carb.log_warn(f"arena: physics-view teleport at {prim_path} failed")
 
 
 def get_world_translation(prim_path: str) -> Translation | None:
