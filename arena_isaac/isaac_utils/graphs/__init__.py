@@ -10,6 +10,17 @@ def physics_engine() -> str:
     return SimulationManager.get_active_physics_engine()
 
 
+def renew_physics_views() -> bool:
+    """Drop tensor simulation views a prim deletion invalidated so the next play recreates them."""
+    from isaacsim.core.simulation_manager import SimulationManager
+
+    views = (SimulationManager.get_physics_sim_view(), SimulationManager.get_physics_simulation_view())
+    if all(view is None or view.is_valid for view in views):
+        return False
+    SimulationManager.invalidate_physics()
+    return True
+
+
 _rebuilders: dict[str, typing.Callable[[], object]] = {}
 
 

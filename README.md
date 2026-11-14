@@ -23,3 +23,7 @@ Revolute gains are converted to per degree before they reach USD, prismatic gain
 `<dynamics damping>` of position-commanded joints is removed from the URDF before import, so the joint's passive damping cannot resist the drive. Friction and the damping of velocity-commanded joints stay.
 
 The bridge logs one `topic_bridge: position drive <joint> kp=... kd=... max_force=...` line per sized joint.
+
+## Removing robots
+
+Deleting a robot's prims invalidates the physics tensor simulation view that every articulation shares, and the first step on that view crashes PhysX. When the sim resumes after a stage edit, the main loop drops the invalid views (`renew_physics_views` in `isaac_utils/graphs`), so the play that follows recreates them, and then rebuilds the bridge graphs that cached them.

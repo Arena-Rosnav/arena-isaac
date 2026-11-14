@@ -567,8 +567,10 @@ def main(args: list[str] | None = None):
                     elif stage_guard.flush():
                         # prim deletions during the pause invalidate the tensor
                         # views cached in bridge graph nodes
-                        from isaac_utils.graphs import rebuild_graphs
+                        from isaac_utils.graphs import rebuild_graphs, renew_physics_views
 
+                        if renew_physics_views():
+                            carb.log_info("arena: physics views renewed after a deletion")
                         rebuild_graphs()
                         stage_guard.flush()
                     world.play()
