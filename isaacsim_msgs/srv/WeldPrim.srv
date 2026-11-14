@@ -1,0 +1,7 @@
+string name
+string robot
+string link
+bool weld
+---
+bool success
+geometry_msgs/Pose pose

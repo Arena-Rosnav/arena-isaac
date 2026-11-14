@@ -174,6 +174,7 @@ from rosgraph_msgs.msg import Clock
 
 # graphs
 from isaac_utils.graphs.time import PublishTime
+from isaac_utils.utils import weld
 from isaac_utils.utils.material import Material, PhysicsParams
 from isaac_utils.utils.path import world_path
 
@@ -478,6 +479,7 @@ def _physics_tick(dt: float) -> None:
     """The one physics callback: a second World physics callback silences the first."""
     pedestrian_runtime.tick(dt)
     moving_boxes.tick(dt)
+    weld.tick()
 
 
 def main(args: list[str] | None = None):

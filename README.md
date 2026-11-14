@@ -27,3 +27,7 @@ The bridge logs one `topic_bridge: position drive <joint> kp=... kd=... max_forc
 ## Removing robots
 
 Deleting a robot's prims invalidates the physics tensor simulation view that every articulation shares, and the first step on that view crashes PhysX. When the sim resumes after a stage edit, the main loop drops the invalid views (`renew_physics_views` in `isaac_utils/graphs`), so the play that follows recreates them, and then rebuilds the bridge graphs that cached them.
+
+## Carrying objects
+
+`WeldPrim` holds an object prim at its current pose in the frame of a robot link: it finds the link by name under the robot prim, takes the link itself or its nearest ancestor that is a rigid body, and stores the object's pose relative to that body. `isaac_utils/utils/weld.py` then writes the body's pose times that offset onto the object (and onto its rigid body when it has one, with zeroed velocities) from the physics callback of every step, so the object renders without lag. Releasing returns the object's world pose. Deleting the object or the robot, and `ResetWorld`, drop the welds. The offset math is in `isaac_utils/utils/pose_math.py`.
