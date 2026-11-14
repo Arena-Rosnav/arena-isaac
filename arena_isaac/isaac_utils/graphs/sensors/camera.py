@@ -317,6 +317,27 @@ class SensorCamera(SensorBase):
         gate_path = omni.syntheticdata.SyntheticData._get_node_path(rv + "IsaacSimulationGate", render_product)
         og.Controller.attribute(gate_path + ".inputs:step").set(step_size)
 
+    @classmethod
+    def _publish_pointcloud(cls, render_product: str, frame: str, node_namespace: str, queue_size: int, topic_name: str, step_size: int):
+        rv = omni.syntheticdata.SyntheticData.convert_sensor_type_to_rendervar(sd.SensorType.DistanceToImagePlane.name)
+
+        writer = rep.writers.get(rv + "ROS2PublishPointCloud")
+        writer.initialize(frameId=frame, nodeNamespace=node_namespace, queueSize=queue_size, topicName=topic_name)
+        writer.attach([render_product])
+
+        gate_path = omni.syntheticdata.SyntheticData._get_node_path(rv + "IsaacSimulationGate", render_product)
+        og.Controller.attribute(gate_path + ".inputs:step").set(step_size)
+
+    @classmethod
+    def _publish_depth(cls, render_product: str, frame: str, node_namespace: str, queue_size: int, topic_name: str, step_size: int):
+        rv = omni.syntheticdata.SyntheticData.convert_sensor_type_to_rendervar(sd.SensorType.DistanceToImagePlane.name)
+        writer = rep.writers.get(rv + "ROS2PublishImage")
+        writer.initialize(frameId=frame, nodeNamespace=node_namespace, queueSize=queue_size, topicName=topic_name)
+        writer.attach([render_product])
+
+        gate_path = omni.syntheticdata.SyntheticData._get_node_path(rv + "IsaacSimulationGate", render_product)
+        og.Controller.attribute(gate_path + ".inputs:step").set(step_size)
+
 
 class SensorCameraRGBD(SensorCamera):
     """<topic> is a prefix here, gz-sensors hangs image/depth_image/points/camera_info off it."""
@@ -347,23 +368,30 @@ class SensorCameraRGBD(SensorCamera):
 
         return render_product, frame, node_namespace, queue_size, step_size
 
-    @classmethod
-    def _publish_pointcloud(cls, render_product: str, frame: str, node_namespace: str, queue_size: int, topic_name: str, step_size: int):
-        rv = omni.syntheticdata.SyntheticData.convert_sensor_type_to_rendervar(sd.SensorType.DistanceToImagePlane.name)
 
-        writer = rep.writers.get(rv + "ROS2PublishPointCloud")
-        writer.initialize(frameId=frame, nodeNamespace=node_namespace, queueSize=queue_size, topicName=topic_name)
-        writer.attach([render_product])
+class SensorCameraDepth(SensorCamera):
+    """gz depth_camera: <topic> is the depth image, points and camera_info hang off it."""
 
-        gate_path = omni.syntheticdata.SyntheticData._get_node_path(rv + "IsaacSimulationGate", render_product)
-        og.Controller.attribute(gate_path + ".inputs:step").set(step_size)
+    def _resolve_topics(self, base_topic: str) -> tuple[str, str, str]:
+        """Returns (depth_topic, camera_info_topic, points_topic)."""
+        outputs = output_topics('depth', self.config.topic or f'{self.name}/depth_image', self.config.camera_info_topic)
+        assert outputs is not None
+        return (
+            join_topic(base_topic, outputs['depth']),
+            join_topic(base_topic, outputs['camera_info']),
+            join_topic(base_topic, outputs['pointcloud']),
+        )
 
-    @classmethod
-    def _publish_depth(cls, render_product: str, frame: str, node_namespace: str, queue_size: int, topic_name: str, step_size: int):
-        rv = omni.syntheticdata.SyntheticData.convert_sensor_type_to_rendervar(sd.SensorType.DistanceToImagePlane.name)
-        writer = rep.writers.get(rv + "ROS2PublishImage")
-        writer.initialize(frameId=frame, nodeNamespace=node_namespace, queueSize=queue_size, topicName=topic_name)
-        writer.attach([render_product])
+    def publish(self, base_topic: str) -> tuple[str, str, str, int, int]:
+        if self.prim_path is None or self.camera is None:
+            raise RuntimeError('Camera not simulated. Call simulate() first.')
 
-        gate_path = omni.syntheticdata.SyntheticData._get_node_path(rv + "IsaacSimulationGate", render_product)
-        og.Controller.attribute(gate_path + ".inputs:step").set(step_size)
+        render_product, frame, node_namespace, queue_size, step_size = self._common_args()
+        depth_topic, info_topic, points_topic = self._resolve_topics(base_topic)
+
+        self._publish_camera_info(render_product, frame, node_namespace, queue_size, info_topic, step_size)
+        self._publish_pointcloud(render_product, frame, node_namespace, queue_size, points_topic, step_size)
+        self._publish_depth(render_product, frame, node_namespace, queue_size, depth_topic, step_size)
+        monotonic_sensor_time(render_product)
+
+        return render_product, frame, node_namespace, queue_size, step_size

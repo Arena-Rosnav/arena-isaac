@@ -5,7 +5,7 @@ import carb
 from isaac_utils.utils.geom import Rotation, Translation
 
 from . import SensorBase
-from .camera import SensorCamera, SensorCameraRGBD
+from .camera import SensorCamera, SensorCameraDepth, SensorCameraRGBD
 from .contact import SensorContact
 from .imu import SensorIMU
 from .lidar import SensorLidar
@@ -120,7 +120,18 @@ class Sensors:
                 rotation=rotation,
                 optical_frame=self._optical_frame(sensor, reference, links),
             )
+        elif sensor_type == 'depth_camera':
+            created = SensorCameraDepth(
+                robot_base_frame=self.robot_base_frame,
+                parent_frame=reference,
+                config=SensorCameraDepth.Config.parse(sensor),
+                name=sensor_name,
+                translation=translation,
+                rotation=rotation,
+                optical_frame=self._optical_frame(sensor, reference, links),
+            )
         else:
+            carb.log_warn(f"sensor {sensor_name!r} has type {sensor_type!r}, which isaac does not simulate, skipping")
             return None
 
         created.simulate(self.prim_path)
