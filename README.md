@@ -16,7 +16,7 @@ Isaac Sim backend behind `sim:=isaac`.
 - `max_force` is the `<limit effort>` (25 when absent).
 - Revolute and continuous joints: stiffness 100 N m/rad per N m of effort, damping stiffness/20.
 - Prismatic joints: stiffness 8 N/m per N of effort, raised to carried mass * 9.81 / 2 mm so gravity sags the joint under 2 mm, damping `2 sqrt(stiffness * mass)` (critical) for the mass of the child link and everything below it.
-- Damping never exceeds effort / `<limit velocity>`, so the damping force at the speed limit stays within the effort limit.
+- The drive force is clamped to the effort limit. Revolute joints thus track their target at 20 times the error per second, the velocity loop gz_ros2_control's position mode runs at proportional gain 0.1 and a 200 Hz controller manager.
 
 Revolute gains are converted to per degree before they reach USD, prismatic gains are written as is. Under newton, revolute joints keep stiffness 8 * effort with damping stiffness/20 and an armature, prismatic joints take the sized drive.
 

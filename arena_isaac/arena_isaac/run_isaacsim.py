@@ -300,12 +300,12 @@ def _newton_apply_solver_cfg() -> None:
     # mjwarp specializes its tile kernels on these sizes
     ns.cfg.solver_cfg.nconmax = 400
     ns.cfg.solver_cfg.njmax = 2400
-    # odd, an even count leaves tensor-api writes such as teleports on the stale state buffer
-    ns.cfg.num_substeps = 3
+    ns.cfg.num_substeps = 1
 
 
-# matches Isaac's implicit default, pinned so lockstep step projections are exact
-PHYSICS_DT = 1.0 / 60.0
+# odd physics steps per frame, an even count leaves newton's teleports on the stale state buffer
+RENDERING_DT = 1.0 / 50.0
+PHYSICS_DT = RENDERING_DT / 5
 
 if PHYSICS_ENGINE == "newton":
     # python.sh does not autoload the newton extensions (only isaac-sim.newton.sh does),
@@ -320,7 +320,7 @@ if PHYSICS_ENGINE == "newton":
     SimulationManager.switch_physics_engine("newton")
 stage_guard = _StageEditGuard(omni.usd.get_context().get_stage())
 
-world = World(physics_dt=PHYSICS_DT, rendering_dt=PHYSICS_DT)
+world = World(physics_dt=PHYSICS_DT, rendering_dt=RENDERING_DT)
 if PHYSICS_ENGINE == "newton":
     _newton_apply_solver_cfg()
 world.scene.add_ground_plane(size=100, z_position=-3.0)
@@ -415,7 +415,7 @@ class IsaacController(rclpy.node.Node):
         self._pending_steps += request.steps
         response.success = True
         current = _newton_sim_time() if PHYSICS_ENGINE == "newton" else world.current_time
-        response.target_sim_time = current + request.steps * PHYSICS_DT
+        response.target_sim_time = current + request.steps * RENDERING_DT
         response.error_msg = ""
         return response
 

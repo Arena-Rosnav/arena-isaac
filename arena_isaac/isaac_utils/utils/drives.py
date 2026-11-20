@@ -86,7 +86,6 @@ def position_drive(root: ET.Element, joint_name: str) -> PositionDrive | None:
     angular = kind != 'prismatic'
     limit = joint.find('limit')
     effort = float(limit.get('effort')) if limit is not None and limit.get('effort') else EFFORT_FALLBACK
-    velocity = float(limit.get('velocity', 0.0)) if limit is not None else 0.0
     mass = carried_mass(root, joint_name)
 
     if angular:
@@ -97,8 +96,6 @@ def position_drive(root: ET.Element, joint_name: str) -> PositionDrive | None:
         if mass > 0.0:
             stiffness = max(stiffness, mass * GRAVITY / MAX_GRAVITY_SAG)
         damping = 2.0 * DAMPING_RATIO * math.sqrt(stiffness * mass) if mass > 0.0 else stiffness / STIFFNESS_DAMPING_RATIO
-    if velocity > 0.0:
-        damping = min(damping, effort / velocity)
     return PositionDrive(stiffness=stiffness, damping=damping, max_force=effort, angular=angular)
 
 

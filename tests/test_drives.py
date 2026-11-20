@@ -76,10 +76,9 @@ def test_the_lift_holds_its_load_within_the_sag_budget_and_effort():
     assert drive.stiffness * 0.002 < drive.max_force
 
 
-def test_the_lift_is_damped_critically_without_exceeding_effort_at_max_speed():
+def test_the_lift_is_damped_critically_for_its_carried_mass():
     drive = position_drive(_root(), 'lift')
     assert drive.damping == pytest.approx(2.0 * math.sqrt(drive.stiffness * 17.0))
-    assert drive.damping * 0.07 <= drive.max_force
 
 
 def test_a_revolute_joint_scales_with_its_effort():
@@ -87,7 +86,7 @@ def test_a_revolute_joint_scales_with_its_effort():
     assert shoulder.angular and wrist.angular
     assert shoulder.stiffness / wrist.stiffness == pytest.approx(43.0 / 6.6)
     assert shoulder.max_force == 43.0
-    assert shoulder.damping * 1.95 <= shoulder.max_force + 1e-9
+    assert shoulder.damping == pytest.approx(shoulder.stiffness / 20.0)
 
 
 def test_a_joint_without_a_limit_falls_back_to_a_default_effort():

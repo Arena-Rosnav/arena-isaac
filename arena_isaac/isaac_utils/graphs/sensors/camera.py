@@ -10,6 +10,7 @@ import omni.graph.core as og
 import omni.replicator.core as rep
 import omni.syntheticdata._syntheticdata as sd
 from arena_robots.sensors import output_topics
+from isaacsim.core.api import SimulationContext
 from isaacsim.ros2.core import read_camera_info
 from isaacsim.sensors.camera import Camera
 
@@ -17,12 +18,16 @@ from isaac_utils.utils.geom import Rotation, Translation
 
 from . import SensorBase, join_topic, monotonic_sensor_time, resolve_link_prim
 
-_RENDER_HZ = 60
+
+def _render_hz() -> int:
+    """Frames the world renders per second of sim time."""
+    return round(1.0 / SimulationContext.instance().get_rendering_dt())
 
 
 def _snap_rate(rate: float) -> float:
     """Snap to the nearest divisor of the render rate, Camera raises otherwise."""
-    return float(min((d for d in range(1, _RENDER_HZ + 1) if _RENDER_HZ % d == 0), key=lambda d: abs(d - rate)))
+    hz = _render_hz()
+    return float(min((d for d in range(1, hz + 1) if hz % d == 0), key=lambda d: abs(d - rate)))
 
 
 class SensorCamera(SensorBase):
@@ -127,7 +132,7 @@ class SensorCamera(SensorBase):
         queue_size = 1
         assert self.camera is not None
         render_product = self.camera._render_product_path
-        step_size = int(_RENDER_HZ / _snap_rate(self.config.update_rate))
+        step_size = int(_render_hz() / _snap_rate(self.config.update_rate))
         return render_product, frame, node_namespace, queue_size, step_size
 
     def _resolve_topics(self, base_topic: str) -> tuple[str, ...]:
