@@ -44,6 +44,7 @@ class SensorContact(SensorBase):
         self.parent_frame: str = parent_frame
 
         self.prim_path: str | None = None
+        self.graph_path: str | None = None
 
     @staticmethod
     def _collision_prim(link_prim: str) -> str | None:
@@ -72,17 +73,18 @@ class SensorContact(SensorBase):
         if contact_sensor:
             contact_sensor.initialize()
             self.prim_path = contact_sensor.prim_path
+            self.graph_path = os.path.join(base_prim, f'{self.name}_ContactPublisher')
 
     def paths(self) -> Sequence[str]:
-        if self.prim_path is None:
+        if self.prim_path is None or self.graph_path is None:
             return ()
-        return (self.prim_path, os.path.join(self.prim_path, 'ContactPublisher'))
+        return (self.prim_path, self.graph_path)
 
     def publish(self, base_topic: str) -> bool:
-        if self.prim_path is None:
+        if self.prim_path is None or self.graph_path is None:
             raise RuntimeError("Contact sensor not spawned. Call simulate() first.")
 
-        graph = Graph(os.path.join(self.prim_path, 'ContactPublisher'))
+        graph = Graph(self.graph_path)
 
         on_playback_tick = graph.node("on_playback_tick", "omni.graph.action.OnPlaybackTick")
         read_contact_sensor = graph.node("read_contact_sensor", "isaacsim.sensors.physics.IsaacReadContactSensor")
