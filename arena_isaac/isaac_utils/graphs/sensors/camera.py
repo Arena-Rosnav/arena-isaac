@@ -25,7 +25,7 @@ def _render_hz() -> int:
 
 
 def _snap_rate(rate: float) -> float:
-    """Snap to the nearest divisor of the render rate, Camera raises otherwise."""
+    """Snap to the nearest divisor of the render rate."""
     hz = _render_hz()
     return float(min((d for d in range(1, hz + 1) if hz % d == 0), key=lambda d: abs(d - rate)))
 
@@ -108,7 +108,6 @@ class SensorCamera(SensorBase):
             name=self.name,
             translation=self.translation.tuple(),
             orientation=self.rotation.quat(),
-            frequency=_snap_rate(self.config.update_rate),
             resolution=(self.config.image.width, self.config.image.height),
         )
         if camera:
