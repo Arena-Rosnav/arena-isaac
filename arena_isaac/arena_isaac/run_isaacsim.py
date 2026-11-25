@@ -146,6 +146,10 @@ _carb_settings = carb.settings.get_settings()
 _carb_settings.set("/rtx/hydra/supportMultiTickRate", True)
 _carb_settings.set("/rtx/rendering/perSensorTickTlas", False)
 _carb_settings.set("/rtx/rtpt/gaussian/skipTonemapping/enabled", True)
+# sampled direct lighting strobes on Gaussian splats (it turns back on past 64 lights)
+_carb_settings.set("/rtx/directLighting/sampledLighting/enabled", False)
+_carb_settings.set("/rtx/directLighting/sampledLighting/autoEnable", True)
+_carb_settings.set("/rtx/directLighting/sampledLighting/autoEnableLightCountThreshold", 64)
 
 # ros2 publisher nodes skip publishing when getSubscriptionCount() sees no
 # subscribers, and that count is unreliable (matched DDS subscribers read as 0,
