@@ -1,8 +1,9 @@
 """Runtime glue between the pedestrian services and the UsdSkel ped registry.
 
 Instantiated once from run_isaacsim after the World exists, whose physics
-callback calls tick every step. The four pedestrian services call the
-module-level spawn/update/move/delete helpers, which forward to the singleton.
+callback calls tick every step and whose main loop calls begin_frame before
+each rendered frame. The four pedestrian services call the module-level
+spawn/update/move/delete helpers, which forward to the singleton.
 """
 
 from __future__ import annotations
@@ -36,11 +37,14 @@ if TYPE_CHECKING:
 class PedRuntime:
     """Owns the registry, the shared writer, and the per-ped wire providers."""
 
-    def __init__(self, world: World) -> None:
+    def __init__(self, world: World, substeps_per_frame: int) -> None:
         self._world = world
         self._writer = make_writer()
-        self._registry = PedRegistry(self._writer)
+        self._registry = PedRegistry(self._writer, substeps_per_frame)
         self._externals: dict[str, ExternalPoseProvider] = {}
+
+    def begin_frame(self) -> None:
+        self._registry.begin_frame()
 
     def tick(self, dt: float) -> None:
         self._registry.tick(float(self._world.current_time), float(dt))
@@ -177,15 +181,19 @@ def _find_skeleton(stage: Usd.Stage, root_path: str) -> UsdSkel.Skeleton | None:
 _runtime: PedRuntime | None = None
 
 
-def initialize(world: World) -> None:
+def initialize(world: World, substeps_per_frame: int) -> None:
     global _runtime
-    _runtime = PedRuntime(world)
+    _runtime = PedRuntime(world, substeps_per_frame)
 
 
 def _get() -> PedRuntime:
     if _runtime is None:
         raise RuntimeError("peds runtime not initialized")
     return _runtime
+
+
+def begin_frame() -> None:
+    _get().begin_frame()
 
 
 def tick(dt: float) -> None:

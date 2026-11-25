@@ -166,6 +166,7 @@ import numpy as np
 
 # rclpy
 import rclpy
+import rclpy.executors
 import rclpy.node
 import std_srvs.srv
 from builtin_interfaces.msg import Time as TimeMsg
@@ -357,6 +358,8 @@ class IsaacController(rclpy.node.Node):
         self._clock_attr = None
         self._last_clock: float | None = None
         self._clock_repeated = 0.0
+        self._executor = rclpy.executors.SingleThreadedExecutor()
+        self._executor.add_node(self)
 
         self.__pause_srv = self.create_service(
             std_srvs.srv.Trigger,
@@ -418,6 +421,16 @@ class IsaacController(rclpy.node.Node):
         response.target_sim_time = current + request.steps * RENDERING_DT
         response.error_msg = ""
         return response
+
+    def drain(self, limit: int) -> None:
+        """Run ready callbacks until a wait finds none or limit have run."""
+        for _ in range(limit):
+            try:
+                handler, _, _ = self._executor.wait_for_ready_callbacks(timeout_sec=0)
+            except (rclpy.executors.TimeoutException, rclpy.executors.ShutdownException):
+                return
+            handler()
+            handler.result()
 
     def publish_clock(self) -> None:
         """Publish what the clock graph stamped this frame."""
@@ -505,7 +518,7 @@ def main(args: list[str] | None = None):
         # the solver consumes the extension cfg at first play, before the resume path
         _newton_apply_solver_cfg()
 
-    pedestrian_runtime.initialize(world)
+    pedestrian_runtime.initialize(world, round(RENDERING_DT / PHYSICS_DT))
     world.add_physics_callback('arena/tick', _physics_tick)
 
     import isaac_utils.config.photoreal as photoreal
@@ -534,8 +547,7 @@ def main(args: list[str] | None = None):
         while simulation_app.is_running():
             stepped_this_iteration: bool = False
             # bounded drain, a single callback per frame backs up under call bursts
-            for _ in range(16):
-                rclpy.spin_once(controller, timeout_sec=0)
+            controller.drain(16)
             if viewport is not None:
                 # before the render, so the drawn frame uses the new pose
                 viewport.apply()
@@ -575,6 +587,7 @@ def main(args: list[str] | None = None):
                         stage_guard.flush()
                     world.play()
                     was_playing = True
+                    pedestrian_runtime.begin_frame()
                     if restore_time > 0.0:
                         _newton_restore_sim_time(restore_time)
                     world.step(render=True)
@@ -593,6 +606,7 @@ def main(args: list[str] | None = None):
                     was_playing = False
                     newton_bounce_hold = 30
                 else:
+                    pedestrian_runtime.begin_frame()
                     world.step(render=True)
                     controller.publish_clock()
                     controller.consume_step()
