@@ -174,6 +174,7 @@ from isaacsim_msgs.srv import StepSimulation
 from rosgraph_msgs.msg import Clock
 
 # graphs
+from isaac_utils.graphs.control import release
 from isaac_utils.graphs.time import PublishTime
 from isaac_utils.utils.material import Material, PhysicsParams
 from isaac_utils.utils.path import world_path
@@ -548,6 +549,7 @@ def main(args: list[str] | None = None):
             stepped_this_iteration: bool = False
             # bounded drain, a single callback per frame backs up under call bursts
             controller.drain(16)
+            release.attach(controller)
             if viewport is not None:
                 # before the render, so the drawn frame uses the new pose
                 viewport.apply()
