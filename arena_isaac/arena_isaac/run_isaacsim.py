@@ -166,6 +166,7 @@ import numpy as np
 
 # rclpy
 import rclpy
+import rclpy.executors
 import rclpy.node
 import std_srvs.srv
 from builtin_interfaces.msg import Time as TimeMsg
@@ -173,6 +174,7 @@ from isaacsim_msgs.srv import StepSimulation
 from rosgraph_msgs.msg import Clock
 
 # graphs
+from isaac_utils.graphs.control import release
 from isaac_utils.graphs.time import PublishTime
 from isaac_utils.utils import weld
 from isaac_utils.utils.material import Material, PhysicsParams
@@ -301,12 +303,12 @@ def _newton_apply_solver_cfg() -> None:
     # mjwarp specializes its tile kernels on these sizes
     ns.cfg.solver_cfg.nconmax = 400
     ns.cfg.solver_cfg.njmax = 2400
-    # odd, an even count leaves tensor-api writes such as teleports on the stale state buffer
-    ns.cfg.num_substeps = 3
+    ns.cfg.num_substeps = 1
 
 
-# matches Isaac's implicit default, pinned so lockstep step projections are exact
-PHYSICS_DT = 1.0 / 60.0
+# odd physics steps per frame, an even count leaves newton's teleports on the stale state buffer
+RENDERING_DT = 1.0 / 50.0
+PHYSICS_DT = RENDERING_DT / 5
 
 if PHYSICS_ENGINE == "newton":
     # python.sh does not autoload the newton extensions (only isaac-sim.newton.sh does),
@@ -321,7 +323,7 @@ if PHYSICS_ENGINE == "newton":
     SimulationManager.switch_physics_engine("newton")
 stage_guard = _StageEditGuard(omni.usd.get_context().get_stage())
 
-world = World(physics_dt=PHYSICS_DT, rendering_dt=PHYSICS_DT)
+world = World(physics_dt=PHYSICS_DT, rendering_dt=RENDERING_DT)
 if PHYSICS_ENGINE == "newton":
     _newton_apply_solver_cfg()
 world.scene.add_ground_plane(size=100, z_position=-3.0)
@@ -358,6 +360,8 @@ class IsaacController(rclpy.node.Node):
         self._clock_attr = None
         self._last_clock: float | None = None
         self._clock_repeated = 0.0
+        self._executor = rclpy.executors.SingleThreadedExecutor()
+        self._executor.add_node(self)
 
         self.__pause_srv = self.create_service(
             std_srvs.srv.Trigger,
@@ -416,9 +420,19 @@ class IsaacController(rclpy.node.Node):
         self._pending_steps += request.steps
         response.success = True
         current = _newton_sim_time() if PHYSICS_ENGINE == "newton" else world.current_time
-        response.target_sim_time = current + request.steps * PHYSICS_DT
+        response.target_sim_time = current + request.steps * RENDERING_DT
         response.error_msg = ""
         return response
+
+    def drain(self, limit: int) -> None:
+        """Run ready callbacks until a wait finds none or limit have run."""
+        for _ in range(limit):
+            try:
+                handler, _, _ = self._executor.wait_for_ready_callbacks(timeout_sec=0)
+            except (rclpy.executors.TimeoutException, rclpy.executors.ShutdownException):
+                return
+            handler()
+            handler.result()
 
     def publish_clock(self) -> None:
         """Publish what the clock graph stamped this frame."""
@@ -507,7 +521,7 @@ def main(args: list[str] | None = None):
         # the solver consumes the extension cfg at first play, before the resume path
         _newton_apply_solver_cfg()
 
-    pedestrian_runtime.initialize(world)
+    pedestrian_runtime.initialize(world, round(RENDERING_DT / PHYSICS_DT))
     world.add_physics_callback('arena/tick', _physics_tick)
 
     import isaac_utils.config.photoreal as photoreal
@@ -536,8 +550,8 @@ def main(args: list[str] | None = None):
         while simulation_app.is_running():
             stepped_this_iteration: bool = False
             # bounded drain, a single callback per frame backs up under call bursts
-            for _ in range(16):
-                rclpy.spin_once(controller, timeout_sec=0)
+            controller.drain(16)
+            release.attach(controller)
             if viewport is not None:
                 # before the render, so the drawn frame uses the new pose
                 viewport.apply()
@@ -577,6 +591,7 @@ def main(args: list[str] | None = None):
                         stage_guard.flush()
                     world.play()
                     was_playing = True
+                    pedestrian_runtime.begin_frame()
                     if restore_time > 0.0:
                         _newton_restore_sim_time(restore_time)
                     world.step(render=True)
@@ -595,6 +610,7 @@ def main(args: list[str] | None = None):
                     was_playing = False
                     newton_bounce_hold = 30
                 else:
+                    pedestrian_runtime.begin_frame()
                     world.step(render=True)
                     controller.publish_clock()
                     controller.consume_step()

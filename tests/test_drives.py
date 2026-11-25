@@ -1,11 +1,8 @@
 from __future__ import annotations
 
-import math
 import xml.etree.ElementTree as ET
 
-import pytest
-
-from isaac_utils.utils.drives import carried_mass, command_interfaces, position_drive, position_drives, strip_dynamics_damping
+from isaac_utils.utils.drives import command_interfaces, joint_drives, strip_dynamics_damping
 
 _URDF = """
 <robot name="lifter">
@@ -37,10 +34,11 @@ _URDF = """
   <joint name="marker_joint" type="fixed"><parent link="base"/><child link="marker"/></joint>
   <ros2_control name="system" type="system">
     <joint name="wheel_joint"><command_interface name="velocity"/><state_interface name="position"/></joint>
-    <joint name="lift"><command_interface name="position"/><state_interface name="position"/></joint>
-    <joint name="shoulder"><command_interface name="position"/></joint>
-    <joint name="wrist"><command_interface name="position"/></joint>
-    <joint name="marker_joint"><command_interface name="position"/></joint>
+    <joint name="lift"><command_interface name="position"/><state_interface name="position"/><param name="kp">83385.0</param><param name="kd">2381.2</param><param name="effort">2000.0</param></joint>
+    <joint name="shoulder"><command_interface name="position"/><param name="kp">4300.0</param><param name="kd">215.0</param><param name="effort">43.0</param></joint>
+    <joint name="wrist"><command_interface name="effort"/><param name="kp">660.0</param><param name="kd">33.0</param><param name="effort">6.6</param></joint>
+    <joint name="marker_joint"><command_interface name="position"/><param name="kp">1.0</param><param name="kd">1.0</param><param name="effort">1.0</param></joint>
+    <joint name="bare"><command_interface name="position"/></joint>
   </ros2_control>
 </robot>
 """
@@ -50,49 +48,23 @@ def _root() -> ET.Element:
     return ET.fromstring(_URDF)
 
 
-def test_command_interfaces_split_velocity_from_position_joints():
-    velocity, position = command_interfaces(_root())
+def test_command_interfaces_split_velocity_position_and_effort_joints():
+    velocity, position, effort = command_interfaces(_root())
     assert velocity == ['wheel_joint']
-    assert position == ['lift', 'shoulder', 'wrist', 'marker_joint']
+    assert position == ['lift', 'shoulder', 'marker_joint', 'bare']
+    assert effort == ['wrist']
 
 
-def test_carried_mass_sums_the_subtree_below_the_joint():
-    root = _root()
-    assert carried_mass(root, 'lift') == 17.0
-    assert carried_mass(root, 'shoulder') == 7.0
-    assert carried_mass(root, 'wrist') == 2.0
-    assert carried_mass(root, 'missing') == 0.0
+def test_only_movable_joints_with_params_get_a_drive():
+    assert set(joint_drives(_root())) == {'lift', 'shoulder', 'wrist'}
 
 
-def test_only_position_commanded_movable_joints_get_a_drive():
-    assert set(position_drives(_root())) == {'lift', 'shoulder', 'wrist'}
-
-
-def test_the_lift_holds_its_load_within_the_sag_budget_and_effort():
-    drive = position_drive(_root(), 'lift')
-    assert not drive.angular
-    assert drive.max_force == 2000.0
-    assert drive.stiffness * 0.002 >= 17.0 * 9.81 - 1e-6
-    assert drive.stiffness * 0.002 < drive.max_force
-
-
-def test_the_lift_is_damped_critically_without_exceeding_effort_at_max_speed():
-    drive = position_drive(_root(), 'lift')
-    assert drive.damping == pytest.approx(2.0 * math.sqrt(drive.stiffness * 17.0))
-    assert drive.damping * 0.07 <= drive.max_force
-
-
-def test_a_revolute_joint_scales_with_its_effort():
-    shoulder, wrist = position_drive(_root(), 'shoulder'), position_drive(_root(), 'wrist')
-    assert shoulder.angular and wrist.angular
-    assert shoulder.stiffness / wrist.stiffness == pytest.approx(43.0 / 6.6)
-    assert shoulder.max_force == 43.0
-    assert shoulder.damping * 1.95 <= shoulder.max_force + 1e-9
-
-
-def test_a_joint_without_a_limit_falls_back_to_a_default_effort():
-    root = ET.fromstring('<robot name="r"><link name="a"/><link name="b"/><joint name="j" type="revolute"><parent link="a"/><child link="b"/></joint></robot>')
-    assert position_drive(root, 'j').max_force == 25.0
+def test_a_drive_carries_the_params_the_joint_type_and_the_command_kind():
+    drives = joint_drives(_root())
+    assert (drives['lift'].stiffness, drives['lift'].damping, drives['lift'].max_force) == (83385.0, 2381.2, 2000.0)
+    assert not drives['lift'].angular
+    assert drives['shoulder'].angular
+    assert [drives[name].kind for name in ('lift', 'shoulder', 'wrist')] == ['position', 'position', 'effort']
 
 
 def test_dynamics_damping_is_stripped_from_the_named_joints_only():

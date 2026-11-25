@@ -13,19 +13,21 @@ def topic_bridge(
     prim_path: str,
     joints_velocity: list[str],
     joints_position: list[str],
+    joints_effort: list[str],
     velocity_commands_topic: str,
     position_commands_topic: str,
+    effort_commands_topic: str,
     states_topic: str,
 ) -> bool:
     """Action graph bridging an external ros2_control controller_manager to Isaac.
 
     One JointState subscriber per command-interface kind: each upstream
     JointStateTopicSystem hardware component emits a homogeneous message (name[]
-    co-indexed with the kind's value array), so the velocity and position arrays
+    co-indexed with the kind's value array), so the velocity, position and effort arrays
     feed straight into their respective articulation controllers with no
     re-indexing required.
     """
-    if not (joints_velocity or joints_position):
+    if not (joints_velocity or joints_position or joints_effort):
         return False
 
     graph = Graph(graph_path)
@@ -84,6 +86,8 @@ def topic_bridge(
         _wire_kind('velocity', joints_velocity, velocity_commands_topic, 'velocityCommand')
     if joints_position:
         _wire_kind('position', joints_position, position_commands_topic, 'positionCommand')
+    if joints_effort:
+        _wire_kind('effort', joints_effort, effort_commands_topic, 'effortCommand')
 
     graph.load_extensions()
     return graph.execute(og.Controller())

@@ -9,20 +9,18 @@ Isaac Sim backend behind `sim:=isaac`.
 | Command interface | Drive |
 | --- | --- |
 | `velocity` | stiffness 0, damping 1e4 (physx) or 0.35 with a 16 force clamp (newton) |
-| `position` | sized per joint by `isaac_utils/utils/drives.py` from the URDF, see below |
+| `position` | gains and effort limit from the joint's `kp`, `kd` and `effort` params, see below |
+| `effort` | the `position` drive holds the spawn pose until the first finite effort command (`graphs/control/release.py`), then stiffness 0, damping 0, max force from the `effort` param, the commanded effort is applied raw |
 
-`position_drive` computes, in SI units and without Isaac, the drive of each joint that has a `position` command interface and is `revolute`, `continuous` or `prismatic`:
+`isaac_utils/utils/drives.py` reads, without Isaac, the `kp`, `kd` and `effort` params of each `revolute`, `continuous` or `prismatic` joint that has a `position` or `effort` command interface in the served URDF's `<ros2_control>` block. arena_robots derives them (SI units: N m/rad and N m s/rad, N/m and N s/m for prismatic, effort in N m or N) and an overridable rule sizes the defaults. The drive force is clamped to `effort`.
 
-- `max_force` is the `<limit effort>` (25 when absent).
-- Revolute and continuous joints: stiffness 100 N m/rad per N m of effort, damping stiffness/20.
-- Prismatic joints: stiffness 8 N/m per N of effort, raised to carried mass * 9.81 / 2 mm so gravity sags the joint under 2 mm, damping `2 sqrt(stiffness * mass)` (critical) for the mass of the child link and everything below it.
-- Damping never exceeds effort / `<limit velocity>`, so the damping force at the speed limit stays within the effort limit.
+Angular gains are converted to per degree before they reach USD, prismatic gains are written as is. Under newton, angular joints take 0.08 times kp and kd with an armature, prismatic joints take the params as is. A position joint without params gets stiffness 4e5 and damping 4e3.
 
-Revolute gains are converted to per degree before they reach USD, prismatic gains are written as is. Under newton, revolute joints keep stiffness 8 * effort with damping stiffness/20 and an armature, prismatic joints take the sized drive.
+Effort-commanded joints read `<ns>/isaac/joint_commands_effort` next to `joint_commands_position` and `joint_commands_velocity`.
 
 `<dynamics damping>` of position-commanded joints is removed from the URDF before import, so the joint's passive damping cannot resist the drive. Friction and the damping of velocity-commanded joints stay.
 
-The bridge logs one `topic_bridge: position drive <joint> kp=... kd=... max_force=...` line per sized joint.
+The bridge logs one `topic_bridge: position drive <joint> kp=... kd=... max_force=...` line per joint with params.
 
 ## Removing robots
 

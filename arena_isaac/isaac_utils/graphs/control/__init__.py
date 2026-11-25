@@ -7,9 +7,10 @@ import omni.usd
 from pxr import PhysxSchema, Sdf, Usd, UsdPhysics
 
 from isaac_utils.graphs import physics_engine, register_rebuilder
-from isaac_utils.utils.drives import PositionDrive, command_interfaces, position_drives
+from isaac_utils.utils.drives import JointDrive, command_interfaces, joint_drives
 from isaac_utils.utils.initial_joints import initial_positions
 
+from . import release
 from .topic_bridge import topic_bridge
 
 _RAD2DEG = 180.0 / math.pi
@@ -26,12 +27,7 @@ _VELOCITY_DRIVE_DAMPING = 1.0e4
 # full velocity-error torque at once (hundreds of N m, backflips the base)
 _VELOCITY_DRIVE_DAMPING_NEWTON = 0.35
 _VELOCITY_DRIVE_MAX_FORCE_NEWTON = 16.0
-# physx-scale position gains saturate mjwarp's implicit integrator, newton
-# derives per-joint gains from the urdf effort limit instead: kp = 8*effort
-# N m/rad, kd = kp/20, torque clamped at the effort limit
-_POSITION_DRIVE_KP_PER_EFFORT_NEWTON = 8.0
-_POSITION_DRIVE_KP_KD_RATIO_NEWTON = 20.0
-_POSITION_DRIVE_EFFORT_FALLBACK_NEWTON = 25.0
+_POSITION_DRIVE_GAIN_SCALE_NEWTON = 0.08
 _POSITION_DRIVE_ARMATURE_NEWTON = 0.01
 
 
@@ -52,11 +48,11 @@ def _set_initial(joint_prim: Usd.Prim, position: float) -> None:
     PhysxSchema.JointStateAPI.Apply(joint_prim, axis).CreatePositionAttr(value)
 
 
-def _joints_from_urdf(urdf_path: str) -> tuple[list[str], list[str], dict[str, PositionDrive]]:
-    """Return (velocity_joints, position_joints, position_drives) declared by the URDF's ros2_control block."""
+def _joints_from_urdf(urdf_path: str) -> tuple[list[str], list[str], list[str], dict[str, JointDrive]]:
+    """Return (velocity_joints, position_joints, effort_joints, drives) declared by the URDF's ros2_control block."""
     root = ET.parse(urdf_path).getroot()
-    velocity, position = command_interfaces(root)
-    return velocity, position, position_drives(root)
+    velocity, position, effort = command_interfaces(root)
+    return velocity, position, effort, joint_drives(root)
 
 
 class Control:
@@ -68,6 +64,7 @@ class Control:
         urdf_path: str,
         velocity_commands_topic: str | None = None,
         position_commands_topic: str | None = None,
+        effort_commands_topic: str | None = None,
         states_topic: str | None = None,
     ):
         self.prim_path: str = prim_path
@@ -78,6 +75,7 @@ class Control:
         ns = cmd_vel_topic.rsplit('/', 1)[0] if '/' in cmd_vel_topic else ''
         self.velocity_commands_topic: str = velocity_commands_topic if velocity_commands_topic is not None else f"{ns}/isaac/joint_commands_velocity"
         self.position_commands_topic: str = position_commands_topic if position_commands_topic is not None else f"{ns}/isaac/joint_commands_position"
+        self.effort_commands_topic: str = effort_commands_topic if effort_commands_topic is not None else f"{ns}/isaac/joint_commands_effort"
         self.states_topic: str = states_topic if states_topic is not None else f"{ns}/isaac/joint_states"
 
     def parse(self, robot_model: str) -> bool:
@@ -100,8 +98,8 @@ class Control:
         return {prim.GetName(): prim for prim in Usd.PrimRange(root) if prim.IsA(UsdPhysics.Joint)} if root.IsValid() else {}
 
     def _dispatch_bridge(self) -> bool:
-        joints_velocity, joints_position, drives = _joints_from_urdf(self.urdf_path)
-        if not joints_velocity and not joints_position:
+        joints_velocity, joints_position, joints_effort, drives = _joints_from_urdf(self.urdf_path)
+        if not joints_velocity and not joints_position and not joints_effort:
             carb.log_error(f"topic_bridge: no ros2_control joints found in URDF '{self.urdf_path}'")
             return False
 
@@ -115,17 +113,17 @@ class Control:
             joint_prim = joint_prims.get(joint_name)
             if joint_prim is not None:
                 drive = drives.get(joint_name)
-                if newton and (drive is None or drive.angular):
-                    effort = drive.max_force if drive is not None else _POSITION_DRIVE_EFFORT_FALLBACK_NEWTON
-                    kp = _POSITION_DRIVE_KP_PER_EFFORT_NEWTON * effort / _RAD2DEG
-                    _set_drive(joint_prim, kp, kp / _POSITION_DRIVE_KP_KD_RATIO_NEWTON, max_force=effort)
+                if drive is None:
+                    _set_drive(joint_prim, _POSITION_DRIVE_STIFFNESS, _POSITION_DRIVE_DAMPING)
+                elif newton and drive.angular:
+                    scale = _POSITION_DRIVE_GAIN_SCALE_NEWTON / _RAD2DEG
+                    _set_drive(joint_prim, drive.stiffness * scale, drive.damping * scale, max_force=drive.max_force)
                     joint_prim.CreateAttribute('newton:armature', Sdf.ValueTypeNames.Float).Set(_POSITION_DRIVE_ARMATURE_NEWTON)
-                elif drive is not None:
+                else:
                     scale = 1.0 / _RAD2DEG if drive.angular else 1.0
                     _set_drive(joint_prim, drive.stiffness * scale, drive.damping * scale, max_force=drive.max_force)
+                if drive is not None:
                     carb.log_info(f"topic_bridge: position drive {joint_name} kp={drive.stiffness:.4g} kd={drive.damping:.4g} max_force={drive.max_force:.4g} ({'angular' if drive.angular else 'linear'})")
-                else:
-                    _set_drive(joint_prim, _POSITION_DRIVE_STIFFNESS, _POSITION_DRIVE_DAMPING)
             else:
                 carb.log_warn(f"topic_bridge: joint prim not found for position drive: {joint_name}")
         for joint_name in joints_velocity:
@@ -134,6 +132,17 @@ class Control:
                 _set_drive(joint_prim, 0.0, velocity_damping, max_force=velocity_max_force)
             else:
                 carb.log_warn(f"topic_bridge: joint prim not found for velocity drive: {joint_name}")
+        held = not release.released(self.target_prim_path)
+        for joint_name in joints_effort:
+            joint_prim = joint_prims.get(joint_name)
+            drive = drives.get(joint_name)
+            if joint_prim is not None and drive is not None:
+                scale = 1.0 / _RAD2DEG if drive.angular and held else 1.0
+                _set_drive(joint_prim, drive.stiffness * scale if held else 0.0, drive.damping * scale if held else 0.0, max_force=drive.max_force)
+            else:
+                carb.log_warn(f"topic_bridge: joint prim or effort params not found for effort drive: {joint_name}")
+        if joints_effort and held:
+            release.hold(self.effort_commands_topic, self.target_prim_path, joints_effort)
 
         graph_path = os.path.join(self.prim_path, 'topic_bridge')
         register_rebuilder(graph_path, self._dispatch_bridge)
@@ -142,8 +151,10 @@ class Control:
             prim_path=self.target_prim_path,
             joints_velocity=joints_velocity,
             joints_position=joints_position,
+            joints_effort=joints_effort,
             velocity_commands_topic=self.velocity_commands_topic,
             position_commands_topic=self.position_commands_topic,
+            effort_commands_topic=self.effort_commands_topic,
             states_topic=self.states_topic,
         )
 
