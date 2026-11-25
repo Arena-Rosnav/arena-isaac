@@ -3,7 +3,7 @@ import omni.usd
 from isaacsim_msgs.srv import ResetWorld
 
 from arena_isaac.moving import moving_boxes
-from isaac_utils.utils import map_offsets
+from isaac_utils.utils import map_offsets, weld
 from isaac_utils.utils.path import world_path
 from isaac_utils.utils.prim import resolve_paths
 
@@ -14,6 +14,7 @@ _ENVIRONMENT_ROOTS = ('Walls', 'Doors', 'Floors', 'Elevators')
 
 @on_exception(False)
 def reset_world() -> bool:
+    weld.clear()
     stage = omni.usd.get_context().get_stage()
     for name in _ENVIRONMENT_ROOTS:
         root = world_path(name)

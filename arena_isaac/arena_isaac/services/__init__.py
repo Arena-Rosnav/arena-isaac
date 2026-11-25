@@ -19,6 +19,7 @@ from .SpawnUrdf import spawn_urdf_service
 from .SpawnWalls import spawn_walls_service
 from .UpdatePedestrians import update_pedestrians_service, update_pedestrians_subscription
 from .utils import Service, Subscription
+from .WeldPrim import weld_prim_service
 
 services: collections.abc.Iterable[Service] = (
     delete_pedestrians_service,
@@ -40,6 +41,7 @@ services: collections.abc.Iterable[Service] = (
     set_map_offset_service,
     spawn_articulated_service,
     drive_articulated_service,
+    weld_prim_service,
 )
 
 subscriptions: collections.abc.Iterable[Subscription] = (update_pedestrians_subscription,)
